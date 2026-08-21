@@ -1,0 +1,15 @@
+.overlay { position: fixed; inset: 0; z-index: 100; display: grid; grid-template-rows: auto minmax(0, 1fr); color: #dce9ee; background: #0c1217; }
+.overlay header { display: grid; min-height: 76px; padding: 12px 18px; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 20px; border-bottom: 1px solid #29414b; background: #111b21; }
+.overlay header button { min-height: 44px; padding: 0 14px; border: 1px solid #426779; border-radius: 6px; color: #dce9ee; font-size: 14px; }
+.overlay header span, .overlay dt { color: #83a2af; font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .08em; }
+.overlay h2 { margin-top: 3px; color: #f4fbfd; font-size: 22px; }
+.overlay dl { display: flex; gap: 18px; margin: 0; }
+.overlay dl div { max-width: 190px; }
+.overlay dd { overflow: hidden; margin-top: 4px; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.viewport { min-height: 0; }
+.hint { position: fixed; right: 18px; bottom: 16px; z-index: 102; margin: 0; padding: 8px 10px; border-radius: 5px; color: #a8bec7; background: rgb(10 18 23 / 78%); font-size: 12px; }
+@media (orientation: portrait) {
+  .overlay header { grid-template-columns: auto minmax(0, 1fr); }
+  .overlay dl { display: none; }
+  .overlay h2 { font-size: 20px; }
+}

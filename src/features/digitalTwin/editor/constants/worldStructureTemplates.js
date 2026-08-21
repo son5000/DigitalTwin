@@ -1,0 +1,130 @@
+export const EDITOR_MODES = {
+  EQUIPMENT: "EQUIPMENT",
+  WORLD: "WORLD",
+  VIEWER: "VIEWER",
+};
+
+export const WORLD_STRUCTURE_MATERIALS = [
+  "CONCRETE",
+  "PAINTED_CONCRETE",
+  "STEEL",
+  "PAINTED_STEEL",
+  "GLASS",
+  "MESH",
+  "GRATING",
+  "GENERIC",
+];
+
+const meter = (key, label, defaultValue, min = 0.02) => ({
+  key,
+  label,
+  unit: "m",
+  step: 0.01,
+  min,
+  defaultValue,
+});
+
+const count = (key, label, defaultValue, min = 1) => ({
+  key,
+  label,
+  unit: "ea",
+  step: 1,
+  min,
+  defaultValue,
+});
+
+function template({
+  id,
+  group,
+  name,
+  nameKo,
+  icon,
+  parameters,
+  appearance,
+  variants,
+  defaultPositionY = 0,
+  defaultGroundSnap = true,
+}) {
+  return {
+    id,
+    domain: "WORLD",
+    group,
+    name,
+    nameKo,
+    icon,
+    parameters,
+    defaultParameters: Object.fromEntries(
+      parameters.map((parameter) => [parameter.key, parameter.defaultValue]),
+    ),
+    defaultAppearance: {
+      color: "#87939A",
+      opacity: 0.92,
+      materialPreset: "CONCRETE",
+      ...appearance,
+    },
+    variants,
+    defaultPositionY,
+    defaultGroundSnap,
+  };
+}
+
+export const WORLD_STRUCTURE_GROUPS = [
+  { id: "SPACE", name: "Space", nameKo: "공간" },
+  { id: "STRUCTURE", name: "Structure", nameKo: "구조" },
+  { id: "FLOOR", name: "Floor", nameKo: "바닥·레벨" },
+  { id: "OPENING", name: "Opening", nameKo: "개구부" },
+  { id: "BOUNDARY", name: "Boundary", nameKo: "경계·안전" },
+  { id: "CUSTOM", name: "Custom", nameKo: "사용자 구조물" },
+];
+
+export const WORLD_STRUCTURE_TEMPLATES = [
+  template({ id: "ROOM", group: "SPACE", name: "Room", nameKo: "룸", icon: "▣", parameters: [meter("width", "Width", 6), meter("depth", "Depth", 5), meter("height", "Height", 3)], appearance: { color: "#AAB8BE", opacity: 0.12, materialPreset: "GENERIC" } }),
+  template({ id: "CORRIDOR", group: "SPACE", name: "Corridor", nameKo: "복도", icon: "▭", parameters: [meter("width", "Width", 2), meter("length", "Length", 6), meter("height", "Height", 3)], appearance: { color: "#AAB8BE", opacity: 0.12, materialPreset: "GENERIC" } }),
+  template({ id: "UTILITY_AREA", group: "SPACE", name: "Utility Area", nameKo: "유틸리티 구역", icon: "▧", parameters: [meter("width", "Width", 4), meter("depth", "Depth", 3)], appearance: { color: "#AAB8BE", opacity: 0.12, materialPreset: "GENERIC" } }),
+
+  template({ id: "WALL", group: "STRUCTURE", name: "Wall", nameKo: "벽체", icon: "▬", parameters: [meter("length", "Length", 4), meter("height", "Height", 3), meter("thickness", "Thickness", 0.12)], appearance: { color: "#A7B0B5", opacity: 1, materialPreset: "PAINTED_CONCRETE" } }),
+  template({ id: "PARTITION", group: "STRUCTURE", name: "Partition", nameKo: "파티션", icon: "▥", parameters: [meter("length", "Length", 3), meter("height", "Height", 1.5), meter("thickness", "Thickness", 0.08)], variants: ["SOLID", "GLASS", "MESH", "LOW_PARTITION", "FENCE_PARTITION", "CUSTOM"], appearance: { color: "#9AA5AA", opacity: 0.88, materialPreset: "PAINTED_STEEL" } }),
+  template({ id: "TEMPORARY_WALL", group: "STRUCTURE", name: "Temporary Wall", nameKo: "가벽", icon: "▥", parameters: [meter("length", "Length", 3), meter("height", "Height", 2.2), meter("thickness", "Thickness", 0.1)], variants: ["SOLID", "GLASS", "LOW_PARTITION", "CUSTOM"], appearance: { color: "#B0B7BA", opacity: 0.9, materialPreset: "GENERIC" } }),
+  template({ id: "COLUMN", group: "STRUCTURE", name: "Column", nameKo: "기둥", icon: "▮", parameters: [meter("width", "Width / Diameter", 0.5), meter("depth", "Depth", 0.5), meter("height", "Height", 3)], variants: ["RECTANGULAR", "SQUARE", "CIRCULAR"], appearance: { color: "#8B9499", opacity: 1, materialPreset: "CONCRETE" } }),
+  template({ id: "BEAM", group: "STRUCTURE", name: "Beam", nameKo: "보", icon: "▬", parameters: [meter("length", "Length", 4), meter("width", "Width", 0.3), meter("height", "Height", 0.4)], appearance: { color: "#737F85", opacity: 1, materialPreset: "STEEL" } }),
+  template({ id: "STRUCTURAL_FRAME", group: "STRUCTURE", name: "Structural Frame", nameKo: "구조 프레임", icon: "Π", parameters: [meter("width", "Width", 3), meter("depth", "Depth", 2), meter("height", "Height", 2.8), meter("legThickness", "Leg", 0.12), meter("beamThickness", "Beam", 0.14)], appearance: { color: "#6F7E84", opacity: 1, materialPreset: "STEEL" } }),
+
+  template({ id: "FLOOR_REGION", group: "FLOOR", name: "Floor", nameKo: "바닥", icon: "▱", parameters: [meter("width", "Width", 4), meter("depth", "Depth", 3), meter("height", "Thickness", 0.08)], appearance: { color: "#707B80", opacity: 0.95, materialPreset: "CONCRETE" } }),
+  template({ id: "PLATFORM", group: "FLOOR", name: "Platform", nameKo: "플랫폼", icon: "▰", parameters: [meter("width", "Width", 4), meter("depth", "Depth", 3), meter("height", "Height", 0.3)], appearance: { color: "#59666B", opacity: 1, materialPreset: "STEEL" } }),
+  template({ id: "STEP", group: "FLOOR", name: "Step", nameKo: "단차", icon: "▰", parameters: [meter("width", "Width", 1.2), meter("depth", "Depth", 0.4), meter("height", "Height", 0.2)], appearance: { color: "#737D82", opacity: 1 } }),
+  template({ id: "RAMP", group: "FLOOR", name: "Ramp", nameKo: "경사로", icon: "◩", parameters: [meter("width", "Width", 1.5), meter("length", "Length", 3), meter("startHeight", "Start Height", 0), meter("endHeight", "End Height", 0.5)], appearance: { color: "#737D82", opacity: 1 } }),
+
+  template({ id: "ENTRANCE", group: "OPENING", name: "Entrance", nameKo: "입구", icon: "⇥", parameters: [meter("width", "Width", 1.8), meter("height", "Height", 2.2), meter("depth", "Depth", 0.08)], appearance: { color: "#4593A4", opacity: 0.72, materialPreset: "GENERIC" } }),
+  template({ id: "EXIT", group: "OPENING", name: "Exit", nameKo: "출구", icon: "⇤", parameters: [meter("width", "Width", 1.8), meter("height", "Height", 2.2), meter("depth", "Depth", 0.08)], appearance: { color: "#B48332", opacity: 0.72, materialPreset: "GENERIC" } }),
+  template({ id: "DOOR", group: "OPENING", name: "Door", nameKo: "도어", icon: "▯", parameters: [meter("width", "Width", 1), meter("height", "Height", 2.1), meter("depth", "Depth", 0.08)], appearance: { color: "#8C969B", opacity: 0.95, materialPreset: "PAINTED_STEEL" } }),
+  template({ id: "GATE", group: "OPENING", name: "Gate", nameKo: "게이트", icon: "▯", parameters: [meter("width", "Width", 2.5), meter("height", "Height", 2), meter("depth", "Depth", 0.1)], appearance: { color: "#858F94", opacity: 0.95, materialPreset: "PAINTED_STEEL" } }),
+  template({ id: "PASSAGE", group: "OPENING", name: "Passage", nameKo: "통로", icon: "⇆", parameters: [meter("width", "Width", 2), meter("depth", "Depth", 1)], appearance: { color: "#71878F", opacity: 0.45 } }),
+
+  template({ id: "RAILING", group: "BOUNDARY", name: "Railing", nameKo: "난간", icon: "╫", parameters: [meter("length", "Length", 3), meter("height", "Height", 1.1), meter("postInterval", "Post Interval", 1), meter("thickness", "Thickness", 0.06)], appearance: { color: "#78858B", opacity: 1, materialPreset: "PAINTED_STEEL" } }),
+  template({ id: "FENCE", group: "BOUNDARY", name: "Fence", nameKo: "펜스", icon: "╫", parameters: [meter("length", "Length", 3), meter("height", "Height", 1.8), meter("thickness", "Thickness", 0.05)], variants: ["SOLID", "MESH", "SAFETY_FENCE"], appearance: { color: "#C69A36", opacity: 0.9, materialPreset: "MESH" } }),
+  template({ id: "STAIR", group: "BOUNDARY", name: "Stair", nameKo: "계단", icon: "▱", parameters: [meter("width", "Width", 1.2), meter("totalHeight", "Total Height", 1.5), meter("totalLength", "Total Length", 2.4), count("stepCount", "Step Count", 8, 2)] }),
+
+  template({ id: "CUSTOM_STRUCTURE", group: "CUSTOM", name: "Custom Structure", nameKo: "사용자 구조물", icon: "+", parameters: [meter("width", "Width", 1), meter("height", "Height", 1), meter("depth", "Depth", 1)], variants: ["BOX", "CYLINDER", "PLANE", "LINEAR_STRUCTURE"], appearance: { color: "#7F8A90", opacity: 0.9, materialPreset: "GENERIC" } }),
+];
+
+export const WORLD_STRUCTURE_TEMPLATE_MAP = Object.fromEntries(
+  WORLD_STRUCTURE_TEMPLATES.map((item) => [item.id, item]),
+);
+
+export const DEFAULT_WORLD_SPACE = {
+  id: "SPACE_MACHINE_ROOM",
+  name: "Machine Room A",
+  type: "ROOM",
+};
+
+export const DEFAULT_VISIBILITY_FILTERS = {
+  FLOOR: true,
+  WALL: true,
+  OPENING: true,
+  PARTITION: true,
+  COLUMN: true,
+  PLATFORM: true,
+  BOUNDARY: true,
+  OTHER: true,
+  EQUIPMENT: true,
+};
