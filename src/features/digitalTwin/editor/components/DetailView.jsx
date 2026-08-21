@@ -6,14 +6,14 @@ export default function DetailView({ equipment, asset, onClose }) {
   return (
     <section className={styles.overlay} aria-label={`${equipment.name} 3D 스캔 상세 보기`}>
       <header>
-        <button type="button" onClick={onClose}>← Editor로 돌아가기</button>
+        <button type="button" onClick={onClose}>← 편집기로 돌아가기</button>
         <div>
           <span>DETAIL VIEW / {asset.originalFormat}</span>
           <h2>{equipment.name}</h2>
         </div>
         <dl>
-          <div><dt>FILE</dt><dd>{asset.originalFileName}</dd></div>
-          <div><dt>INSTANCE</dt><dd>{equipment.id.slice(-12)}</dd></div>
+          <div><dt>파일</dt><dd>{asset.originalFileName}</dd></div>
+          <div><dt>인스턴스</dt><dd>{equipment.id.slice(-12)}</dd></div>
         </dl>
       </header>
       <div className={styles.viewport}>

@@ -90,7 +90,7 @@ export default function EquipmentLibrary({
     <section className={styles.section}>
       <div className={styles.sectionHeading}>
         <div>
-          <span className={styles.eyebrow}>OBJECT LIBRARY</span>
+          <span className={styles.eyebrow}>설비 라이브러리</span>
           <h2>설비 카탈로그</h2>
         </div>
         <span className={styles.count}>{filteredTemplates.length}</span>
@@ -127,13 +127,13 @@ export default function EquipmentLibrary({
       <div className={styles.catalogScroll}>
         {showQuickSections && favoriteTemplates.length > 0 && (
           <section className={styles.quickSection}>
-            <h3>즐겨찾기 <span>Favorites</span></h3>
+            <h3>즐겨찾기</h3>
             <div className={`${styles.library} ${styles[viewMode]}`}>{renderCards(favoriteTemplates)}</div>
           </section>
         )}
         {showQuickSections && recentTemplates.length > 0 && (
           <section className={styles.quickSection}>
-            <h3>최근 사용 <span>Recent</span></h3>
+            <h3>최근 사용</h3>
             <div className={`${styles.library} ${styles[viewMode]}`}>{renderCards(recentTemplates)}</div>
           </section>
         )}
@@ -148,7 +148,7 @@ export default function EquipmentLibrary({
         </section>
       </div>
 
-      <p className={styles.help}>타입을 고른 뒤 중앙 Floor를 클릭하여 배치합니다.</p>
+      <p className={styles.help}>타입을 고른 뒤 중앙 바닥을 클릭하여 배치합니다.</p>
     </section>
   );
 }

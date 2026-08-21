@@ -1,0 +1,370 @@
+.navigator {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  margin-left: 10px;
+  padding-left: 14px;
+  border-left: 1px solid var(--color-border);
+}
+
+.pathButton {
+  display: flex;
+  min-width: 0;
+  min-height: 36px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-small);
+  color: inherit;
+  background: transparent;
+}
+
+.pathButton:hover,
+.pathButton:has(.treeToggle[aria-expanded="true"]) {
+  border-color: var(--color-border);
+  background: var(--color-surface-raised);
+}
+
+.chevron {
+  flex: 0 0 auto;
+  color: var(--color-text-faint);
+  font-size: 10px;
+}
+
+.path {
+  display: flex;
+  min-width: 0;
+  max-width: min(28vw, 440px);
+  overflow: hidden;
+  color: var(--color-text-subtle);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.pathItem {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.pathItem button {
+  min-width: 0;
+  padding: 3px 1px;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  background: transparent;
+}
+
+.pathItem button:hover {
+  color: var(--color-heading);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.pathItem button:focus-visible,
+.treeToggle:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.pathItem button {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.separator {
+  flex: 0 0 auto;
+  margin: 0 6px;
+  color: var(--color-text-faint);
+}
+
+.treeToggle {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: 3px;
+  color: var(--color-text-faint);
+  background: transparent;
+}
+
+.treeToggle:hover {
+  color: var(--color-heading);
+  background: var(--color-surface);
+}
+
+.roomControl select,
+.addButton {
+  min-height: 36px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-text-muted);
+  background: var(--color-surface-raised);
+}
+
+.treePanel {
+  position: absolute;
+  top: 46px;
+  left: 0;
+  z-index: 20;
+  display: grid;
+  width: min(430px, calc(100vw - 32px));
+  max-height: min(620px, calc(100vh - 150px));
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  background: var(--color-surface);
+  box-shadow: 0 18px 48px rgb(0 0 0 / 22%);
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.panelHeader div {
+  display: grid;
+  gap: 2px;
+}
+
+.panelHeader span {
+  color: var(--color-text-faint);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+}
+
+.panelHeader strong {
+  color: var(--color-heading);
+  font-size: 16px;
+}
+
+.panelHeader button,
+.nodeActions button,
+.renameForm button {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-text-muted);
+  background: var(--color-surface-raised);
+}
+
+.tree {
+  overflow: auto;
+  padding: 8px;
+  scrollbar-color: var(--color-scrollbar) transparent;
+  scrollbar-width: thin;
+}
+
+.treeItem {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  margin-left: calc(var(--tree-depth) * 18px);
+  padding: 3px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+}
+
+.treeItem.selectedItem {
+  border-color: rgb(var(--color-accent-rgb) / 35%);
+  background: rgb(var(--color-accent-rgb) / 8%);
+}
+
+.nodeButton {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  padding: 5px;
+  border: 0;
+  color: var(--color-text-muted);
+  text-align: left;
+  background: transparent;
+}
+
+.nodeButton:hover {
+  color: var(--color-heading);
+}
+
+.nodeType {
+  display: grid;
+  flex: 0 0 auto;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 3px;
+  color: var(--color-accent-strong);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  background: var(--color-surface-raised);
+}
+
+.nodeText {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+}
+
+.nodeText strong,
+.nodeText small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nodeText strong {
+  color: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.nodeText small {
+  color: var(--color-text-faint);
+  font-size: 10px;
+}
+
+.liveBadge {
+  flex: 0 0 auto;
+  padding: 2px 4px;
+  border: 1px solid rgb(var(--color-positive-rgb) / 26%);
+  border-radius: 2px;
+  color: var(--color-positive);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 9px;
+  background: rgb(var(--color-positive-rgb) / 8%);
+}
+
+.nodeActions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 3px;
+}
+
+.nodeActions button {
+  width: 29px;
+  height: 29px;
+  font-size: 14px;
+}
+
+.panelHeader button:hover,
+.nodeActions button:hover:not(:disabled),
+.renameForm button:hover:not(:disabled) {
+  border-color: var(--color-border-strong);
+  color: var(--color-heading);
+}
+
+.nodeActions button:disabled,
+.renameForm button:disabled {
+  cursor: not-allowed;
+  opacity: 0.28;
+}
+
+.renameForm {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 4px;
+  padding-left: 4px;
+}
+
+.renameForm input {
+  min-width: 0;
+  min-height: 34px;
+  flex: 1;
+  padding: 0 9px;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-small);
+  color: var(--color-heading);
+  background: var(--color-input);
+}
+
+.renameForm input:focus {
+  outline: none;
+}
+
+.panelHint {
+  padding: 9px 13px;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-faint);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.roomControl select {
+  max-width: 150px;
+  padding: 0 26px 0 8px;
+}
+
+.addButton {
+  flex: 0 0 auto;
+  padding: 0 9px;
+}
+
+.roomControl select:hover,
+.addButton:hover {
+  border-color: var(--color-border-strong);
+  color: var(--color-heading);
+}
+
+.roomControl select:focus-visible,
+.addButton:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 1199px) {
+  .path {
+    max-width: 120px;
+  }
+}
+
+@media (max-width: 760px), (orientation: portrait) {
+  .navigator {
+    margin-left: auto;
+    padding-left: 8px;
+  }
+
+  .pathButton {
+    display: none;
+  }
+
+  .addButton {
+    display: none;
+  }
+
+  .roomControl select {
+    max-width: 120px;
+  }
+}

@@ -1,0 +1,46 @@
+.overlay { position: fixed; inset: 0; z-index: 110; display: grid; grid-template-rows: 72px minmax(0, 1fr); color: var(--color-text); background: var(--color-background); }
+.header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 18px; padding: 0 16px; border-bottom: 1px solid var(--color-border); background: var(--color-surface); }
+.backButton { min-height: 42px; padding: 0 12px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-small); color: var(--color-text-muted); background: var(--color-surface-raised); }
+.title span, .headerMeta span, .listHeading > span { color: var(--color-text-faint); font: 10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .15em; }
+.title h2 { margin-top: 3px; color: var(--color-heading); font-size: 21px; }
+.headerMeta { display: flex; align-items: baseline; gap: 8px; }
+.headerMeta strong { color: var(--color-heading); font-size: 20px; }
+.workspace { display: grid; min-height: 0; grid-template-columns: 250px minmax(0, 1fr) 340px; }
+.partList, .propertyPanel { min-height: 0; overflow: auto; background: var(--color-surface); scrollbar-width: thin; scrollbar-color: var(--color-scrollbar) transparent; }
+.partList { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; border-right: 1px solid var(--color-border); }
+.propertyPanel { border-left: 1px solid var(--color-border); }
+.listHeading { display: flex; min-height: 52px; align-items: center; justify-content: space-between; padding: 0 12px; border-bottom: 1px solid var(--color-border); }
+.listHeading button { width: 34px; height: 34px; border: 1px solid var(--color-border); border-radius: var(--radius-small); color: var(--color-accent-strong); background: var(--color-surface-raised); }
+.listItems { overflow: auto; padding: 7px; }
+.listItems > button { display: grid; width: 100%; grid-template-columns: 28px minmax(0, 1fr); align-items: center; gap: 8px; padding: 9px 8px; border: 1px solid transparent; border-radius: 4px; color: var(--color-text-muted); text-align: left; background: transparent; }
+.listItems > button > span:first-child { color: var(--color-text-faint); font: 10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.listItems > button > span:last-child { display: grid; min-width: 0; gap: 2px; }
+.listItems strong, .listItems small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.listItems strong { font-size: 13px; } .listItems small { color: var(--color-text-faint); font-size: 10px; }
+.listItems .selectedPart { border-color: rgb(var(--color-accent-rgb) / 42%); color: var(--color-heading); background: rgb(var(--color-accent-rgb) / 10%); }
+.listActions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; padding: 8px; border-top: 1px solid var(--color-border); }
+.listActions button { min-height: 40px; border: 1px solid var(--color-border); border-radius: var(--radius-small); color: var(--color-text-muted); background: var(--color-surface-raised); }
+.listActions button:disabled { opacity: .35; }
+.sceneArea { position: relative; min-width: 0; min-height: 0; }
+.sceneArea > section { width: 100%; height: 100%; }
+.sceneToolbar { position: absolute; left: 50%; bottom: 16px; z-index: 4; display: flex; gap: 5px; padding: 5px; border: 1px solid var(--color-border-strong); border-radius: 6px; background: var(--color-surface-overlay); transform: translateX(-50%); }
+.sceneToolbar button { min-height: 38px; padding: 0 12px; border: 1px solid var(--color-border); border-radius: var(--radius-small); color: var(--color-text-muted); background: var(--color-surface-raised); }
+.sceneToolbar select { min-height: 38px; padding: 0 8px; border: 1px solid var(--color-border); border-radius: var(--radius-small); color: var(--color-heading); background: var(--color-surface-raised); }
+.sceneToolbar select:disabled { opacity: .4; }
+.sceneToolbar .activeTool { border-color: var(--color-accent); color: var(--color-accent-strong); }
+.properties { padding-bottom: 18px; }
+.propertyHeading, .textField, .propertySection, .colorField, .checkField { padding: 13px 15px; border-bottom: 1px solid var(--color-border); }
+.propertyHeading span, .propertySection h4 { color: var(--color-text-faint); font: 10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .14em; }
+.propertyHeading h3 { margin-top: 3px; color: var(--color-heading); font-size: 18px; }
+.textField { display: grid; gap: 6px; color: var(--color-text-subtle); font-size: 12px; }
+.textField input, .textField select { min-height: 40px; padding: 0 9px; border: 1px solid var(--color-border); border-radius: var(--radius-small); color: var(--color-heading); background: var(--color-input); }
+.propertySection { display: grid; gap: 8px; }
+.propertySection h4 { margin-bottom: 2px; }
+.colorField, .checkField { display: flex; align-items: center; justify-content: space-between; color: var(--color-text-muted); font-size: 13px; }
+.colorField input { width: 44px; height: 34px; padding: 3px; border: 1px solid var(--color-border); border-radius: var(--radius-small); background: var(--color-input); }
+.checkField { justify-content: flex-start; gap: 8px; }
+.emptyProperties { display: grid; min-height: 100%; place-items: center; color: var(--color-text-subtle); }
+@media (orientation: portrait) {
+  .workspace { grid-template-columns: 210px minmax(0, 1fr); grid-template-rows: minmax(0, 2fr) minmax(0, 1fr); }
+  .propertyPanel { grid-column: 1 / -1; border-top: 1px solid var(--color-border); border-left: 0; }
+}

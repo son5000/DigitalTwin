@@ -7,7 +7,8 @@ import {
   WORLD_STRUCTURE_TEMPLATE_MAP,
 } from "@/features/digitalTwin/editor/constants/worldStructureTemplates";
 import { DEFAULT_WORLD } from "@/features/digitalTwin/editor/constants/equipmentShapeTemplates";
-import { clampDimension, snapValue } from "@/features/digitalTwin/editor/utils/editorMath";
+import { snapHorizontalPosition } from "@/features/digitalTwin/editor/constants/gridSettings";
+import { clampDimension } from "@/features/digitalTwin/editor/utils/editorMath";
 import { getWorldStructureDimensions } from "@/features/digitalTwin/editor/world/WorldStructureFactory";
 
 const GROUND_SURFACE_TYPES = new Set(["FLOOR_REGION", "PLATFORM", "STEP", "RAMP"]);
@@ -49,7 +50,7 @@ function normalizeStructure(structure) {
   };
 }
 
-function createDefaultWorldWalls(world) {
+export function createDefaultWorldWalls(world) {
   const definition = WORLD_STRUCTURE_TEMPLATE_MAP.WALL;
   const thickness = definition.defaultParameters.thickness;
   const wallBlueprints = [
@@ -150,7 +151,8 @@ function convertLegacyEquipmentStructure(equipment) {
   });
 }
 
-export default function useWorldStructureState({ snapSize }) {
+export default function useWorldStructureState({ gridSettings, gridScopeId }) {
+  const snapSize = gridSettings.baseSize;
   const [editorMode, setEditorModeState] = useState(EDITOR_MODES.EQUIPMENT);
   const [worldStructures, setWorldStructures] = useState(
     () => createDefaultWorldWalls(DEFAULT_WORLD),
@@ -181,22 +183,23 @@ export default function useWorldStructureState({ snapSize }) {
         const sequence = String(
           structures.filter((structure) => structure.type === templateId).length + 1,
         ).padStart(2, "0");
+        const { position } = snapHorizontalPosition({
+          x: floorPosition.x,
+          y: 0,
+          z: floorPosition.z,
+        }, gridSettings, gridScopeId);
         const structure = normalizeStructure({
-            id,
-            type: templateId,
-            name: `${definition.nameKo} ${sequence}`,
-            position: {
-              x: snapValue(floorPosition.x, snapSize),
-              y: 0,
-              z: snapValue(floorPosition.z, snapSize),
-            },
-          });
+          id,
+          type: templateId,
+          name: `${definition.nameKo} ${sequence}`,
+          position,
+        });
         return [...structures, structure];
       });
       setSelectedWorldStructureId(id);
       setActiveWorldTemplateId(null);
     },
-    [snapSize, worldStructuresLocked],
+    [gridScopeId, gridSettings, worldStructuresLocked],
   );
 
   const updateWorldStructure = useCallback((structureId, changes) => {

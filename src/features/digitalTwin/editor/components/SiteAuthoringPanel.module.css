@@ -1,0 +1,29 @@
+.panel { border-bottom: 1px solid var(--color-border); }
+.heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px; }
+.heading span { color: var(--color-text-faint); font: 10px/1.2 ui-monospace, monospace; letter-spacing: .15em; }
+.heading h2 { margin-top: 4px; color: var(--color-heading); font-size: 17px; }
+.areaSummary button { min-height: 38px; padding: 0 10px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-small); color: var(--color-text-muted); background: var(--color-input); }
+.workflow { display: flex; align-items: center; gap: 6px; padding: 0 16px 12px; color: var(--color-text-faint); font-size: 11px; }
+.workflow i { opacity: .45; font-style: normal; }
+.workflow .current { color: var(--color-accent-strong); }
+.workflow .complete { color: var(--color-positive); }
+.areaSummary { display: flex; min-height: 58px; align-items: center; justify-content: space-between; gap: 10px; margin: 0 16px 14px; padding: 10px; border: 1px dashed var(--color-border-strong); border-radius: var(--radius-small); background: var(--color-surface-raised); }
+.areaSummary div { display: grid; gap: 3px; }
+.areaSummary span, .areaSummary p { color: var(--color-text-subtle); font-size: 12px; }
+.areaSummary strong { color: var(--color-heading); font: 13px/1.2 ui-monospace, monospace; }
+.templateGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; padding: 0 16px 16px; }
+.templateGrid button { display: grid; min-height: 74px; place-items: center; gap: 2px; padding: 7px 4px; border: 1px solid var(--color-border); border-radius: var(--radius-small); color: var(--color-text); background: var(--color-surface-raised); }
+.templateGrid button:hover:not(:disabled) { border-color: var(--color-accent); background: rgb(var(--color-accent-rgb) / 9%); }
+.templateGrid button.activeTemplate { border-color: var(--color-accent); color: var(--color-accent-strong); background: rgb(var(--color-accent-rgb) / 14%); box-shadow: inset 3px 0 0 var(--color-accent); }
+.templateGrid button > span { color: var(--color-accent-strong); font-size: 18px; }
+.templateGrid strong { font-size: 12px; }
+.templateGrid small { color: var(--color-text-faint); font-size: 10px; }
+.objectList { border-top: 1px solid var(--color-border); }
+.objectList summary { padding: 13px 16px; color: var(--color-text-muted); font-size: 12px; cursor: pointer; }
+.objectList summary strong { float: right; color: var(--color-heading); }
+.objectList > p { padding: 0 16px 14px; color: var(--color-text-faint); font-size: 12px; }
+.objectList > div { display: grid; gap: 4px; padding: 0 12px 12px; }
+.objectList div button { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 8px; padding: 8px; border: 1px solid transparent; border-radius: var(--radius-small); text-align: left; color: var(--color-text-subtle); background: transparent; }
+.objectList div button:hover, .objectList div button.selectedObject { border-color: var(--color-border-strong); background: var(--color-surface-raised); }
+.objectList div button span { color: var(--color-text-faint); font-size: 11px; }
+.objectList div button strong { overflow: hidden; color: var(--color-heading); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }

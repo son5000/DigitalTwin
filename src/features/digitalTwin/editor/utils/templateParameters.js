@@ -1,4 +1,8 @@
 import { clampDimension } from "@/features/digitalTwin/editor/utils/editorMath";
+import {
+  createDefaultEquipmentParts,
+  normalizeEquipmentPart,
+} from "@/features/digitalTwin/editor/constants/partTemplates";
 
 export function getDimensionsFromParameters(template, parameters = {}) {
   const defaults = template.defaultDimensions;
@@ -55,6 +59,7 @@ export function createTemplateInstanceDefaults(template) {
     parameters,
     dimensions: getDimensionsFromParameters(template, parameters),
     appearance: { ...template.defaultAppearance },
+    parts: createDefaultEquipmentParts(template),
   };
 }
 
@@ -74,6 +79,9 @@ export function normalizeEquipmentInstance(equipment, template) {
     position: { x: 0, y: 0, z: 0, ...equipment.position },
     rotation: { x: 0, y: 0, z: 0, ...equipment.rotation },
     appearance: { ...defaults.appearance, ...equipment.appearance },
+    parts: Array.isArray(equipment.parts)
+      ? equipment.parts.map(normalizeEquipmentPart)
+      : defaults.parts,
     detailAssetId: equipment.detailAssetId ?? null,
     visible: equipment.visible ?? true,
     locked: equipment.locked ?? false,

@@ -13,6 +13,12 @@ import {
   VIEW_MODES,
 } from "@/features/digitalTwin/editor/constants/equipmentShapeTemplates";
 import { SCENE_THEMES } from "@/features/digitalTwin/editor/constants/sceneThemes";
+import {
+  formatGridResolution,
+  getGridRegionsForScope,
+  getGridResolutionAtPosition,
+  snapHorizontalPosition,
+} from "@/features/digitalTwin/editor/constants/gridSettings";
 import { EDITOR_MODES } from "@/features/digitalTwin/editor/constants/worldStructureTemplates";
 import { createBaseWorld } from "@/features/digitalTwin/editor/world/createBaseWorld";
 import {
@@ -20,6 +26,11 @@ import {
   getWorldStructureSignature,
 } from "@/features/digitalTwin/editor/world/WorldStructureFactory";
 import { getEquipmentConnectionPoints } from "@/features/digitalTwin/editor/utils/pipeConnections";
+import {
+  createGridRegionGuide,
+  createGridSnapMarker,
+  updateGridSnapMarker,
+} from "@/features/digitalTwin/editor/world/GridGuideFactory";
 
 import { disposeObject3D } from "./disposeObject3D";
 import styles from "./DigitalTwinScene.module.css";
@@ -108,7 +119,8 @@ export default function DigitalTwinScene({
   theme,
   viewMode,
   transformMode,
-  snapSize,
+  gridSettings,
+  gridScopeId,
   collisionIds,
   pipeConnections,
   pipeSnapCandidate,
@@ -125,7 +137,10 @@ export default function DigitalTwinScene({
   const activeTemplateRef = useRef(activeTemplateId);
   const activeWorldTemplateRef = useRef(activeWorldTemplateId);
   const editorModeRef = useRef(editorMode);
+  const gridSettingsRef = useRef(gridSettings);
+  const gridScopeIdRef = useRef(gridScopeId);
   const [hoverInfo, setHoverInfo] = useState(null);
+  const [dragSnapSize, setDragSnapSize] = useState(null);
   const handlersRef = useRef({
     onEquipmentAdd,
     onEquipmentSelect,
@@ -147,6 +162,11 @@ export default function DigitalTwinScene({
       onWorldStructureTransform,
     };
   }, [onEquipmentAdd, onEquipmentSelect, onEquipmentTransform, onEquipmentTransformEnd, onWorldStructureAdd, onWorldStructureSelect, onWorldStructureTransform]);
+
+  useEffect(() => {
+    gridSettingsRef.current = gridSettings;
+    gridScopeIdRef.current = gridScopeId;
+  }, [gridScopeId, gridSettings]);
 
   useEffect(() => {
     activeTemplateRef.current = activeTemplateId;
@@ -214,7 +234,7 @@ export default function DigitalTwinScene({
       renderer.domElement,
     );
     transformControls.setMode(TRANSFORM_MODES.TRANSLATE);
-    transformControls.setTranslationSnap(0.1);
+    transformControls.setTranslationSnap(null);
     transformControls.setRotationSnap(THREE.MathUtils.degToRad(15));
     transformControls.showY = false;
 
@@ -238,6 +258,12 @@ export default function DigitalTwinScene({
     const connectionMarkerRoot = new THREE.Group();
     connectionMarkerRoot.name = "PipeConnectionMarkers";
     overlayRoot.add(connectionMarkerRoot);
+
+    const gridRegionRoot = new THREE.Group();
+    gridRegionRoot.name = "GridRegions";
+    scene.add(gridRegionRoot);
+    const gridSnapMarker = createGridSnapMarker(initialSceneTheme.selection);
+    overlayRoot.add(gridSnapMarker);
 
     const hemisphereLight = new THREE.HemisphereLight(
       initialSceneTheme.hemisphereSky,
@@ -272,11 +298,14 @@ export default function DigitalTwinScene({
       equipmentRoot,
       overlayRoot,
       connectionMarkerRoot,
+      gridRegionRoot,
+      gridSnapMarker,
       equipmentObjects: new Map(),
       worldStructureObjects: new Map(),
       baseWorldRoot: null,
       floor: null,
       world: DEFAULT_WORLD,
+      dragging: false,
     };
     runtimeRef.current = runtime;
 
@@ -382,6 +411,12 @@ export default function DigitalTwinScene({
 
     function handleDraggingChanged(event) {
       orbitControls.enabled = !event.value;
+      runtime.dragging = event.value;
+
+      if (!event.value) {
+        updateGridSnapMarker(runtime.gridSnapMarker, { x: 0, z: 0 }, false);
+        setDragSnapSize(null);
+      }
 
       if (!event.value && transformControls.object) {
         const equipmentId = transformControls.object.userData.equipmentId;
@@ -396,6 +431,22 @@ export default function DigitalTwinScene({
 
       if (!equipmentObject) {
         return;
+      }
+
+      if (transformControls.mode === TRANSFORM_MODES.TRANSLATE) {
+        const { position, cellSize } = snapHorizontalPosition(
+          equipmentObject.position,
+          gridSettingsRef.current,
+          gridScopeIdRef.current,
+        );
+        equipmentObject.position.x = position.x;
+        equipmentObject.position.z = position.z;
+        updateGridSnapMarker(
+          runtime.gridSnapMarker,
+          position,
+          runtime.dragging && cellSize !== null,
+        );
+        setDragSnapSize((current) => current === cellSize ? current : cellSize);
       }
 
       const isWorldStructure = equipmentObject.userData.domain === "WORLD";
@@ -459,6 +510,8 @@ export default function DigitalTwinScene({
       runtime.equipmentObjects.forEach(disposeObject3D);
       runtime.worldStructureObjects.forEach(disposeObject3D);
       disposeObject3D(runtime.connectionMarkerRoot);
+      disposeObject3D(runtime.gridRegionRoot);
+      disposeObject3D(runtime.gridSnapMarker);
 
       if (runtime.baseWorldRoot) {
         disposeObject3D(runtime.baseWorldRoot);
@@ -489,13 +542,29 @@ export default function DigitalTwinScene({
       disposeObject3D(runtime.baseWorldRoot);
     }
 
-    const baseWorld = createBaseWorld(world, SCENE_THEMES[theme]);
+    const baseWorld = createBaseWorld(world, SCENE_THEMES[theme], gridSettings.baseSize);
     runtime.baseWorldRoot = baseWorld.root;
     runtime.floor = baseWorld.floor;
     runtime.world = world;
     runtime.worldRoot.add(baseWorld.root);
     resizeRuntime(runtime);
-  }, [theme, world]);
+  }, [gridSettings.baseSize, theme, world]);
+
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
+    runtime.gridRegionRoot.children.forEach(disposeObject3D);
+    runtime.gridRegionRoot.clear();
+    if (!gridSettings.enabled) return;
+
+    const sceneTheme = SCENE_THEMES[theme];
+    getGridRegionsForScope(gridSettings, gridScopeId)
+      .filter((region) => region.enabled)
+      .forEach((region) => runtime.gridRegionRoot.add(createGridRegionGuide(region, {
+        lineColor: sceneTheme.selection,
+        boundaryColor: sceneTheme.worldSelection,
+      })));
+  }, [gridScopeId, gridSettings, theme]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -738,9 +807,12 @@ export default function DigitalTwinScene({
     );
   }, [editorMode, transformMode]);
 
-  useEffect(() => {
-    runtimeRef.current?.transformControls.setTranslationSnap(snapSize);
-  }, [snapSize]);
+  const selectedSnapPosition = editorMode === EDITOR_MODES.WORLD
+    ? worldStructures.find((structure) => structure.id === selectedWorldStructureId)?.position
+    : equipmentInstances.find((equipment) => equipment.id === selectedEquipmentId)?.position;
+  const effectiveSnapSize = gridSettings.enabled
+    ? dragSnapSize ?? getGridResolutionAtPosition(gridSettings, gridScopeId, selectedSnapPosition)
+    : null;
 
   return (
     <section className={styles.viewport} aria-label="Digital Twin Scene">
@@ -757,8 +829,11 @@ export default function DigitalTwinScene({
         <span className={styles.axisX}>X</span>
         <span className={styles.axisY}>Y</span>
         <span className={styles.axisZ}>Z</span>
-        <span>METER</span>
+        <span>미터</span>
       </div>
+      {effectiveSnapSize !== null && (
+        <div className={styles.gridSnapStatus}>GRID SNAP · {formatGridResolution(effectiveSnapSize)}</div>
+      )}
       {activeTemplateId && (
         <div className={styles.placementHint}>
           바닥을 클릭하여 설비를 배치하세요 · ESC 취소

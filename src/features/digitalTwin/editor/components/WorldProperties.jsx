@@ -5,8 +5,8 @@ export default function WorldProperties({ world, onChange }) {
   return (
     <section className={styles.section}>
       <div className={styles.sectionHeading}>
-        <span className={styles.eyebrow}>BASE WORLD</span>
-        <h2>World Settings</h2>
+        <span className={styles.eyebrow}>기본 월드</span>
+        <h2>월드 설정</h2>
       </div>
       <div className={styles.fields}>
         <NumericField

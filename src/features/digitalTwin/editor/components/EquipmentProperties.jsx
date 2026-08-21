@@ -36,6 +36,7 @@ export default function EquipmentProperties({
   onPreview,
   onUpdateAsset,
   onSnap,
+  onOpenPartEditor,
 }) {
   const [uploadMessage, setUploadMessage] = useState("");
 
@@ -44,7 +45,7 @@ export default function EquipmentProperties({
       <section className={styles.emptyState}>
         <div className={styles.emptyIcon} aria-hidden="true">◇</div>
         <h2>선택된 설비 없음</h2>
-        <p>Scene에서 설비를 선택하면 파라미터와 좌표를 편집할 수 있습니다.</p>
+        <p>장면에서 설비를 선택하면 파라미터와 좌표를 편집할 수 있습니다.</p>
       </section>
     );
   }
@@ -64,21 +65,21 @@ export default function EquipmentProperties({
     <section className={styles.properties}>
       <div className={styles.heading}>
         <div>
-          <span className={styles.eyebrow}>EQUIPMENT</span>
+          <span className={styles.eyebrow}>설비</span>
           <h2>설비 속성</h2>
         </div>
-        <span className={styles.selectedBadge}>EQUIPMENT</span>
+        <span className={styles.selectedBadge}>설비</span>
       </div>
 
       {hasCollision && <div className={styles.warning}>다른 설비와 겹쳐 있습니다.</div>}
 
       <PropertySection title="Equipment" summary={template.nameKo} defaultOpen>
         <label className={styles.textField}>
-          <span>Name</span>
+          <span>이름</span>
           <input type="text" value={equipment.name} onChange={(event) => onChange({ name: event.target.value })} />
         </label>
         <label className={styles.textField}>
-          <span>Shape</span>
+          <span>형태</span>
           <select value={equipment.shapeTemplateId} onChange={(event) => onChange({ shapeTemplateId: event.target.value })}>
             {EQUIPMENT_SHAPE_TEMPLATES.map((item) => (
               <option key={item.id} value={item.id}>{item.nameKo} · {item.name}</option>
@@ -86,8 +87,8 @@ export default function EquipmentProperties({
           </select>
         </label>
         <dl className={styles.metadata}>
-          <div><dt>Category</dt><dd>{template.category}</dd></div>
-          <div><dt>Instance ID</dt><dd title={equipment.id}>{equipment.id.slice(-12)}</dd></div>
+          <div><dt>카테고리</dt><dd>{template.category}</dd></div>
+          <div><dt>인스턴스 ID</dt><dd title={equipment.id}>{equipment.id.slice(-12)}</dd></div>
         </dl>
       </PropertySection>
 
@@ -100,7 +101,7 @@ export default function EquipmentProperties({
         )}
         {template.parameterDefinitions.length > 0 ? (
           <div className={styles.fieldGroup}>
-            <h3>PARAMETERS</h3>
+            <h3>파라미터</h3>
             {template.parameterDefinitions.map((definition) => {
               const scale = definition.displayScale ?? 1;
               return (
@@ -118,7 +119,7 @@ export default function EquipmentProperties({
           </div>
         ) : (
           <div className={styles.fieldGroup}>
-            <h3>DIMENSIONS</h3>
+            <h3>크기</h3>
             {Object.entries(equipment.dimensions).map(([axis, value]) => (
               <NumericField
                 key={axis}
@@ -133,20 +134,20 @@ export default function EquipmentProperties({
           </div>
         )}
         <div className={styles.fieldGroup}>
-          <h3>POSITION</h3>
+          <h3>위치</h3>
           <NumericField label="X" value={equipment.position.x} step={0.1} unit="m" onChange={(x) => onChange({ position: { x } })} />
           <NumericField label="Y" value={equipment.position.y} step={0.1} unit="m" onChange={(y) => onChange({ position: { y } })} />
           <NumericField label="Z" value={equipment.position.z} step={0.1} unit="m" onChange={(z) => onChange({ position: { z } })} />
         </div>
         <div className={styles.fieldGroup}>
-          <h3>ROTATION</h3>
+          <h3>회전</h3>
           <NumericField label="Y" value={radiansToDegrees(equipment.rotation.y)} step={1} unit="deg" onChange={(rotationY) => onChange({ rotation: { y: degreesToRadians(rotationY) } })} />
         </div>
       </PropertySection>
 
       <PropertySection title="Appearance" summary={`${Math.round(equipment.appearance.opacity * 100)}%`} defaultOpen>
         <label className={styles.colorField}>
-          <span>Color</span>
+          <span>색상</span>
           <span className={styles.colorInputs}>
             <input type="color" value={equipment.appearance.color} aria-label="설비 색상" onChange={(event) => onChange({ appearance: { color: event.target.value } })} />
             <input type="text" value={equipment.appearance.color.toUpperCase()} aria-label="설비 색상 HEX" onChange={(event) => /^#[0-9a-f]{6}$/i.test(event.target.value) && onChange({ appearance: { color: event.target.value } })} />
@@ -158,7 +159,7 @@ export default function EquipmentProperties({
           ))}
         </div>
         <label className={styles.rangeField}>
-          <span><span>Opacity</span><output>{Math.round(equipment.appearance.opacity * 100)}%</output></span>
+          <span><span>불투명도</span><output>{Math.round(equipment.appearance.opacity * 100)}%</output></span>
           <input type="range" min="0.05" max="1" step="0.05" value={equipment.appearance.opacity} onChange={(event) => onChange({ appearance: { opacity: Number(event.target.value) } })} />
         </label>
         <label className={styles.checkField}>
@@ -167,16 +168,25 @@ export default function EquipmentProperties({
         </label>
       </PropertySection>
 
+      <PropertySection title="Parts" summary={`${equipment.parts?.length ?? 0} Parts`} defaultOpen>
+        <div className={styles.partSummary}>
+          <div><span>설비</span><strong>{equipment.name}</strong></div>
+          <div><span>파트 노드</span><strong>{equipment.parts?.length ?? 0}</strong></div>
+        </div>
+        <p className={styles.description}>파트 메시는 공간 장면에 상시 렌더링하지 않고 상세 편집 화면에서만 불러옵니다.</p>
+        <button type="button" className={styles.partEditorButton} onClick={onOpenPartEditor}>파트 편집기 열기</button>
+      </PropertySection>
+
       <PropertySection title="3D Scan" summary={detailAsset ? STATUS_LABELS[detailAsset.status] : "미등록"}>
         {!detailAsset ? (
-          <p className={styles.description}>설비 인스턴스에 정밀 스캔 모델을 연결합니다. 기본 Scene에는 불러오지 않습니다.</p>
+          <p className={styles.description}>설비 인스턴스에 정밀 스캔 모델을 연결합니다. 기본 장면에는 불러오지 않습니다.</p>
         ) : (
           <div className={styles.assetCard}>
             <div><strong>{detailAsset.originalFileName}</strong><span>{detailAsset.originalFormat} · {formatFileSize(detailAsset.fileSize)}</span></div>
             <span className={`${styles.assetStatus} ${styles[detailAsset.status.toLowerCase()]}`}>{STATUS_LABELS[detailAsset.status]}</span>
             {detailAsset.status === "UPLOADING" && <progress max="100" value={detailAsset.uploadProgress}>{detailAsset.uploadProgress}%</progress>}
             {detailAsset.status === "PROCESSING" && (
-              <p className={styles.processingSteps}>Mesh Optimization · Generating Preview</p>
+              <p className={styles.processingSteps}>메시 최적화 · 미리보기 생성</p>
             )}
           </div>
         )}
@@ -189,7 +199,7 @@ export default function EquipmentProperties({
                 : "3D 스캔 등록"}
             <input type="file" accept=".glb,.gltf,.obj,.ply" onChange={handleFileChange} />
           </label>
-          {detailAsset?.status === "READY" && <button type="button" onClick={onPreview}>Detail View</button>}
+          {detailAsset?.status === "READY" && <button type="button" onClick={onPreview}>상세 보기</button>}
           {detailAsset && <button type="button" className={styles.dangerButton} onClick={onRemoveAsset}>삭제</button>}
         </div>
         {uploadMessage && <p className={styles.uploadMessage} role="status">{uploadMessage}</p>}
@@ -199,15 +209,15 @@ export default function EquipmentProperties({
       <PropertySection title="Advanced" summary={equipment.locked ? "Locked" : "Calibration"}>
         <label className={styles.checkField}>
           <input type="checkbox" checked={equipment.visible} onChange={(event) => onChange({ visible: event.target.checked })} />
-          <span>Scene에 표시</span>
+          <span>장면에 표시</span>
         </label>
         <label className={styles.checkField}>
           <input type="checkbox" checked={equipment.locked} onChange={(event) => onChange({ locked: event.target.checked })} />
-          <span>Transform 잠금</span>
+          <span>변형 잠금</span>
         </label>
         {calibration ? (
           <div className={styles.fieldGroup}>
-            <h3>DETAIL MODEL CALIBRATION</h3>
+            <h3>상세 모델 보정</h3>
             <NumericField label="Scale" value={calibration.scale} min={0.001} step={0.01} unit="×" onChange={(scale) => onUpdateAsset({ calibration: { scale } })} />
             {["X", "Y", "Z"].map((axis) => (
               <NumericField key={`position${axis}`} label={`Position ${axis}`} value={calibration[`position${axis}`]} step={0.01} unit="m" onChange={(value) => onUpdateAsset({ calibration: { [`position${axis}`]: value } })} />

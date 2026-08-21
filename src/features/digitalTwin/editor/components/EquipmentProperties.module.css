@@ -30,6 +30,11 @@
 .checkField { display: flex; min-height: 44px; align-items: center; gap: 10px; color: var(--color-text); font-size: 14px; }
 .checkField input { width: 20px; height: 20px; accent-color: var(--color-accent); }
 .description, .fileHelp, .uploadMessage { margin: 0; color: var(--color-text-muted); font-size: 13px; line-height: 1.55; }
+.partSummary { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; padding: 10px; border: 1px solid var(--color-border); border-radius: var(--radius-small); background: var(--color-input); }
+.partSummary div { display: grid; gap: 3px; }
+.partSummary span { color: var(--color-text-subtle); font-size: 11px; }
+.partSummary strong { overflow: hidden; color: var(--color-heading); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.partEditorButton { min-height: 44px; border: 1px solid rgb(var(--color-accent-rgb) / 55%); border-radius: var(--radius-small); color: var(--color-accent-strong); background: rgb(var(--color-accent-rgb) / 9%); font-size: 14px; }
 .fileHelp { color: var(--color-text-subtle); font-size: 12px; }
 .uploadMessage { color: var(--color-accent); }
 .assetCard { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; padding: 11px; border: 1px solid var(--color-border); border-radius: var(--radius-small); background: var(--color-input); }

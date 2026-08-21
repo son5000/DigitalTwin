@@ -43,14 +43,14 @@ export default function WorldStructureLibrary({
     <section className={styles.panel}>
       <div className={styles.heading}>
         <div>
-          <span>WORLD EDIT TOOLS</span>
+          <span>월드 편집 도구</span>
           <h2>공간 구조물</h2>
         </div>
-        <span className={styles.worldBadge}>WORLD</span>
+        <span className={styles.worldBadge}>월드</span>
       </div>
 
       <label className={styles.groupSelect}>
-        <span>Tool Group</span>
+        <span>도구 그룹</span>
         <select value={activeGroup} onChange={(event) => setActiveGroup(event.target.value)}>
           {WORLD_STRUCTURE_GROUPS.map((group) => (
             <option key={group.id} value={group.id}>{group.nameKo} · {group.name}</option>
@@ -78,7 +78,7 @@ export default function WorldStructureLibrary({
       <p className={styles.help}>도구를 선택한 뒤 장면의 기준 위치를 클릭하고 X / Y / Z로 배치합니다.</p>
 
       <details className={styles.filterSection}>
-        <summary>Visibility Filter <span>{Object.values(visibilityFilters).filter(Boolean).length}</span></summary>
+        <summary>표시 필터 <span>{Object.values(visibilityFilters).filter(Boolean).length}</span></summary>
         <div className={styles.filters}>
           {Object.entries(FILTER_LABELS).map(([filterId, label]) => (
             <label key={filterId}>
@@ -100,9 +100,9 @@ export default function WorldStructureLibrary({
 
       <div className={styles.tree}>
         <section>
-          <h3><span>WORLD STRUCTURE</span><strong>{structures.length}</strong></h3>
+          <h3><span>월드 구조물</span><strong>{structures.length}</strong></h3>
           <button type="button" className={styles.baseNode} onClick={() => onSelectStructure(null)}>
-            <span>▾ Machine Room A</span><small>Base World</small>
+            <span>▾ 기계실 A</span><small>기본 월드</small>
           </button>
           {structures.map((structure) => (
             <button
@@ -117,12 +117,12 @@ export default function WorldStructureLibrary({
           ))}
         </section>
         <section>
-          <h3><span>EQUIPMENT</span><strong>{equipment.length}</strong></h3>
+          <h3><span>설비</span><strong>{equipment.length}</strong></h3>
           {equipment.length === 0 ? (
-            <p>배치된 Equipment가 없습니다.</p>
+            <p>배치된 설비가 없습니다.</p>
           ) : equipment.map((item) => (
             <button key={item.id} type="button" title="Equipment Edit Mode에서 선택 가능" onClick={() => onSelectEquipment(item.id)}>
-              <span>◇ {item.name}</span><small>EQUIPMENT</small>
+              <span>◇ {item.name}</span><small>설비</small>
             </button>
           ))}
         </section>

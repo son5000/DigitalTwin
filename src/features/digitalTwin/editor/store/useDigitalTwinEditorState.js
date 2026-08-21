@@ -7,6 +7,26 @@ import {
   VIEW_MODES,
 } from "@/features/digitalTwin/editor/constants/equipmentShapeTemplates";
 import {
+  createEquipmentPart,
+  normalizeEquipmentPart,
+} from "@/features/digitalTwin/editor/constants/partTemplates";
+import {
+  createDefaultGridSettings,
+  createGridRegion,
+  normalizeGridCellSize,
+  normalizeGridRegion,
+  normalizeGridSettings,
+  snapHorizontalPosition,
+} from "@/features/digitalTwin/editor/constants/gridSettings";
+import {
+  createSiteObjectFromArea,
+  normalizeSiteObject,
+} from "@/features/digitalTwin/editor/constants/siteEnvironmentTemplates";
+import {
+  createInitialNavigationContext,
+  EDITOR_DEPTHS,
+} from "@/features/digitalTwin/editor/constants/editorNavigation";
+import {
   clampDimension,
   clampPositionToWorld,
   findCollidingEquipmentIds,
@@ -21,11 +41,24 @@ import {
   getDimensionsFromParameters,
   normalizeEquipmentInstance,
 } from "@/features/digitalTwin/editor/utils/templateParameters";
-import useWorldStructureState from "@/features/digitalTwin/editor/store/useWorldStructureState";
+import {
+  createDefaultHierarchy,
+  createHierarchyNode,
+  getHierarchyDescendantIds,
+  getHierarchyPath,
+  HIERARCHY_CHILD_TYPES,
+  HIERARCHY_NODE_TYPES,
+  normalizeHierarchy,
+} from "@/features/digitalTwin/editor/model/digitalTwinHierarchy";
+import useWorldStructureState, {
+  createDefaultWorldWalls,
+} from "@/features/digitalTwin/editor/store/useWorldStructureState";
 
 const FAVORITES_KEY = "digital-twin-editor-favorites";
 const RECENT_KEY = "digital-twin-editor-recent-templates";
 const SUPPORTED_SCAN_FORMATS = new Set(["glb", "gltf", "obj", "ply"]);
+const HISTORY_LIMIT = 60;
+const HISTORY_COMMIT_DELAY = 240;
 
 function createId(prefix) {
   return `${prefix}_${crypto.randomUUID()}`;
@@ -94,7 +127,94 @@ function sanitizeHydratedAsset(asset) {
   };
 }
 
+function createDefaultRoomScene() {
+  return {
+    version: 4,
+    world: { ...DEFAULT_WORLD },
+    equipment: [],
+    detailAssets: [],
+    pipeConnections: [],
+    worldStructures: createDefaultWorldWalls(DEFAULT_WORLD),
+    worldStructuresLocked: false,
+    visibilityFilters: {},
+  };
+}
+
+function cloneHistoryValue(value) {
+  return structuredClone(value);
+}
+
+function createHistorySnapshot(layoutDocument) {
+  const roomScenes = Object.fromEntries(
+    Object.entries(layoutDocument.roomScenes ?? {})
+      .sort(([leftId], [rightId]) => leftId.localeCompare(rightId))
+      .map(([roomId, scene]) => [roomId, scene]),
+  );
+  return cloneHistoryValue({
+    hierarchy: {
+      rootId: layoutDocument.hierarchy.rootId,
+      nodes: layoutDocument.hierarchy.nodes,
+    },
+    gridSettings: layoutDocument.gridSettings,
+    siteObjects: layoutDocument.siteObjects,
+    roomScenes,
+  });
+}
+
+function getHistorySignature(snapshot) {
+  return JSON.stringify(snapshot);
+}
+
+function mergeBuildingDefinition(building, changes) {
+  const parameters = changes.parameters
+    ? Object.fromEntries(Object.entries({ ...building.parameters, ...changes.parameters }).map(([key, value]) => {
+        if (typeof value !== "number") return [key, value];
+        if (key === "floorCount") return [key, Math.min(100, Math.max(1, Math.round(value)))];
+        if (key === "floorHeight") return [key, Math.max(2, value)];
+        if (key === "width" || key === "depth") return [key, Math.max(5, value)];
+        return [key, value];
+      }))
+    : building.parameters;
+
+  return {
+    ...building,
+    ...changes,
+    parameters,
+    position: changes.position ? { ...building.position, ...changes.position } : building.position,
+    rotation: changes.rotation ? { ...building.rotation, ...changes.rotation } : building.rotation,
+    appearance: changes.appearance ? { ...building.appearance, ...changes.appearance } : building.appearance,
+  };
+}
+
+function createBuildingFloors(building, existingFloors = []) {
+  const floorCount = Math.min(100, Math.max(1, Math.round(building.parameters.floorCount ?? 1)));
+  const floorHeight = Math.max(2, building.parameters.floorHeight ?? 4);
+  return Array.from({ length: floorCount }, (_, index) => {
+    const existing = existingFloors[index];
+    return createHierarchyNode(HIERARCHY_NODE_TYPES.FLOOR, building.id, index, {
+      ...existing,
+      parentId: building.id,
+      level: index + 1,
+      elevation: index * floorHeight,
+      name: existing?.name ?? `${index + 1}층`,
+    });
+  });
+}
+
+function findHierarchyAncestor(nodes, nodeId, type) {
+  let node = nodes.find((item) => item.id === nodeId) ?? null;
+  while (node) {
+    if (node.type === type) return node;
+    node = nodes.find((item) => item.id === node.parentId) ?? null;
+  }
+  return null;
+}
+
 export default function useDigitalTwinEditorState() {
+  const [hierarchy, setHierarchy] = useState(createDefaultHierarchy);
+  const [roomScenes, setRoomScenes] = useState({});
+  const [siteObjects, setSiteObjects] = useState([]);
+  const [selectedSiteObjectId, setSelectedSiteObjectId] = useState(null);
   const [world, setWorld] = useState(DEFAULT_WORLD);
   const [equipmentInstances, setEquipmentInstances] = useState([]);
   const [detailAssets, setDetailAssets] = useState([]);
@@ -105,9 +225,21 @@ export default function useDigitalTwinEditorState() {
   const [activeTemplateId, setActiveTemplateId] = useState(null);
   const [viewMode, setViewMode] = useState(VIEW_MODES.VIEW_3D);
   const [transformMode, setTransformMode] = useState(TRANSFORM_MODES.TRANSLATE);
-  const [snapSize, setSnapSize] = useState(0.1);
+  const [gridSettings, setGridSettings] = useState(createDefaultGridSettings);
+  const [navigationContext, setNavigationContext] = useState(createInitialNavigationContext);
+  const [historyAvailability, setHistoryAvailability] = useState({ canUndo: false, canRedo: false });
+  const snapSize = gridSettings.baseSize;
   const scanTimersRef = useRef(new Map());
-  const structureEditor = useWorldStructureState({ snapSize });
+  const historyPastRef = useRef([]);
+  const historyFutureRef = useRef([]);
+  const historyCurrentRef = useRef(null);
+  const historyPendingRef = useRef(null);
+  const historyTimerRef = useRef(null);
+  const restoringHistoryRef = useRef(false);
+  const structureEditor = useWorldStructureState({
+    gridSettings,
+    gridScopeId: hierarchy.activeRoomId,
+  });
   const {
     setEditorMode: setStructureEditorMode,
     selectWorldTemplate,
@@ -125,6 +257,7 @@ export default function useDigitalTwinEditorState() {
   useEffect(
     () => () => {
       scanTimersRef.current.forEach((timerIds) => timerIds.forEach(clearTimeout));
+      if (historyTimerRef.current) clearTimeout(historyTimerRef.current);
     },
     [],
   );
@@ -141,6 +274,10 @@ export default function useDigitalTwinEditorState() {
     () => equipmentInstances.find((equipment) => equipment.id === selectedEquipmentId) ?? null,
     [equipmentInstances, selectedEquipmentId],
   );
+  const selectedSiteObject = useMemo(
+    () => siteObjects.find((object) => object.id === selectedSiteObjectId) ?? null,
+    [selectedSiteObjectId, siteObjects],
+  );
   const selectedDetailAsset = useMemo(
     () => detailAssets.find((asset) => asset.id === selectedEquipment?.detailAssetId) ?? null,
     [detailAssets, selectedEquipment?.detailAssetId],
@@ -155,6 +292,85 @@ export default function useDigitalTwinEditorState() {
       : null,
     [equipmentInstances, pipeConnections, selectedEquipment],
   );
+  const activeRoom = useMemo(
+    () => hierarchy.nodes.find((node) => node.id === hierarchy.activeRoomId) ?? null,
+    [hierarchy.activeRoomId, hierarchy.nodes],
+  );
+  const hierarchyPath = useMemo(
+    () => getHierarchyPath(hierarchy.nodes, hierarchy.activeRoomId),
+    [hierarchy.activeRoomId, hierarchy.nodes],
+  );
+  const rooms = useMemo(
+    () => hierarchy.nodes.filter((node) => node.type === HIERARCHY_NODE_TYPES.ROOM),
+    [hierarchy.nodes],
+  );
+  const selectedHierarchyNode = useMemo(
+    () => hierarchy.nodes.find((node) => node.id === hierarchy.selectedNodeId) ?? activeRoom,
+    [activeRoom, hierarchy.nodes, hierarchy.selectedNodeId],
+  );
+  const selectedHierarchyPath = useMemo(
+    () => getHierarchyPath(hierarchy.nodes, selectedHierarchyNode?.id),
+    [hierarchy.nodes, selectedHierarchyNode?.id],
+  );
+  const navigationNodeId = navigationContext.currentRoomId
+    ?? navigationContext.currentFloorId
+    ?? navigationContext.currentBuildingId
+    ?? hierarchy.rootId;
+  const hierarchyNavigationPath = useMemo(
+    () => getHierarchyPath(hierarchy.nodes, navigationNodeId),
+    [hierarchy.nodes, navigationNodeId],
+  );
+  const navigationPath = useMemo(
+    () => navigationContext.currentDepth === EDITOR_DEPTHS.EQUIPMENT && selectedEquipment
+      ? [
+          ...hierarchyNavigationPath,
+          { id: selectedEquipment.id, name: selectedEquipment.name, type: EDITOR_DEPTHS.EQUIPMENT },
+        ]
+      : hierarchyNavigationPath,
+    [hierarchyNavigationPath, navigationContext.currentDepth, selectedEquipment],
+  );
+  const currentBuilding = useMemo(
+    () => hierarchy.nodes.find((node) => node.id === navigationContext.currentBuildingId) ?? null,
+    [hierarchy.nodes, navigationContext.currentBuildingId],
+  );
+  const currentFloor = useMemo(
+    () => hierarchy.nodes.find((node) => node.id === navigationContext.currentFloorId) ?? null,
+    [hierarchy.nodes, navigationContext.currentFloorId],
+  );
+  const selectedBuilding = useMemo(
+    () => selectedHierarchyPath.find((node) => node.type === HIERARCHY_NODE_TYPES.BUILDING) ?? null,
+    [selectedHierarchyPath],
+  );
+  const buildings = useMemo(
+    () => hierarchy.nodes.filter((node) => node.type === HIERARCHY_NODE_TYPES.BUILDING),
+    [hierarchy.nodes],
+  );
+  const floors = useMemo(
+    () => hierarchy.nodes.filter((node) => node.type === HIERARCHY_NODE_TYPES.FLOOR),
+    [hierarchy.nodes],
+  );
+  const protectedHierarchyNodeIds = useMemo(
+    () => new Set(hierarchyNavigationPath.map((node) => node.id)),
+    [hierarchyNavigationPath],
+  );
+  const currentRoomScene = useMemo(() => ({
+    version: 4,
+    world,
+    equipment: equipmentInstances,
+    detailAssets,
+    pipeConnections,
+    worldStructures: structureEditor.worldStructures,
+    worldStructuresLocked: structureEditor.worldStructuresLocked,
+    visibilityFilters: structureEditor.visibilityFilters,
+  }), [
+    detailAssets,
+    equipmentInstances,
+    pipeConnections,
+    structureEditor.visibilityFilters,
+    structureEditor.worldStructures,
+    structureEditor.worldStructuresLocked,
+    world,
+  ]);
 
   const rememberTemplate = useCallback((templateId) => {
     setRecentTemplateIds((currentIds) =>
@@ -174,11 +390,11 @@ export default function useDigitalTwinEditorState() {
         ).length;
         const sequence = String(categoryCount + 1).padStart(2, "0");
         const defaults = createTemplateInstanceDefaults(template);
-        const snappedPosition = {
-          x: snapValue(floorPosition.x, snapSize),
+        const { position: snappedPosition } = snapHorizontalPosition({
+          x: floorPosition.x,
           y: 0,
-          z: snapValue(floorPosition.z, snapSize),
-        };
+          z: floorPosition.z,
+        }, gridSettings, hierarchy.activeRoomId);
 
         return [
           ...currentEquipment,
@@ -200,7 +416,7 @@ export default function useDigitalTwinEditorState() {
       setSelectedEquipmentId(id);
       setActiveTemplateId(null);
     },
-    [rememberTemplate, snapSize, world],
+    [gridSettings, hierarchy.activeRoomId, rememberTemplate, world],
   );
 
   const updateEquipment = useCallback((equipmentId, changes) => {
@@ -224,6 +440,60 @@ export default function useDigitalTwinEditorState() {
         ),
       );
     }
+  }, []);
+
+  const addEquipmentPart = useCallback((equipmentId, shape = "BOX") => {
+    const equipment = equipmentInstances.find((item) => item.id === equipmentId);
+    if (!equipment) return null;
+    const part = createEquipmentPart((equipment.parts?.length ?? 0) + 1, shape);
+    setEquipmentInstances((items) => items.map((item) => item.id === equipmentId
+      ? { ...item, parts: [...(item.parts ?? []), part] }
+      : item));
+    return part.id;
+  }, [equipmentInstances]);
+
+  const updateEquipmentPart = useCallback((equipmentId, partId, changes) => {
+    setEquipmentInstances((items) => items.map((equipment) => equipment.id === equipmentId
+      ? {
+          ...equipment,
+          parts: (equipment.parts ?? []).map((part) => part.id === partId
+            ? normalizeEquipmentPart({
+                ...part,
+                ...changes,
+                dimensions: changes.dimensions
+                  ? Object.fromEntries(Object.entries({ ...part.dimensions, ...changes.dimensions }).map(([axis, value]) => [axis, Math.max(0.02, value)]))
+                  : part.dimensions,
+                position: changes.position ? { ...part.position, ...changes.position } : part.position,
+                rotation: changes.rotation ? { ...part.rotation, ...changes.rotation } : part.rotation,
+                appearance: changes.appearance ? { ...part.appearance, ...changes.appearance } : part.appearance,
+              })
+            : part),
+        }
+      : equipment));
+  }, []);
+
+  const duplicateEquipmentPart = useCallback((equipmentId, partId) => {
+    let duplicateId = null;
+    setEquipmentInstances((items) => items.map((equipment) => {
+      if (equipment.id !== equipmentId) return equipment;
+      const source = equipment.parts?.find((part) => part.id === partId);
+      if (!source) return equipment;
+      const duplicate = normalizeEquipmentPart({
+        ...source,
+        id: undefined,
+        name: `${source.name} Copy`,
+        position: { ...source.position, x: source.position.x + 0.1 },
+      }, equipment.parts.length);
+      duplicateId = duplicate.id;
+      return { ...equipment, parts: [...equipment.parts, duplicate] };
+    }));
+    return duplicateId;
+  }, []);
+
+  const removeEquipmentPart = useCallback((equipmentId, partId) => {
+    setEquipmentInstances((items) => items.map((equipment) => equipment.id === equipmentId
+      ? { ...equipment, parts: (equipment.parts ?? []).filter((part) => part.id !== partId) }
+      : equipment));
   }, []);
 
   const commitPipeSnap = useCallback(
@@ -292,6 +562,14 @@ export default function useDigitalTwinEditorState() {
         position: duplicatedPosition,
         rotation: { ...selectedEquipment.rotation },
         appearance: { ...selectedEquipment.appearance },
+        parts: (selectedEquipment.parts ?? []).map((part, index) => normalizeEquipmentPart({
+          ...part,
+          id: undefined,
+          position: { ...part.position },
+          rotation: { ...part.rotation },
+          dimensions: { ...part.dimensions },
+          appearance: { ...part.appearance },
+        }, index)),
         detailAssetId: null,
       },
     ]);
@@ -387,11 +665,101 @@ export default function useDigitalTwinEditorState() {
     );
   }, []);
 
+  const setGridSnapEnabled = useCallback((enabled) => {
+    setGridSettings((current) => ({ ...current, enabled: Boolean(enabled) }));
+  }, []);
+
+  const setSnapSize = useCallback((baseSize) => {
+    setGridSettings((current) => ({
+      ...current,
+      baseSize: normalizeGridCellSize(baseSize, current.baseSize),
+    }));
+  }, []);
+
+  const addGridRegion = useCallback((scopeId) => {
+    if (!scopeId) return null;
+    const regionId = `GRID_REGION_${crypto.randomUUID()}`;
+    setGridSettings((current) => {
+      const scopeRegionCount = current.regions.filter((region) => region.scopeId === scopeId).length;
+      const region = createGridRegion(scopeId, scopeRegionCount, current.baseSize);
+      return { ...current, regions: [...current.regions, { ...region, id: regionId }] };
+    });
+    return regionId;
+  }, []);
+
+  const updateGridRegion = useCallback((regionId, changes) => {
+    setGridSettings((current) => ({
+      ...current,
+      regions: current.regions.map((region, index) => {
+        if (region.id !== regionId) return region;
+        return normalizeGridRegion({
+          ...region,
+          ...changes,
+          center: changes.center ? { ...region.center, ...changes.center } : region.center,
+          size: changes.size ? { ...region.size, ...changes.size } : region.size,
+        }, index);
+      }).filter(Boolean),
+    }));
+  }, []);
+
+  const removeGridRegion = useCallback((regionId) => {
+    setGridSettings((current) => ({
+      ...current,
+      regions: current.regions.filter((region) => region.id !== regionId),
+    }));
+  }, []);
+
+  const applyRoomScene = useCallback((scene, { sanitizeAssets = false } = {}) => {
+    if (!scene?.world || !Array.isArray(scene.equipment)) return false;
+
+    const equipment = scene.equipment
+      .map((item) => {
+        const template = EQUIPMENT_SHAPE_TEMPLATE_MAP[item.shapeTemplateId];
+        return template ? normalizeEquipmentInstance(item, template) : null;
+      })
+      .filter(Boolean);
+    setWorld({ ...DEFAULT_WORLD, ...scene.world });
+    setEquipmentInstances(equipment);
+    setDetailAssets(
+      Array.isArray(scene.detailAssets)
+        ? scene.detailAssets.map((asset) => sanitizeAssets ? sanitizeHydratedAsset(asset) : asset)
+        : [],
+    );
+    setPipeConnections(Array.isArray(scene.pipeConnections) ? scene.pipeConnections : []);
+    hydrateWorldStructures(scene);
+    setSelectedEquipmentId(null);
+    setActiveTemplateId(null);
+    return true;
+  }, [hydrateWorldStructures]);
+
+  const updateHistoryAvailability = useCallback(() => {
+    setHistoryAvailability({
+      canUndo: historyPastRef.current.length > 0,
+      canRedo: historyFutureRef.current.length > 0,
+    });
+  }, []);
+
+  const clearHistory = useCallback(() => {
+    if (historyTimerRef.current) clearTimeout(historyTimerRef.current);
+    historyTimerRef.current = null;
+    historyPendingRef.current = null;
+    historyPastRef.current = [];
+    historyFutureRef.current = [];
+    historyCurrentRef.current = null;
+    restoringHistoryRef.current = false;
+    setHistoryAvailability({ canUndo: false, canRedo: false });
+  }, []);
+
   const resetLayout = useCallback(() => {
+    clearHistory();
     setDetailAssets((assets) => {
       assets.forEach((asset) => asset.objectUrl && URL.revokeObjectURL(asset.objectUrl));
       return [];
     });
+    setHierarchy(createDefaultHierarchy());
+    setRoomScenes({});
+    setSiteObjects([]);
+    setSelectedSiteObjectId(null);
     setWorld(DEFAULT_WORLD);
     setEquipmentInstances([]);
     setPipeConnections([]);
@@ -399,29 +767,501 @@ export default function useDigitalTwinEditorState() {
     setActiveTemplateId(null);
     setViewMode(VIEW_MODES.VIEW_3D);
     setTransformMode(TRANSFORM_MODES.TRANSLATE);
+    setGridSettings(createDefaultGridSettings());
+    setNavigationContext(createInitialNavigationContext());
     resetWorldStructures();
-  }, [resetWorldStructures]);
+  }, [clearHistory, resetWorldStructures]);
 
   const hydrateLayout = useCallback((layout) => {
-    if (!layout?.world || !Array.isArray(layout.equipment)) return false;
+    const nextHierarchy = normalizeHierarchy(layout?.hierarchy);
+    const isHierarchyLayout = Number(layout?.version ?? 0) >= 5 && layout?.roomScenes;
+    const activeRoomId = nextHierarchy.activeRoomId;
+    const nextRoomScenes = isHierarchyLayout
+      ? layout.roomScenes
+      : activeRoomId
+        ? { [activeRoomId]: layout }
+        : {};
+    const activeScene = activeRoomId ? nextRoomScenes[activeRoomId] : null;
 
-    const equipment = layout.equipment
-      .map((item) => {
-        const template = EQUIPMENT_SHAPE_TEMPLATE_MAP[item.shapeTemplateId];
-        return template ? normalizeEquipmentInstance(item, template) : null;
-      })
-      .filter(Boolean);
-    setWorld({ ...DEFAULT_WORLD, ...layout.world });
-    setEquipmentInstances(equipment);
-    setDetailAssets(
-      Array.isArray(layout.detailAssets) ? layout.detailAssets.map(sanitizeHydratedAsset) : [],
+    if (activeRoomId && (!activeScene || !applyRoomScene(activeScene, { sanitizeAssets: true }))) {
+      return false;
+    }
+    if (!activeRoomId) applyRoomScene(createDefaultRoomScene());
+
+    clearHistory();
+    setHierarchy(nextHierarchy);
+    setRoomScenes(nextRoomScenes);
+    setSiteObjects(
+      (Array.isArray(layout?.siteObjects) ? layout.siteObjects : [])
+        .map(normalizeSiteObject)
+        .filter(Boolean),
     );
-    setPipeConnections(Array.isArray(layout.pipeConnections) ? layout.pipeConnections : []);
-    hydrateWorldStructures(layout);
-    setSelectedEquipmentId(null);
-    setActiveTemplateId(null);
+    setSelectedSiteObjectId(null);
+    setGridSettings(normalizeGridSettings(layout.gridSettings));
+    setNavigationContext(createInitialNavigationContext());
     return true;
-  }, [hydrateWorldStructures]);
+  }, [applyRoomScene, clearHistory]);
+
+  const selectRoom = useCallback((roomId) => {
+    const targetRoom = hierarchy.nodes.find(
+      (node) => node.id === roomId && node.type === HIERARCHY_NODE_TYPES.ROOM,
+    );
+    if (!targetRoom) return;
+    if (roomId === hierarchy.activeRoomId) {
+      setHierarchy((current) => ({ ...current, selectedNodeId: roomId }));
+      return;
+    }
+
+    const targetScene = roomScenes[roomId] ?? createDefaultRoomScene();
+    setRoomScenes((scenes) => ({
+      ...scenes,
+      ...(hierarchy.activeRoomId ? { [hierarchy.activeRoomId]: currentRoomScene } : {}),
+    }));
+    setHierarchy((current) => ({ ...current, activeRoomId: roomId, selectedNodeId: roomId }));
+    setSelectedSiteObjectId(null);
+    applyRoomScene(targetScene);
+  }, [applyRoomScene, currentRoomScene, hierarchy.activeRoomId, hierarchy.nodes, roomScenes]);
+
+  const selectHierarchyNode = useCallback((nodeId) => {
+    const node = hierarchy.nodes.find((item) => item.id === nodeId);
+    if (!node) return;
+    setSelectedSiteObjectId(null);
+    setHierarchy((current) => ({ ...current, selectedNodeId: nodeId }));
+  }, [hierarchy.nodes]);
+
+  const addRoomToFloor = useCallback((floorId, { enter = false } = {}) => {
+    const floor = hierarchy.nodes.find(
+      (node) => node.id === floorId && node.type === HIERARCHY_NODE_TYPES.FLOOR,
+    );
+    if (!floor) return null;
+    const siblingCount = hierarchy.nodes.filter(
+      (node) => node.parentId === floorId && node.type === HIERARCHY_NODE_TYPES.ROOM,
+    ).length;
+    const room = createHierarchyNode(HIERARCHY_NODE_TYPES.ROOM, floorId, siblingCount);
+    const emptyScene = createDefaultRoomScene();
+    setRoomScenes((scenes) => ({
+      ...scenes,
+      ...(enter && hierarchy.activeRoomId ? { [hierarchy.activeRoomId]: currentRoomScene } : {}),
+      [room.id]: emptyScene,
+    }));
+    setHierarchy((current) => ({
+      ...current,
+      activeRoomId: enter ? room.id : current.activeRoomId,
+      selectedNodeId: enter ? room.id : floorId,
+      nodes: [...current.nodes, room],
+    }));
+    if (enter) applyRoomScene(emptyScene);
+    return room.id;
+  }, [applyRoomScene, currentRoomScene, hierarchy.activeRoomId, hierarchy.nodes]);
+
+  const addHierarchyChild = useCallback((parentId) => {
+    const parent = hierarchy.nodes.find((node) => node.id === parentId);
+    const childType = parent ? HIERARCHY_CHILD_TYPES[parent.type] : null;
+    if (!childType) return;
+
+    const siblingCount = hierarchy.nodes.filter(
+      (node) => node.parentId === parentId && node.type === childType,
+    ).length;
+    const child = createHierarchyNode(childType, parentId, siblingCount);
+    if (childType === HIERARCHY_NODE_TYPES.BUILDING) {
+      child.position = {
+        ...child.position,
+        x: (siblingCount % 3) * 52,
+        z: Math.floor(siblingCount / 3) * 38,
+      };
+    }
+
+    if (childType === HIERARCHY_NODE_TYPES.BUILDING) {
+      const buildingFloors = createBuildingFloors(child);
+      setHierarchy((current) => ({
+        ...current,
+        selectedNodeId: child.id,
+        nodes: [...current.nodes, child, ...buildingFloors],
+      }));
+      setSelectedSiteObjectId(null);
+      return;
+    }
+
+    if (childType === HIERARCHY_NODE_TYPES.FLOOR) {
+      const floorHeight = Math.max(2, parent.parameters?.floorHeight ?? 4);
+      child.level = siblingCount + 1;
+      child.elevation = siblingCount * floorHeight;
+      setHierarchy((current) => ({
+        ...current,
+        selectedNodeId: child.id,
+        nodes: [
+          ...current.nodes.map((node) => node.id === parentId
+            ? {
+                ...node,
+                parameters: { ...node.parameters, floorCount: siblingCount + 1 },
+              }
+            : node),
+          child,
+        ],
+      }));
+      setSelectedSiteObjectId(null);
+      return;
+    }
+
+    if (childType === HIERARCHY_NODE_TYPES.ROOM) {
+      addRoomToFloor(parentId);
+      return;
+    }
+
+    setHierarchy((current) => ({
+      ...current,
+      selectedNodeId: child.id,
+      nodes: [...current.nodes, child],
+    }));
+  }, [addRoomToFloor, hierarchy.nodes]);
+
+  const addRoom = useCallback(() => {
+    const floorId = selectedHierarchyNode?.type === HIERARCHY_NODE_TYPES.FLOOR
+      ? selectedHierarchyNode.id
+      : activeRoom?.parentId;
+    if (floorId) addRoomToFloor(floorId, { enter: true });
+  }, [activeRoom?.parentId, addRoomToFloor, selectedHierarchyNode]);
+
+  const selectBuilding = useCallback((buildingId) => {
+    selectHierarchyNode(buildingId ?? hierarchy.rootId);
+  }, [hierarchy.rootId, selectHierarchyNode]);
+
+  const navigateToSite = useCallback(() => {
+    setHierarchy((current) => ({ ...current, selectedNodeId: current.rootId }));
+    setSelectedSiteObjectId(null);
+    setNavigationContext((current) => ({
+      ...createInitialNavigationContext(),
+      transitionDirection: "OUT",
+      transitionId: current.transitionId + 1,
+    }));
+  }, []);
+
+  const navigateToBuilding = useCallback((buildingId) => {
+    const building = hierarchy.nodes.find(
+      (node) => node.id === buildingId && node.type === HIERARCHY_NODE_TYPES.BUILDING,
+    );
+    if (!building) return;
+    const buildingFloors = hierarchy.nodes
+      .filter((node) => node.type === HIERARCHY_NODE_TYPES.FLOOR && node.parentId === buildingId)
+      .sort((left, right) => (left.level ?? 0) - (right.level ?? 0));
+    const currentFloorId = navigationContext.currentBuildingId === buildingId
+      && buildingFloors.some((floor) => floor.id === navigationContext.currentFloorId)
+      ? navigationContext.currentFloorId
+      : buildingFloors[0]?.id ?? null;
+
+    setHierarchy((current) => ({ ...current, selectedNodeId: buildingId }));
+    setSelectedSiteObjectId(null);
+    setNavigationContext((current) => ({
+      ...current,
+      currentDepth: EDITOR_DEPTHS.BUILDING,
+      currentBuildingId: buildingId,
+      currentFloorId,
+      currentRoomId: null,
+      currentEquipmentId: null,
+      isEditing: true,
+      transitionDirection: "IN",
+      transitionId: current.transitionId + 1,
+    }));
+  }, [hierarchy.nodes, navigationContext.currentBuildingId, navigationContext.currentFloorId]);
+
+  const selectFloorInBuilding = useCallback((floorId) => {
+    const floor = hierarchy.nodes.find(
+      (node) => node.id === floorId && node.type === HIERARCHY_NODE_TYPES.FLOOR,
+    );
+    if (!floor) return;
+    setHierarchy((current) => ({ ...current, selectedNodeId: floorId }));
+    setNavigationContext((current) => ({
+      ...current,
+      currentDepth: EDITOR_DEPTHS.BUILDING,
+      currentBuildingId: floor.parentId,
+      currentFloorId: floorId,
+      currentRoomId: null,
+      currentEquipmentId: null,
+      transitionDirection: "IN",
+      transitionId: current.transitionId + 1,
+    }));
+  }, [hierarchy.nodes]);
+
+  const navigateToFloor = useCallback((floorId) => {
+    const floor = hierarchy.nodes.find(
+      (node) => node.id === floorId && node.type === HIERARCHY_NODE_TYPES.FLOOR,
+    );
+    if (!floor) return;
+    setHierarchy((current) => ({ ...current, selectedNodeId: floorId }));
+    setSelectedSiteObjectId(null);
+    setNavigationContext((current) => ({
+      ...current,
+      currentDepth: EDITOR_DEPTHS.FLOOR,
+      currentBuildingId: floor.parentId,
+      currentFloorId: floorId,
+      currentRoomId: null,
+      currentEquipmentId: null,
+      transitionDirection: "IN",
+      transitionId: current.transitionId + 1,
+    }));
+  }, [hierarchy.nodes]);
+
+  const navigateToRoom = useCallback((roomId) => {
+    const room = hierarchy.nodes.find(
+      (node) => node.id === roomId && node.type === HIERARCHY_NODE_TYPES.ROOM,
+    );
+    if (!room) return;
+    const floor = findHierarchyAncestor(hierarchy.nodes, roomId, HIERARCHY_NODE_TYPES.FLOOR);
+    const building = findHierarchyAncestor(hierarchy.nodes, roomId, HIERARCHY_NODE_TYPES.BUILDING);
+    selectRoom(roomId);
+    setNavigationContext((current) => ({
+      ...current,
+      currentDepth: EDITOR_DEPTHS.ROOM,
+      currentBuildingId: building?.id ?? null,
+      currentFloorId: floor?.id ?? null,
+      currentRoomId: roomId,
+      currentEquipmentId: null,
+      transitionDirection: "IN",
+      transitionId: current.transitionId + 1,
+    }));
+  }, [hierarchy.nodes, selectRoom]);
+
+  const enterBuilding = navigateToBuilding;
+
+  const renameHierarchyNode = useCallback((nodeId, name) => {
+    const normalizedName = name.trim();
+    if (!normalizedName) return;
+    setHierarchy((current) => ({
+      ...current,
+      nodes: current.nodes.map((node) => node.id === nodeId ? { ...node, name: normalizedName } : node),
+    }));
+  }, []);
+
+  const updateHierarchyNode = useCallback((nodeId, changes) => {
+    setHierarchy((current) => ({
+      ...current,
+      nodes: current.nodes.map((node) => {
+        if (node.id !== nodeId) return node;
+
+        const parameters = changes.parameters
+          ? Object.fromEntries(Object.entries({ ...node.parameters, ...changes.parameters }).map(([key, value]) => {
+              if (typeof value !== "number") return [key, value];
+              if (key === "floorHeight") return [key, Math.max(2, value)];
+              if (key === "width" || key === "depth") return [key, Math.max(5, value)];
+              return [key, value];
+            }))
+          : node.parameters;
+
+        return {
+          ...node,
+          ...changes,
+          parameters,
+          position: changes.position ? { ...node.position, ...changes.position } : node.position,
+          rotation: changes.rotation ? { ...node.rotation, ...changes.rotation } : node.rotation,
+          appearance: changes.appearance ? { ...node.appearance, ...changes.appearance } : node.appearance,
+        };
+      }),
+    }));
+  }, []);
+
+  const addBuildingFromArea = useCallback((area) => {
+    const siblingCount = hierarchy.nodes.filter(
+      (node) => node.parentId === hierarchy.rootId && node.type === HIERARCHY_NODE_TYPES.BUILDING,
+    ).length;
+    const building = createHierarchyNode(HIERARCHY_NODE_TYPES.BUILDING, hierarchy.rootId, siblingCount, {
+      position: {
+        x: Number(area?.center?.x) || 0,
+        y: 0,
+        z: Number(area?.center?.z) || 0,
+      },
+      parameters: {
+        width: Math.max(5, Number(area?.width) || 5),
+        depth: Math.max(5, Number(area?.depth) || 5),
+        floorCount: 1,
+        floorHeight: 4,
+        roofType: "FLAT",
+      },
+    });
+    const buildingFloors = createBuildingFloors(building);
+    setHierarchy((current) => ({
+      ...current,
+      selectedNodeId: building.id,
+      nodes: [...current.nodes, building, ...buildingFloors],
+    }));
+    setSelectedSiteObjectId(null);
+    return building.id;
+  }, [hierarchy.nodes, hierarchy.rootId]);
+
+  const updateBuilding = useCallback((buildingId, changes) => {
+    const building = hierarchy.nodes.find(
+      (node) => node.id === buildingId && node.type === HIERARCHY_NODE_TYPES.BUILDING,
+    );
+    if (!building) return;
+    const nextBuilding = mergeBuildingDefinition(building, changes);
+    const shouldSyncFloors = Boolean(changes.parameters)
+      && (Object.hasOwn(changes.parameters, "floorCount") || Object.hasOwn(changes.parameters, "floorHeight"));
+
+    if (!shouldSyncFloors) {
+      setHierarchy((current) => ({
+        ...current,
+        nodes: current.nodes.map((node) => node.id === buildingId ? nextBuilding : node),
+      }));
+      return;
+    }
+
+    const existingFloors = hierarchy.nodes
+      .filter((node) => node.type === HIERARCHY_NODE_TYPES.FLOOR && node.parentId === buildingId)
+      .sort((a, b) => (a.level ?? 0) - (b.level ?? 0));
+    const nextFloors = createBuildingFloors(nextBuilding, existingFloors);
+    const retainedFloorIds = new Set(nextFloors.map((floor) => floor.id));
+    const removedFloorIds = existingFloors
+      .filter((floor) => !retainedFloorIds.has(floor.id))
+      .map((floor) => floor.id);
+    const removedNodeIds = new Set(
+      removedFloorIds.flatMap((floorId) => [...getHierarchyDescendantIds(hierarchy.nodes, floorId)]),
+    );
+    const removedRoomIds = hierarchy.nodes
+      .filter((node) => removedNodeIds.has(node.id) && node.type === HIERARCHY_NODE_TYPES.ROOM)
+      .map((node) => node.id);
+    const nextFloorMap = new Map(nextFloors.map((floor) => [floor.id, floor]));
+    const remainingNodes = hierarchy.nodes
+      .filter((node) => !removedNodeIds.has(node.id))
+      .map((node) => {
+        if (node.id === buildingId) return nextBuilding;
+        return nextFloorMap.get(node.id) ?? node;
+      });
+    const newFloors = nextFloors.filter((floor) => !existingFloors.some((item) => item.id === floor.id));
+    const nextNodes = [...remainingNodes, ...newFloors];
+    const activeRoomRemoved = removedNodeIds.has(hierarchy.activeRoomId);
+    const nextActiveRoomId = activeRoomRemoved
+      ? nextNodes.find((node) => node.type === HIERARCHY_NODE_TYPES.ROOM)?.id ?? null
+      : hierarchy.activeRoomId;
+
+    setRoomScenes((scenes) => Object.fromEntries(
+      Object.entries({
+        ...scenes,
+        ...(hierarchy.activeRoomId ? { [hierarchy.activeRoomId]: currentRoomScene } : {}),
+      }).filter(([roomId]) => !removedRoomIds.includes(roomId)),
+    ));
+    setHierarchy((current) => ({
+      ...current,
+      activeRoomId: nextActiveRoomId,
+      selectedNodeId: removedNodeIds.has(current.selectedNodeId) ? buildingId : current.selectedNodeId,
+      nodes: nextNodes,
+    }));
+    if (activeRoomRemoved) {
+      applyRoomScene(nextActiveRoomId ? roomScenes[nextActiveRoomId] ?? createDefaultRoomScene() : createDefaultRoomScene());
+    }
+  }, [applyRoomScene, currentRoomScene, hierarchy, roomScenes]);
+
+  const addSiteObjectFromArea = useCallback((templateId, area) => {
+    if (templateId === "BUILDING") return addBuildingFromArea(area);
+    const sequence = siteObjects.filter((object) => object.type === templateId).length + 1;
+    const object = createSiteObjectFromArea(templateId, area, sequence);
+    if (!object) return null;
+    setSiteObjects((items) => [...items, object]);
+    setSelectedSiteObjectId(object.id);
+    setHierarchy((current) => ({ ...current, selectedNodeId: current.rootId }));
+    return object.id;
+  }, [addBuildingFromArea, siteObjects]);
+
+  const selectSiteObject = useCallback((objectId) => {
+    const exists = siteObjects.some((object) => object.id === objectId);
+    setSelectedSiteObjectId(exists ? objectId : null);
+    if (exists) setHierarchy((current) => ({ ...current, selectedNodeId: current.rootId }));
+  }, [siteObjects]);
+
+  const updateSiteObject = useCallback((objectId, changes) => {
+    setSiteObjects((items) => items.map((object) => {
+      if (object.id !== objectId || object.locked) return object;
+      return normalizeSiteObject({
+        ...object,
+        ...changes,
+        position: changes.position ? { ...object.position, ...changes.position } : object.position,
+        rotation: changes.rotation ? { ...object.rotation, ...changes.rotation } : object.rotation,
+        dimensions: changes.dimensions ? { ...object.dimensions, ...changes.dimensions } : object.dimensions,
+        appearance: changes.appearance ? { ...object.appearance, ...changes.appearance } : object.appearance,
+        parameters: changes.parameters ? { ...object.parameters, ...changes.parameters } : object.parameters,
+        path: changes.path ? { ...object.path, ...changes.path } : object.path,
+      });
+    }));
+  }, []);
+
+  const removeSelectedSiteObject = useCallback(() => {
+    if (!selectedSiteObjectId) return;
+    setSiteObjects((items) => items.filter((object) => object.id !== selectedSiteObjectId));
+    setSelectedSiteObjectId(null);
+  }, [selectedSiteObjectId]);
+
+  const updateRoomLayout = useCallback((roomId, changes) => {
+    const { world: worldChanges, ...nodeChanges } = changes;
+    if (Object.keys(nodeChanges).length) updateHierarchyNode(roomId, nodeChanges);
+    if (!worldChanges) return;
+
+    const normalizedWorldChanges = Object.fromEntries(
+      Object.entries(worldChanges).map(([key, value]) => [
+        key,
+        key === "wallHeight" ? Math.max(1, value) : Math.max(3, value),
+      ]),
+    );
+    if (roomId === hierarchy.activeRoomId) {
+      setWorld((current) => ({ ...current, ...normalizedWorldChanges }));
+    }
+    setRoomScenes((scenes) => {
+      const baseScene = roomId === hierarchy.activeRoomId
+        ? currentRoomScene
+        : scenes[roomId] ?? createDefaultRoomScene();
+      return {
+        ...scenes,
+        [roomId]: {
+          ...baseScene,
+          world: { ...baseScene.world, ...normalizedWorldChanges },
+        },
+      };
+    });
+  }, [currentRoomScene, hierarchy.activeRoomId, updateHierarchyNode]);
+
+  const deleteHierarchyNode = useCallback((nodeId) => {
+    if (protectedHierarchyNodeIds.has(nodeId) || nodeId === hierarchy.rootId) return;
+    const targetNode = hierarchy.nodes.find((node) => node.id === nodeId);
+    const siblingFloors = targetNode?.type === HIERARCHY_NODE_TYPES.FLOOR
+      ? hierarchy.nodes.filter((node) => node.type === HIERARCHY_NODE_TYPES.FLOOR && node.parentId === targetNode.parentId)
+      : [];
+    if (targetNode?.type === HIERARCHY_NODE_TYPES.FLOOR && siblingFloors.length <= 1) return;
+    const descendantIds = getHierarchyDescendantIds(hierarchy.nodes, nodeId);
+    const deletedRoomIds = hierarchy.nodes
+      .filter((node) => descendantIds.has(node.id) && node.type === HIERARCHY_NODE_TYPES.ROOM)
+      .map((node) => node.id);
+
+    deletedRoomIds.forEach((roomId) => {
+      (roomScenes[roomId]?.detailAssets ?? []).forEach((asset) => {
+        if (asset.objectUrl) URL.revokeObjectURL(asset.objectUrl);
+      });
+    });
+    setRoomScenes((scenes) => Object.fromEntries(
+      Object.entries(scenes).filter(([roomId]) => !deletedRoomIds.includes(roomId)),
+    ));
+    setHierarchy((current) => {
+      let nextNodes = current.nodes.filter((node) => !descendantIds.has(node.id));
+      if (targetNode?.type === HIERARCHY_NODE_TYPES.FLOOR) {
+        const parent = nextNodes.find((node) => node.id === targetNode.parentId);
+        const floorHeight = Math.max(2, parent?.parameters?.floorHeight ?? 4);
+        const remainingFloors = nextNodes
+          .filter((node) => node.type === HIERARCHY_NODE_TYPES.FLOOR && node.parentId === targetNode.parentId)
+          .sort((a, b) => (a.level ?? 0) - (b.level ?? 0));
+        const floorIndexes = new Map(remainingFloors.map((floor, index) => [floor.id, index]));
+        nextNodes = nextNodes.map((node) => {
+          if (node.id === targetNode.parentId) {
+            return { ...node, parameters: { ...node.parameters, floorCount: remainingFloors.length } };
+          }
+          const index = floorIndexes.get(node.id);
+          return index === undefined ? node : { ...node, level: index + 1, elevation: index * floorHeight };
+        });
+      }
+      return {
+        ...current,
+        selectedNodeId: descendantIds.has(current.selectedNodeId)
+          ? current.activeRoomId ?? targetNode?.parentId ?? current.rootId
+          : current.selectedNodeId,
+        nodes: nextNodes,
+      };
+    });
+  }, [hierarchy.nodes, hierarchy.rootId, protectedHierarchyNodeIds, roomScenes]);
 
   const selectTemplate = useCallback(
     (templateId) => {
@@ -447,6 +1287,28 @@ export default function useDigitalTwinEditorState() {
     setSelectedEquipmentId(equipmentId);
     selectWorldStructureState(null);
   }, [selectWorldStructureState]);
+  const navigateToEquipment = useCallback((equipmentId) => {
+    if (!equipmentInstances.some((equipment) => equipment.id === equipmentId)) return;
+    selectEquipment(equipmentId);
+    setNavigationContext((current) => ({
+      ...current,
+      currentDepth: EDITOR_DEPTHS.EQUIPMENT,
+      currentEquipmentId: equipmentId,
+      transitionDirection: "IN",
+      transitionId: current.transitionId + 1,
+    }));
+  }, [equipmentInstances, selectEquipment]);
+  const navigateToNode = useCallback((nodeId) => {
+    const node = hierarchy.nodes.find((item) => item.id === nodeId);
+    if (!node) {
+      navigateToEquipment(nodeId);
+      return;
+    }
+    if (node.type === HIERARCHY_NODE_TYPES.SITE) navigateToSite();
+    if (node.type === HIERARCHY_NODE_TYPES.BUILDING) navigateToBuilding(nodeId);
+    if (node.type === HIERARCHY_NODE_TYPES.FLOOR) navigateToFloor(nodeId);
+    if (node.type === HIERARCHY_NODE_TYPES.ROOM) navigateToRoom(nodeId);
+  }, [hierarchy.nodes, navigateToBuilding, navigateToEquipment, navigateToFloor, navigateToRoom, navigateToSite]);
   const selectWorldStructure = useCallback((structureId) => {
     selectWorldStructureState(structureId);
     setSelectedEquipmentId(null);
@@ -456,9 +1318,159 @@ export default function useDigitalTwinEditorState() {
     setActiveTemplateId(null);
     selectWorldStructureState(null);
     selectWorldTemplate(null);
+    setSelectedSiteObjectId(null);
   }, [selectWorldStructureState, selectWorldTemplate]);
+  const layoutDocument = useMemo(() => ({
+    hierarchy,
+    gridSettings,
+    siteObjects,
+    roomScenes: hierarchy.activeRoomId
+      ? { ...roomScenes, [hierarchy.activeRoomId]: currentRoomScene }
+      : roomScenes,
+  }), [currentRoomScene, gridSettings, hierarchy, roomScenes, siteObjects]);
+
+  const commitHistorySnapshot = useCallback((snapshot) => {
+    const currentSnapshot = historyCurrentRef.current;
+    if (!currentSnapshot) {
+      historyCurrentRef.current = snapshot;
+      return;
+    }
+    if (getHistorySignature(currentSnapshot) === getHistorySignature(snapshot)) return;
+
+    historyPastRef.current = [...historyPastRef.current, currentSnapshot].slice(-HISTORY_LIMIT);
+    historyFutureRef.current = [];
+    historyCurrentRef.current = snapshot;
+    updateHistoryAvailability();
+  }, [updateHistoryAvailability]);
+
+  const flushPendingHistory = useCallback(() => {
+    if (historyTimerRef.current) clearTimeout(historyTimerRef.current);
+    historyTimerRef.current = null;
+    const pendingSnapshot = historyPendingRef.current;
+    historyPendingRef.current = null;
+    if (pendingSnapshot) commitHistorySnapshot(pendingSnapshot);
+  }, [commitHistorySnapshot]);
+
+  const restoreHistorySnapshot = useCallback((snapshot) => {
+    const nodeIds = new Set(snapshot.hierarchy.nodes.map((node) => node.id));
+    const roomIds = new Set(
+      snapshot.hierarchy.nodes
+        .filter((node) => node.type === HIERARCHY_NODE_TYPES.ROOM)
+        .map((node) => node.id),
+    );
+    const activeRoomId = roomIds.has(hierarchy.activeRoomId)
+      ? hierarchy.activeRoomId
+      : roomIds.has(navigationContext.currentRoomId)
+        ? navigationContext.currentRoomId
+        : roomIds.values().next().value ?? null;
+    const selectedNodeId = nodeIds.has(hierarchy.selectedNodeId)
+      ? hierarchy.selectedNodeId
+      : nodeIds.has(navigationNodeId)
+        ? navigationNodeId
+        : snapshot.hierarchy.rootId;
+    const nextHierarchy = normalizeHierarchy({
+      ...snapshot.hierarchy,
+      activeRoomId,
+      selectedNodeId,
+    });
+    const nextRoomScenes = cloneHistoryValue(snapshot.roomScenes);
+    const activeScene = nextHierarchy.activeRoomId
+      ? nextRoomScenes[nextHierarchy.activeRoomId]
+      : createDefaultRoomScene();
+
+    applyRoomScene(activeScene ?? createDefaultRoomScene());
+    setHierarchy(nextHierarchy);
+    setRoomScenes(nextRoomScenes);
+    setGridSettings(normalizeGridSettings(snapshot.gridSettings));
+    setSiteObjects(
+      snapshot.siteObjects.map(normalizeSiteObject).filter(Boolean),
+    );
+    setSelectedSiteObjectId(null);
+    setNavigationContext((current) => {
+      const hasBuilding = !current.currentBuildingId || nodeIds.has(current.currentBuildingId);
+      const hasFloor = !current.currentFloorId || nodeIds.has(current.currentFloorId);
+      const hasRoom = !current.currentRoomId || nodeIds.has(current.currentRoomId);
+      if (hasBuilding && hasFloor && hasRoom) {
+        return { ...current, transitionId: current.transitionId + 1 };
+      }
+      return {
+        ...createInitialNavigationContext(),
+        transitionDirection: "OUT",
+        transitionId: current.transitionId + 1,
+      };
+    });
+  }, [applyRoomScene, hierarchy.activeRoomId, hierarchy.selectedNodeId, navigationContext.currentRoomId, navigationNodeId]);
+
+  const undo = useCallback(() => {
+    flushPendingHistory();
+    const previousSnapshot = historyPastRef.current.at(-1);
+    const currentSnapshot = historyCurrentRef.current;
+    if (!previousSnapshot || !currentSnapshot) return;
+
+    historyPastRef.current = historyPastRef.current.slice(0, -1);
+    historyFutureRef.current = [...historyFutureRef.current, currentSnapshot].slice(-HISTORY_LIMIT);
+    historyCurrentRef.current = previousSnapshot;
+    restoringHistoryRef.current = true;
+    restoreHistorySnapshot(previousSnapshot);
+    updateHistoryAvailability();
+  }, [flushPendingHistory, restoreHistorySnapshot, updateHistoryAvailability]);
+
+  const redo = useCallback(() => {
+    flushPendingHistory();
+    const nextSnapshot = historyFutureRef.current.at(-1);
+    const currentSnapshot = historyCurrentRef.current;
+    if (!nextSnapshot || !currentSnapshot) return;
+
+    historyFutureRef.current = historyFutureRef.current.slice(0, -1);
+    historyPastRef.current = [...historyPastRef.current, currentSnapshot].slice(-HISTORY_LIMIT);
+    historyCurrentRef.current = nextSnapshot;
+    restoringHistoryRef.current = true;
+    restoreHistorySnapshot(nextSnapshot);
+    updateHistoryAvailability();
+  }, [flushPendingHistory, restoreHistorySnapshot, updateHistoryAvailability]);
+
+  useEffect(() => {
+    const nextSnapshot = createHistorySnapshot(layoutDocument);
+    if (!historyCurrentRef.current) {
+      historyCurrentRef.current = nextSnapshot;
+      return;
+    }
+    if (restoringHistoryRef.current) {
+      restoringHistoryRef.current = false;
+      historyCurrentRef.current = nextSnapshot;
+      return;
+    }
+    if (getHistorySignature(historyCurrentRef.current) === getHistorySignature(nextSnapshot)) return;
+
+    historyPendingRef.current = nextSnapshot;
+    if (historyTimerRef.current) clearTimeout(historyTimerRef.current);
+    historyTimerRef.current = setTimeout(() => {
+      historyTimerRef.current = null;
+      const pendingSnapshot = historyPendingRef.current;
+      historyPendingRef.current = null;
+      if (pendingSnapshot) commitHistorySnapshot(pendingSnapshot);
+    }, HISTORY_COMMIT_DELAY);
+  }, [commitHistorySnapshot, layoutDocument]);
 
   return {
+    hierarchy,
+    hierarchyPath,
+    rooms,
+    activeRoom,
+    selectedHierarchyNode,
+    selectedHierarchyPath,
+    selectedBuilding,
+    currentBuilding,
+    currentFloor,
+    navigationContext,
+    navigationPath,
+    buildings,
+    floors,
+    siteObjects,
+    selectedSiteObject,
+    selectedSiteObjectId,
+    protectedHierarchyNodeIds,
+    layoutDocument,
     world,
     equipmentInstances,
     detailAssets,
@@ -469,11 +1481,14 @@ export default function useDigitalTwinEditorState() {
     viewMode,
     transformMode,
     snapSize,
+    gridSettings,
     collisionIds,
     pipeConnections,
     pipeSnapCandidate,
     favoriteTemplateIds,
     recentTemplateIds,
+    canUndo: historyAvailability.canUndo,
+    canRedo: historyAvailability.canRedo,
     editorMode: structureEditor.editorMode,
     worldStructures: structureEditor.worldStructures,
     worldSpaces: structureEditor.worldSpaces,
@@ -485,6 +1500,10 @@ export default function useDigitalTwinEditorState() {
     actions: {
       addEquipment,
       updateEquipment,
+      addEquipmentPart,
+      updateEquipmentPart,
+      duplicateEquipmentPart,
+      removeEquipmentPart,
       commitPipeSnap,
       removeSelectedEquipment,
       duplicateSelectedEquipment,
@@ -494,6 +1513,30 @@ export default function useDigitalTwinEditorState() {
       updateDetailAsset,
       resetLayout,
       hydrateLayout,
+      selectRoom,
+      addRoom,
+      selectBuilding,
+      enterBuilding,
+      navigateToSite,
+      navigateToBuilding,
+      selectFloorInBuilding,
+      navigateToFloor,
+      navigateToRoom,
+      navigateToEquipment,
+      navigateToNode,
+      selectHierarchyNode,
+      addHierarchyChild,
+      addRoomToFloor,
+      renameHierarchyNode,
+      updateHierarchyNode,
+      addBuildingFromArea,
+      updateBuilding,
+      addSiteObjectFromArea,
+      selectSiteObject,
+      updateSiteObject,
+      removeSelectedSiteObject,
+      updateRoomLayout,
+      deleteHierarchyNode,
       selectTemplate,
       toggleFavorite,
       setEditorMode,
@@ -510,6 +1553,12 @@ export default function useDigitalTwinEditorState() {
       setViewMode,
       setTransformMode,
       setSnapSize,
+      setGridSnapEnabled,
+      addGridRegion,
+      updateGridRegion,
+      removeGridRegion,
+      undo,
+      redo,
     },
   };
 }

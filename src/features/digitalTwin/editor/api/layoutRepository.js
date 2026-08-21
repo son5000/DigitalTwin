@@ -1,20 +1,27 @@
 const STORAGE_KEY = "digital-twin-editor-layout";
 
 export function saveLayout(layout) {
+  const roomScenes = Object.fromEntries(
+    Object.entries(layout.roomScenes ?? {}).map(([roomId, scene]) => [
+      roomId,
+      {
+        ...scene,
+        detailAssets: (scene.detailAssets ?? []).map((asset) => {
+          const sanitizedAsset = { ...asset };
+          delete sanitizedAsset.objectUrl;
+          return sanitizedAsset;
+        }),
+      },
+    ]),
+  );
   const payload = {
-    version: 4,
+    version: 8,
     savedAt: new Date().toISOString(),
-    world: layout.world,
-    equipment: layout.equipmentInstances,
-    worldStructures: layout.worldStructures ?? [],
-    worldStructuresLocked: layout.worldStructuresLocked ?? false,
-    visibilityFilters: layout.visibilityFilters ?? {},
-    pipeConnections: layout.pipeConnections ?? [],
-    detailAssets: (layout.detailAssets ?? []).map((asset) => {
-      const sanitizedAsset = { ...asset };
-      delete sanitizedAsset.objectUrl;
-      return sanitizedAsset;
-    }),
+    hierarchy: layout.hierarchy,
+    sitePaths: layout.sitePaths ?? [],
+    siteObjects: layout.siteObjects ?? [],
+    gridSettings: layout.gridSettings,
+    roomScenes,
   };
 
   localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));

@@ -1,0 +1,186 @@
+.panel {
+  min-height: 100%;
+  padding-bottom: 18px;
+}
+
+.heading,
+.section {
+  padding: 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.heading span {
+  color: var(--color-text-faint);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: 0.15em;
+}
+
+.heading h2 {
+  margin-top: 4px;
+  color: var(--color-heading);
+  font-size: 20px;
+}
+
+.heading p,
+.hint,
+.emptyState p {
+  color: var(--color-text-subtle);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.enterButton {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  margin-top: 12px;
+  border: 1px solid rgb(var(--color-accent-rgb) / 42%);
+  border-radius: var(--radius-small);
+  color: var(--color-accent-strong);
+  font-weight: 650;
+  background: rgb(var(--color-accent-rgb) / 9%);
+}
+
+.enterButton:hover {
+  border-color: rgb(var(--color-accent-rgb) / 66%);
+  background: rgb(var(--color-accent-rgb) / 14%);
+}
+
+.section {
+  display: grid;
+  gap: 12px;
+}
+
+.section h3 {
+  color: var(--color-heading);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+
+.sectionTitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sectionTitle span {
+  color: var(--color-text-faint);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+}
+
+.selectField,
+.colorField {
+  display: grid;
+  gap: 6px;
+  color: var(--color-text-subtle);
+  font-size: 12px;
+}
+
+.selectField select,
+.selectField input {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 28px 0 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-heading);
+  background: var(--color-input);
+}
+
+.fieldGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 9px;
+}
+
+.floorSummary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  background: var(--color-surface-raised);
+}
+
+.floorSummary div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.floorSummary span {
+  color: var(--color-text-subtle);
+  font-size: 12px;
+}
+
+.floorSummary strong {
+  color: var(--color-heading);
+  font-size: 18px;
+}
+
+.floorSummary button {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-small);
+  color: var(--color-accent-strong);
+  background: var(--color-input);
+}
+
+.colorField > span:last-child {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.colorField input {
+  width: 44px;
+  height: 36px;
+  padding: 3px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  background: var(--color-input);
+}
+
+.colorField code {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.hint {
+  margin: 14px 16px 0;
+  padding: 10px;
+  border-left: 2px solid var(--color-accent);
+  background: rgb(var(--color-accent-rgb) / 7%);
+}
+
+.emptyState {
+  display: grid;
+  min-height: 100%;
+  align-content: center;
+  justify-items: center;
+  gap: 9px;
+  padding: 28px;
+  text-align: center;
+}
+
+.emptyState > span {
+  color: var(--color-accent-strong);
+  font-size: 36px;
+}
+
+.emptyState h2 {
+  color: var(--color-heading);
+  font-size: 17px;
+}
+
+@media (orientation: portrait) {
+  .fieldGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
