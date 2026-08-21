@@ -1,16 +1,74 @@
-# React + Vite
+# DigitalTwin
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React와 Three.js로 구현한 웹 기반 디지털 트윈 3D 편집기입니다. 설비와 공간 구조물을 배치하고 속성을 조정해 산업 현장의 레이아웃을 구성할 수 있습니다.
 
-Currently, two official plugins are available:
+## 주요 기능
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- 설비 카탈로그 검색 및 3D 장면 배치
+- 배관, 탱크, 캐비닛, 덕트, 기계 설비 등 다양한 템플릿 제공
+- 벽, 바닥, 기둥 등의 공간 구조물 생성 및 편집
+- 설비와 구조물의 위치, 회전, 크기, 색상 및 재질 조정
+- 그리드 스냅, 이동·회전 도구와 설비 간 충돌 표시
+- 배관 연결 지점 자동 스냅
+- GLB, GLTF, OBJ, PLY 형식의 상세 3D 스캔 모델 연결
+- 라이트·다크 테마와 장면 표시 옵션
+- 브라우저 로컬 저장소를 이용한 레이아웃 저장 및 불러오기
 
-## React Compiler
+## 기술 스택
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- React 19
+- Three.js
+- Vite
+- ESLint
 
-## Expanding the ESLint configuration
+## 시작하기
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+### 요구 사항
+
+- Node.js
+- npm
+
+### 설치
+
+```bash
+npm install
+```
+
+### 개발 서버 실행
+
+```bash
+npm run dev
+```
+
+터미널에 표시되는 로컬 주소를 브라우저에서 열어 편집기를 사용할 수 있습니다.
+
+## 명령어
+
+| 명령어 | 설명 |
+| --- | --- |
+| `npm run dev` | 개발 서버를 실행합니다. |
+| `npm run build` | 배포용 결과물을 생성합니다. |
+| `npm run lint` | ESLint로 코드를 검사합니다. |
+| `npm run preview` | 빌드 결과를 로컬에서 미리 봅니다. |
+
+## 프로젝트 구조
+
+```text
+src/
+├─ features/digitalTwin/editor/
+│  ├─ api/          # 레이아웃 저장 및 불러오기
+│  ├─ components/   # 편집기 UI 컴포넌트
+│  ├─ constants/    # 설비·구조물 템플릿과 테마
+│  ├─ generators/   # Three.js 형상 생성기
+│  ├─ objects/      # 3D 설비 객체 생성
+│  ├─ store/        # 편집기 상태 관리
+│  ├─ three/        # 3D 장면 및 상세 모델 렌더링
+│  ├─ utils/        # 좌표, 충돌, 배관 연결 유틸리티
+│  └─ world/        # 공간과 구조물 생성
+├─ App.jsx
+└─ main.jsx
+```
+
+## 데이터 저장 안내
+
+현재 레이아웃은 브라우저의 로컬 저장소에 보관됩니다. 브라우저 데이터를 삭제하거나 다른 브라우저·기기를 사용하면 저장된 레이아웃이 공유되지 않습니다. 업로드한 상세 3D 모델 파일은 현재 세션에서 사용되며 레이아웃 저장 데이터에는 파일 자체가 포함되지 않습니다.
