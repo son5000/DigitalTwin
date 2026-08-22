@@ -12,7 +12,7 @@
   border-radius: 5px;
   color: var(--color-text-muted);
   background: color-mix(in srgb, var(--color-surface) 90%, transparent);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
+  box-shadow: var(--shadow-panel);
   pointer-events: none;
   transform: translateX(-50%);
   backdrop-filter: blur(8px);
@@ -23,7 +23,7 @@
   border: 1px solid rgb(var(--color-accent-rgb) / 32%);
   border-radius: 3px;
   color: var(--color-accent-strong);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
   font-size: 10px;
   letter-spacing: 0.09em;
   background: rgb(var(--color-accent-rgb) / 9%);
@@ -38,7 +38,7 @@
 .copy strong {
   color: var(--color-heading);
   font-size: 12px;
-  font-weight: 650;
+  font-weight: var(--font-weight-semibold);
 }
 
 .copy small {

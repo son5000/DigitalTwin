@@ -8,6 +8,31 @@ import {
 } from "@/features/digitalTwin/editor/constants/gridSettings";
 import { SITE_INTERACTION_MODES } from "@/features/digitalTwin/editor/constants/siteEnvironmentTemplates";
 import { EDITOR_MODES } from "@/features/digitalTwin/editor/constants/worldStructureTemplates";
+import {
+  AreaSelectIcon,
+  BuildingIcon,
+  DeleteIcon,
+  DuplicateIcon,
+  EquipmentIcon,
+  FloorIcon,
+  ImportIcon,
+  Layout2DIcon,
+  LockIcon,
+  MoreIcon,
+  MoveIcon,
+  NavigateIcon,
+  ResetIcon,
+  RedoIcon,
+  RotateIcon,
+  SaveIcon,
+  SiteIcon,
+  SnapIcon,
+  UndoIcon,
+  UnlockIcon,
+  View3DIcon,
+  ViewerIcon,
+  WorldIcon,
+} from "@/components/icons";
 
 import styles from "./EditorToolbar.module.css";
 
@@ -35,9 +60,9 @@ function Divider() {
 function ModeSelector({ editorMode, onEditorModeChange }) {
   return (
     <div className={styles.group} aria-label="편집 영역">
-      <ToolbarButton icon="▧" label="월드 편집" active={editorMode === EDITOR_MODES.WORLD} onClick={() => onEditorModeChange(EDITOR_MODES.WORLD)} />
-      <ToolbarButton icon="◇" label="설비 편집" active={editorMode === EDITOR_MODES.EQUIPMENT} onClick={() => onEditorModeChange(EDITOR_MODES.EQUIPMENT)} />
-      <ToolbarButton icon="◉" label="뷰어" active={editorMode === EDITOR_MODES.VIEWER} onClick={() => onEditorModeChange(EDITOR_MODES.VIEWER)} />
+      <ToolbarButton icon={<WorldIcon />} label="월드 편집" active={editorMode === EDITOR_MODES.WORLD} onClick={() => onEditorModeChange(EDITOR_MODES.WORLD)} />
+      <ToolbarButton icon={<EquipmentIcon />} label="설비 편집" active={editorMode === EDITOR_MODES.EQUIPMENT} onClick={() => onEditorModeChange(EDITOR_MODES.EQUIPMENT)} />
+      <ToolbarButton icon={<ViewerIcon />} label="뷰어" active={editorMode === EDITOR_MODES.VIEWER} onClick={() => onEditorModeChange(EDITOR_MODES.VIEWER)} />
     </div>
   );
 }
@@ -55,7 +80,7 @@ function GridSnapControl({ enabled, snapSize, onToggle, onSnapSizeChange }) {
         className={`${styles.snapToggle} ${enabled ? styles.snapEnabled : ""}`}
         onClick={() => onToggle(!enabled)}
       >
-        <span aria-hidden="true">⌗</span>
+        <SnapIcon size={20} />
       </button>
       <label className={styles.snapSize} title={`스냅 간격 ${formatGridResolution(snapSize)}`} data-tooltip={`스냅 간격 · ${formatGridResolution(snapSize)}`}>
         <span className={styles.srOnly}>그리드 셀 크기</span>
@@ -86,19 +111,19 @@ function OverflowActions({
 }) {
   return (
     <details className={styles.overflow}>
-      <summary aria-label="더 보기" title="더 보기" data-tooltip="더 보기">•••</summary>
+      <summary aria-label="더 보기" title="더 보기" data-tooltip="더 보기"><MoreIcon size={20} /></summary>
       <div className={styles.overflowMenu}>
         {saveStatus ? <span className={styles.saveStatus}>{saveStatus}</span> : null}
         {showSelectionActions ? (
           <>
-            <ToolbarButton menuItem icon="⧉" label="복제" shortcut="Ctrl+D" disabled={!hasSelection} onClick={onDuplicate} />
-            <ToolbarButton menuItem icon="⌫" label="삭제" shortcut="Delete" disabled={!hasSelection} onClick={onDelete} />
+            <ToolbarButton menuItem icon={<DuplicateIcon />} label="복제" shortcut="Ctrl+D" disabled={!hasSelection} onClick={onDuplicate} />
+            <ToolbarButton menuItem icon={<DeleteIcon />} label="삭제" shortcut="Delete" disabled={!hasSelection} onClick={onDelete} />
             <Divider />
           </>
         ) : null}
-        <ToolbarButton menuItem icon="↺" label="초기화" onClick={onReset} />
-        <ToolbarButton menuItem icon="⇩" label="불러오기" onClick={onLoad} />
-        <ToolbarButton menuItem icon="✓" label="저장" onClick={onSave} />
+        <ToolbarButton menuItem icon={<ResetIcon />} label="초기화" onClick={onReset} />
+        <ToolbarButton menuItem icon={<ImportIcon />} label="불러오기" onClick={onLoad} />
+        <ToolbarButton menuItem icon={<SaveIcon />} label="저장" onClick={onSave} />
       </div>
     </details>
   );
@@ -106,7 +131,10 @@ function OverflowActions({
 
 export default function EditorToolbar({
   hierarchyScope = false,
+  focusedScope = false,
   hierarchyScopeLabel = "부지 편집",
+  contextIcon = "SITE",
+  showSelectionActions = false,
   showSiteInteractionTools = false,
   siteInteractionMode = SITE_INTERACTION_MODES.NAVIGATE,
   editorMode,
@@ -118,6 +146,7 @@ export default function EditorToolbar({
   worldLocked,
   saveStatus,
   canUndo,
+  canRedo,
   onEditorModeChange,
   onSiteInteractionModeChange,
   onViewModeChange,
@@ -131,27 +160,38 @@ export default function EditorToolbar({
   onLoad,
   onSave,
   onUndo,
+  onRedo,
 }) {
   const isViewer = editorMode === EDITOR_MODES.VIEWER;
 
-  if (hierarchyScope) {
+  if (hierarchyScope || focusedScope) {
+    const contextIconElement = contextIcon === "EQUIPMENT"
+      ? <EquipmentIcon />
+      : contextIcon === "BUILDING"
+        ? <BuildingIcon />
+        : contextIcon === "FLOOR"
+          ? <FloorIcon />
+          : <SiteIcon />;
     return (
       <nav className={styles.toolbar} aria-label={`${hierarchyScopeLabel} 도구`}>
-        <span className={styles.contextBadge} title={hierarchyScopeLabel} data-tooltip={hierarchyScopeLabel} aria-label={hierarchyScopeLabel}>▦</span>
+        <span className={styles.contextBadge} title={hierarchyScopeLabel} data-tooltip={hierarchyScopeLabel} aria-label={hierarchyScopeLabel}>
+          {contextIconElement}
+        </span>
         <Divider />
-        <ToolbarButton icon="↶" label="되돌리기" shortcut="Ctrl+Z" disabled={!canUndo} onClick={onUndo} />
+        <ToolbarButton icon={<UndoIcon />} label="되돌리기" shortcut="Ctrl+Z" disabled={!canUndo} onClick={onUndo} />
+        <ToolbarButton icon={<RedoIcon />} label="다시 실행" shortcut="Ctrl+Shift+Z" disabled={!canRedo} onClick={onRedo} />
         {showSiteInteractionTools ? (
           <>
             <Divider />
             <div className={styles.group} aria-label="월드 조작 방식">
               <ToolbarButton
-                icon="◉"
+                icon={<NavigateIcon />}
                 label="월드 이동/회전"
                 active={siteInteractionMode === SITE_INTERACTION_MODES.NAVIGATE}
                 onClick={() => onSiteInteractionModeChange(SITE_INTERACTION_MODES.NAVIGATE)}
               />
               <ToolbarButton
-                icon="▦"
+                icon={<AreaSelectIcon />}
                 label="영역 선택"
                 active={siteInteractionMode === SITE_INTERACTION_MODES.AREA_SELECT}
                 onClick={() => onSiteInteractionModeChange(SITE_INTERACTION_MODES.AREA_SELECT)}
@@ -161,15 +201,15 @@ export default function EditorToolbar({
         ) : null}
         <Divider />
         <div className={styles.group} aria-label="이동과 회전">
-          <ToolbarButton icon="↗" label="이동" shortcut="W" active={transformMode === TRANSFORM_MODES.TRANSLATE} disabled={!hasSelection} onClick={() => onTransformModeChange(TRANSFORM_MODES.TRANSLATE)} />
-          <ToolbarButton icon="↻" label="회전" shortcut="E" active={transformMode === TRANSFORM_MODES.ROTATE} disabled={!hasSelection} onClick={() => onTransformModeChange(TRANSFORM_MODES.ROTATE)} />
+          <ToolbarButton icon={<MoveIcon />} label="이동" shortcut="W" active={transformMode === TRANSFORM_MODES.TRANSLATE} disabled={!hasSelection} onClick={() => onTransformModeChange(TRANSFORM_MODES.TRANSLATE)} />
+          <ToolbarButton icon={<RotateIcon />} label="회전" shortcut="E" active={transformMode === TRANSFORM_MODES.ROTATE} disabled={!hasSelection} onClick={() => onTransformModeChange(TRANSFORM_MODES.ROTATE)} />
         </div>
         <Divider />
         <GridSnapControl enabled={gridSnapEnabled} snapSize={snapSize} onToggle={onGridSnapChange} onSnapSizeChange={onSnapSizeChange} />
         <Divider />
         <OverflowActions
           hasSelection={hasSelection}
-          showSelectionActions={false}
+          showSelectionActions={showSelectionActions}
           saveStatus={saveStatus}
           onDuplicate={onDuplicate}
           onDelete={onDelete}
@@ -185,24 +225,25 @@ export default function EditorToolbar({
     <nav className={`${styles.toolbar} ${isViewer ? styles.viewerToolbar : ""}`} aria-label="월드 편집 도구">
       <ModeSelector editorMode={editorMode} onEditorModeChange={onEditorModeChange} />
       <Divider />
-      <ToolbarButton icon="↶" label="되돌리기" shortcut="Ctrl+Z" disabled={!canUndo} onClick={onUndo} />
+      <ToolbarButton icon={<UndoIcon />} label="되돌리기" shortcut="Ctrl+Z" disabled={!canUndo} onClick={onUndo} />
+      <ToolbarButton icon={<RedoIcon />} label="다시 실행" shortcut="Ctrl+Shift+Z" disabled={!canRedo} onClick={onRedo} />
       <Divider />
       <div className={styles.group} aria-label="보기 방식">
-        <ToolbarButton icon="▤" label="2D 배치" active={viewMode === VIEW_MODES.LAYOUT_2D} onClick={() => onViewModeChange(VIEW_MODES.LAYOUT_2D)} />
-        <ToolbarButton icon="◈" label="3D 보기" active={viewMode === VIEW_MODES.VIEW_3D} onClick={() => onViewModeChange(VIEW_MODES.VIEW_3D)} />
+        <ToolbarButton icon={<Layout2DIcon />} label="2D 배치" active={viewMode === VIEW_MODES.LAYOUT_2D} onClick={() => onViewModeChange(VIEW_MODES.LAYOUT_2D)} />
+        <ToolbarButton icon={<View3DIcon />} label="3D 보기" active={viewMode === VIEW_MODES.VIEW_3D} onClick={() => onViewModeChange(VIEW_MODES.VIEW_3D)} />
       </div>
 
       {!isViewer ? (
         <>
           <Divider />
           <div className={styles.group} aria-label="이동과 회전">
-            <ToolbarButton icon="↗" label="이동" shortcut="W" active={transformMode === TRANSFORM_MODES.TRANSLATE} disabled={!hasSelection} onClick={() => onTransformModeChange(TRANSFORM_MODES.TRANSLATE)} />
-            <ToolbarButton icon="↻" label="회전" shortcut="E" active={transformMode === TRANSFORM_MODES.ROTATE} disabled={!hasSelection} onClick={() => onTransformModeChange(TRANSFORM_MODES.ROTATE)} />
+            <ToolbarButton icon={<MoveIcon />} label="이동" shortcut="W" active={transformMode === TRANSFORM_MODES.TRANSLATE} disabled={!hasSelection} onClick={() => onTransformModeChange(TRANSFORM_MODES.TRANSLATE)} />
+            <ToolbarButton icon={<RotateIcon />} label="회전" shortcut="E" active={transformMode === TRANSFORM_MODES.ROTATE} disabled={!hasSelection} onClick={() => onTransformModeChange(TRANSFORM_MODES.ROTATE)} />
           </div>
           <Divider />
           <GridSnapControl enabled={gridSnapEnabled} snapSize={snapSize} onToggle={onGridSnapChange} onSnapSizeChange={onSnapSizeChange} />
           {editorMode === EDITOR_MODES.WORLD ? (
-            <ToolbarButton icon={worldLocked ? "▣" : "□"} label={worldLocked ? "월드 잠금 해제" : "월드 잠금"} active={worldLocked} onClick={() => onToggleWorldLock(!worldLocked)} />
+            <ToolbarButton icon={worldLocked ? <LockIcon /> : <UnlockIcon />} label={worldLocked ? "월드 잠금 해제" : "월드 잠금"} active={worldLocked} onClick={() => onToggleWorldLock(!worldLocked)} />
           ) : null}
           <Divider />
           <OverflowActions

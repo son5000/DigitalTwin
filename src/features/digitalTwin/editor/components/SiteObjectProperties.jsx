@@ -4,15 +4,17 @@ import {
   SITE_MATERIAL_OPTIONS,
   SITE_OBJECT_GEOMETRY_MODES,
 } from "@/features/digitalTwin/editor/constants/siteEnvironmentTemplates";
+import { DeleteIcon } from "@/components/icons";
 
 import NumericField from "./NumericField";
+import { ObjectVariantSelector } from "./ObjectLibrary";
 import styles from "./SiteObjectProperties.module.css";
 
 export default function SiteObjectProperties({ object, onChange, onDelete }) {
   if (!object) return null;
   const template = SITE_CREATION_TEMPLATE_MAP[object.type];
-  const isRepeated = object.type === "TREE" || object.type === "STREETLIGHT";
-  const hasSpacing = object.type === "FENCE";
+  const isRepeated = object.geometryMode === SITE_OBJECT_GEOMETRY_MODES.CLUSTER;
+  const hasSpacing = [SITE_OBJECT_GEOMETRY_MODES.CLUSTER, SITE_OBJECT_GEOMETRY_MODES.PERIMETER].includes(object.geometryMode);
   const isLinear = object.geometryMode === SITE_OBJECT_GEOMETRY_MODES.LINEAR;
 
   return (
@@ -29,6 +31,12 @@ export default function SiteObjectProperties({ object, onChange, onDelete }) {
         <label className={styles.color}><span>색상</span><input type="color" value={object.appearance.color} onChange={(event) => onChange({ appearance: { color: event.target.value } })} /></label>
       </div>
 
+      <ObjectVariantSelector
+        definition={template}
+        value={object.variants}
+        onChange={(variants) => onChange({ variants })}
+      />
+
       <div className={styles.section}>
         <h3>{isLinear ? "경로와 폭" : "크기"}</h3>
         <div className={styles.fields}>
@@ -39,7 +47,7 @@ export default function SiteObjectProperties({ object, onChange, onDelete }) {
             label="개수"
             value={object.parameters.count}
             min={1}
-            max={object.type === "TREE" ? MAX_TREE_COUNT : 24}
+            max={object.assetKind === "VEGETATION" ? MAX_TREE_COUNT : 64}
             step={1}
             unit="개"
             onChange={(count) => onChange({ parameters: { count } })}
@@ -59,7 +67,7 @@ export default function SiteObjectProperties({ object, onChange, onDelete }) {
         </div>
       </div>
 
-      <button type="button" className={styles.deleteButton} onClick={onDelete}>환경 요소 삭제</button>
+      <button type="button" className={styles.deleteButton} onClick={onDelete}><DeleteIcon size={16} /> 환경 요소 삭제</button>
     </section>
   );
 }

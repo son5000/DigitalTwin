@@ -6,6 +6,7 @@ import {
   EQUIPMENT_SHAPE_TEMPLATES,
 } from "@/features/digitalTwin/editor/constants/equipmentShapeTemplates";
 import { degreesToRadians, radiansToDegrees } from "@/features/digitalTwin/editor/utils/editorMath";
+import { ComponentIcon, DeleteIcon, EnterIcon, EquipmentIcon, SnapIcon } from "@/components/icons";
 
 import NumericField from "./NumericField";
 import PropertySection from "./PropertySection";
@@ -43,7 +44,7 @@ export default function EquipmentProperties({
   if (!equipment) {
     return (
       <section className={styles.emptyState}>
-        <div className={styles.emptyIcon} aria-hidden="true">◇</div>
+        <div className={styles.emptyIcon} aria-hidden="true"><EquipmentIcon size={34} /></div>
         <h2>선택된 설비 없음</h2>
         <p>장면에서 설비를 선택하면 파라미터와 좌표를 편집할 수 있습니다.</p>
       </section>
@@ -92,11 +93,51 @@ export default function EquipmentProperties({
         </dl>
       </PropertySection>
 
+      <PropertySection
+        title="Metadata"
+        summary={equipment.metadata?.assetTag || "자산 정보"}
+        defaultOpen
+      >
+        <label className={styles.textField}>
+          <span>자산 태그</span>
+          <input
+            type="text"
+            value={equipment.metadata?.assetTag ?? ""}
+            placeholder="예: AHU-01"
+            onChange={(event) => onChange({ metadata: { assetTag: event.target.value } })}
+          />
+        </label>
+        <label className={styles.textField}>
+          <span>제조사</span>
+          <input
+            type="text"
+            value={equipment.metadata?.manufacturer ?? ""}
+            onChange={(event) => onChange({ metadata: { manufacturer: event.target.value } })}
+          />
+        </label>
+        <label className={styles.textField}>
+          <span>모델</span>
+          <input
+            type="text"
+            value={equipment.metadata?.model ?? ""}
+            onChange={(event) => onChange({ metadata: { model: event.target.value } })}
+          />
+        </label>
+        <label className={styles.textField}>
+          <span>시리얼 번호</span>
+          <input
+            type="text"
+            value={equipment.metadata?.serialNumber ?? ""}
+            onChange={(event) => onChange({ metadata: { serialNumber: event.target.value } })}
+          />
+        </label>
+      </PropertySection>
+
       <PropertySection title="Transform" summary="m / deg" defaultOpen>
         {snapCandidate && (
           <div className={styles.snapNotice}>
             <span>연결점 후보 · {(snapCandidate.distance * 1000).toFixed(0)} mm</span>
-            <button type="button" onClick={onSnap}>Snap 연결</button>
+            <button type="button" onClick={onSnap}><SnapIcon size={15} /> Snap 연결</button>
           </div>
         )}
         {template.parameterDefinitions.length > 0 ? (
@@ -174,7 +215,7 @@ export default function EquipmentProperties({
           <div><span>파트 노드</span><strong>{equipment.parts?.length ?? 0}</strong></div>
         </div>
         <p className={styles.description}>파트 메시는 공간 장면에 상시 렌더링하지 않고 상세 편집 화면에서만 불러옵니다.</p>
-        <button type="button" className={styles.partEditorButton} onClick={onOpenPartEditor}>파트 편집기 열기</button>
+        <button type="button" className={styles.partEditorButton} onClick={onOpenPartEditor}><ComponentIcon size={16} /> 파트 편집기 열기</button>
       </PropertySection>
 
       <PropertySection title="3D Scan" summary={detailAsset ? STATUS_LABELS[detailAsset.status] : "미등록"}>
@@ -199,8 +240,8 @@ export default function EquipmentProperties({
                 : "3D 스캔 등록"}
             <input type="file" accept=".glb,.gltf,.obj,.ply" onChange={handleFileChange} />
           </label>
-          {detailAsset?.status === "READY" && <button type="button" onClick={onPreview}>상세 보기</button>}
-          {detailAsset && <button type="button" className={styles.dangerButton} onClick={onRemoveAsset}>삭제</button>}
+          {detailAsset?.status === "READY" && <button type="button" onClick={onPreview}><EnterIcon size={15} /> 상세 보기</button>}
+          {detailAsset && <button type="button" className={styles.dangerButton} onClick={onRemoveAsset}><DeleteIcon size={15} /> 삭제</button>}
         </div>
         {uploadMessage && <p className={styles.uploadMessage} role="status">{uploadMessage}</p>}
         <p className={styles.fileHelp}>GLB, GLTF, OBJ, PLY · 파일은 현재 브라우저 세션에서만 미리보기 가능</p>

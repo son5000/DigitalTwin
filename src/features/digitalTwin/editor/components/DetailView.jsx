@@ -1,4 +1,5 @@
 import DetailAssetScene from "@/features/digitalTwin/editor/three/DetailAssetScene";
+import { ArrowLeftIcon } from "@/components/icons";
 
 import styles from "./DetailView.module.css";
 
@@ -6,7 +7,7 @@ export default function DetailView({ equipment, asset, onClose }) {
   return (
     <section className={styles.overlay} aria-label={`${equipment.name} 3D 스캔 상세 보기`}>
       <header>
-        <button type="button" onClick={onClose}>← 편집기로 돌아가기</button>
+        <button type="button" onClick={onClose}><ArrowLeftIcon size={17} /> 편집기로 돌아가기</button>
         <div>
           <span>DETAIL VIEW / {asset.originalFormat}</span>
           <h2>{equipment.name}</h2>

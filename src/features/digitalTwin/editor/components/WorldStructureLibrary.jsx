@@ -5,6 +5,15 @@ import {
   WORLD_STRUCTURE_TEMPLATE_MAP,
   WORLD_STRUCTURE_TEMPLATES,
 } from "@/features/digitalTwin/editor/constants/worldStructureTemplates";
+import {
+  ChevronDownIcon,
+  EquipmentIcon,
+  LockIcon,
+  UnlockIcon,
+  VisibilityIcon,
+  WorldIcon,
+  WorldStructureTypeIcon,
+} from "@/components/icons";
 
 import styles from "./WorldStructureLibrary.module.css";
 
@@ -60,25 +69,25 @@ export default function WorldStructureLibrary({
 
       <div className={styles.tools}>
         {templates.map((definition) => (
-          <button
-            key={definition.id}
-            type="button"
-            className={activeTemplateId === definition.id ? styles.activeTool : ""}
-            aria-pressed={activeTemplateId === definition.id}
-            disabled={worldLocked}
-            title={`${definition.nameKo} (${definition.name}) 배치`}
-            onClick={() => onSelectTemplate(definition.id)}
-          >
-            <span aria-hidden="true">{definition.icon}</span>
-            <strong>{definition.nameKo}</strong>
-            <small>{definition.name}</small>
-          </button>
+            <button
+              key={definition.id}
+              type="button"
+              className={activeTemplateId === definition.id ? styles.activeTool : ""}
+              aria-pressed={activeTemplateId === definition.id}
+              disabled={worldLocked}
+              title={`${definition.nameKo} (${definition.name}) 배치`}
+              onClick={() => onSelectTemplate(definition.id)}
+            >
+              <span aria-hidden="true"><WorldStructureTypeIcon definition={definition} size={25} /></span>
+              <strong>{definition.nameKo}</strong>
+              <small>{definition.name}</small>
+            </button>
         ))}
       </div>
       <p className={styles.help}>도구를 선택한 뒤 장면의 기준 위치를 클릭하고 X / Y / Z로 배치합니다.</p>
 
       <details className={styles.filterSection}>
-        <summary>표시 필터 <span>{Object.values(visibilityFilters).filter(Boolean).length}</span></summary>
+        <summary><span className={styles.summaryLabel}><VisibilityIcon size={16} /> 표시 필터</span><span>{Object.values(visibilityFilters).filter(Boolean).length}</span></summary>
         <div className={styles.filters}>
           {Object.entries(FILTER_LABELS).map(([filterId, label]) => (
             <label key={filterId}>
@@ -95,25 +104,26 @@ export default function WorldStructureLibrary({
         aria-pressed={worldLocked}
         onClick={() => onToggleWorldLock(!worldLocked)}
       >
-        {worldLocked ? "▣ World Structure 잠금 해제" : "□ World Structure 전체 잠금"}
+        {worldLocked ? <LockIcon size={17} /> : <UnlockIcon size={17} />}
+        {worldLocked ? "World Structure 잠금 해제" : "World Structure 전체 잠금"}
       </button>
 
       <div className={styles.tree}>
         <section>
           <h3><span>월드 구조물</span><strong>{structures.length}</strong></h3>
           <button type="button" className={styles.baseNode} onClick={() => onSelectStructure(null)}>
-            <span>▾ 기계실 A</span><small>기본 월드</small>
+            <span><ChevronDownIcon size={15} /><WorldIcon size={17} /> 기계실 A</span><small>기본 월드</small>
           </button>
           {structures.map((structure) => (
-            <button
-              key={structure.id}
-              type="button"
-              className={selectedStructureId === structure.id ? styles.selectedNode : ""}
-              onClick={() => onSelectStructure(structure.id)}
-            >
-              <span>{WORLD_STRUCTURE_TEMPLATE_MAP[structure.type]?.icon} {structure.name}</span>
-              <small>{structure.locked ? "LOCKED" : structure.type}</small>
-            </button>
+              <button
+                key={structure.id}
+                type="button"
+                className={selectedStructureId === structure.id ? styles.selectedNode : ""}
+                onClick={() => onSelectStructure(structure.id)}
+              >
+                <span><WorldStructureTypeIcon definition={WORLD_STRUCTURE_TEMPLATE_MAP[structure.type]} size={17} /> {structure.name}</span>
+                <small>{structure.locked ? "LOCKED" : structure.type}</small>
+              </button>
           ))}
         </section>
         <section>
@@ -122,7 +132,7 @@ export default function WorldStructureLibrary({
             <p>배치된 설비가 없습니다.</p>
           ) : equipment.map((item) => (
             <button key={item.id} type="button" title="Equipment Edit Mode에서 선택 가능" onClick={() => onSelectEquipment(item.id)}>
-              <span>◇ {item.name}</span><small>설비</small>
+              <span><EquipmentIcon size={17} /> {item.name}</span><small>설비</small>
             </button>
           ))}
         </section>

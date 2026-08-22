@@ -29,6 +29,7 @@
 }
 
 .chevron {
+  display: grid;
   flex: 0 0 auto;
   color: var(--color-text-faint);
   font-size: 10px;
@@ -40,7 +41,7 @@
   max-width: min(28vw, 440px);
   overflow: hidden;
   color: var(--color-text-subtle);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
   font-size: 12px;
   white-space: nowrap;
 }
@@ -123,7 +124,7 @@
   border: 1px solid var(--color-border-strong);
   border-radius: 6px;
   background: var(--color-surface);
-  box-shadow: 0 18px 48px rgb(0 0 0 / 22%);
+  box-shadow: var(--shadow-popover);
 }
 
 .panelHeader {
@@ -141,7 +142,7 @@
 
 .panelHeader span {
   color: var(--color-text-faint);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
   font-size: 10px;
   letter-spacing: 0.14em;
 }
@@ -183,8 +184,8 @@
 }
 
 .treeItem.selectedItem {
-  border-color: rgb(var(--color-accent-rgb) / 35%);
-  background: rgb(var(--color-accent-rgb) / 8%);
+  border-color: var(--state-selected-border);
+  background: var(--state-selected);
 }
 
 .nodeButton {
@@ -213,7 +214,7 @@
   border: 1px solid var(--color-border-strong);
   border-radius: 3px;
   color: var(--color-accent-strong);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
   font-size: 11px;
   background: var(--color-surface-raised);
 }
@@ -234,7 +235,7 @@
 .nodeText strong {
   color: inherit;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 
 .nodeText small {
@@ -248,7 +249,7 @@
   border: 1px solid rgb(var(--color-positive-rgb) / 26%);
   border-radius: 2px;
   color: var(--color-positive);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
   font-size: 9px;
   background: rgb(var(--color-positive-rgb) / 8%);
 }
@@ -275,7 +276,7 @@
 .nodeActions button:disabled,
 .renameForm button:disabled {
   cursor: not-allowed;
-  opacity: 0.28;
+  opacity: var(--state-disabled-opacity);
 }
 
 .renameForm {
@@ -316,6 +317,9 @@
 }
 
 .addButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   flex: 0 0 auto;
   padding: 0 9px;
 }

@@ -4,6 +4,15 @@ import {
   HIERARCHY_CHILD_TYPES,
   HIERARCHY_TYPE_LABELS,
 } from "@/features/digitalTwin/editor/model/digitalTwinHierarchy";
+import {
+  AddIcon,
+  CheckIcon,
+  ChevronDownIcon,
+  CloseIcon,
+  DeleteIcon,
+  EditIcon,
+  HierarchyIcon,
+} from "@/components/icons";
 
 import styles from "./HierarchyNavigator.module.css";
 
@@ -88,7 +97,7 @@ export default function HierarchyNavigator({
           aria-label="월드 계층 열기"
           onClick={() => setIsOpen((open) => !open)}
         >
-          <span className={styles.chevron} aria-hidden="true">▾</span>
+          <span className={styles.chevron} aria-hidden="true"><ChevronDownIcon size={16} /></span>
         </button>
       </div>
       <label className={styles.roomControl}>
@@ -100,7 +109,7 @@ export default function HierarchyNavigator({
       </label>
       {showQuickAddRoom ? (
         <button type="button" className={styles.addButton} onClick={onAddRoom} title="현재 층에 공간 추가">
-          + 공간
+          <AddIcon size={16} /> 공간
         </button>
       ) : null}
 
@@ -111,7 +120,7 @@ export default function HierarchyNavigator({
               <span>월드 구조</span>
               <strong>디지털 트윈 계층</strong>
             </div>
-            <button type="button" onClick={() => setIsOpen(false)} aria-label="계층 패널 닫기">×</button>
+            <button type="button" onClick={() => setIsOpen(false)} aria-label="계층 패널 닫기"><CloseIcon size={17} /></button>
           </div>
           <div className={styles.tree}>
             {treeItems.map(({ node, depth }) => {
@@ -132,8 +141,8 @@ export default function HierarchyNavigator({
                           if (event.key === "Escape") setEditingNodeId(null);
                         }}
                       />
-                      <button type="submit" disabled={!draftName.trim()} aria-label="이름 저장">✓</button>
-                      <button type="button" onClick={() => setEditingNodeId(null)} aria-label="이름 변경 취소">×</button>
+                      <button type="submit" disabled={!draftName.trim()} aria-label="이름 저장"><CheckIcon size={17} /></button>
+                      <button type="button" onClick={() => setEditingNodeId(null)} aria-label="이름 변경 취소"><CloseIcon size={17} /></button>
                     </form>
                   ) : (
                     <>
@@ -144,7 +153,7 @@ export default function HierarchyNavigator({
                         onDoubleClick={() => onNavigateNode(node.id)}
                         title="한 번 클릭: 선택 · 더블 클릭: 해당 단계로 이동"
                       >
-                        <span className={styles.nodeType}>{node.type.slice(0, 1)}</span>
+                        <span className={styles.nodeType}><HierarchyIcon type={node.type} size={18} /></span>
                         <span className={styles.nodeText}>
                           <strong>{node.name}</strong>
                           <small>{HIERARCHY_TYPE_LABELS[node.type]}</small>
@@ -153,10 +162,10 @@ export default function HierarchyNavigator({
                       </button>
                       <div className={styles.nodeActions}>
                         {childType ? (
-                          <button type="button" onClick={() => onAddChild(node.id)} title={`${HIERARCHY_TYPE_LABELS[childType]} 추가`}>＋</button>
+                          <button type="button" onClick={() => onAddChild(node.id)} title={`${HIERARCHY_TYPE_LABELS[childType]} 추가`}><AddIcon size={16} /></button>
                         ) : null}
-                        <button type="button" onClick={() => beginRename(node)} title="이름 변경">✎</button>
-                        <button type="button" disabled={isProtected} onClick={() => handleDelete(node)} title={isProtected ? "현재 열린 경로는 삭제할 수 없습니다" : "삭제"}>−</button>
+                        <button type="button" onClick={() => beginRename(node)} title="이름 변경"><EditIcon size={15} /></button>
+                        <button type="button" disabled={isProtected} onClick={() => handleDelete(node)} title={isProtected ? "현재 열린 경로는 삭제할 수 없습니다" : "삭제"}><DeleteIcon size={15} /></button>
                       </div>
                     </>
                   )}

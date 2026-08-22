@@ -1,0 +1,6 @@
+export const WORLD_PANEL_IDS = Object.freeze({
+  OBJECTS: "OBJECTS",
+  SETTINGS: "SETTINGS",
+  HIERARCHY: "HIERARCHY",
+  DETAILS: "DETAILS",
+});

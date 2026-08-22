@@ -1,8 +1,8 @@
 .section { border-bottom: 1px solid var(--color-border); }
-.section summary { display: grid; min-height: 48px; padding: 0 16px; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; color: var(--color-heading); cursor: pointer; list-style: none; font-size: 15px; font-weight: 650; }
+.section summary { display: grid; min-height: 48px; padding: 0 16px; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; color: var(--color-heading); cursor: pointer; list-style: none; font-size: 15px; font-weight: var(--font-weight-semibold); }
 .section summary::-webkit-details-marker { display: none; }
-.section summary:hover { background: rgb(var(--color-accent-rgb) / 5%); }
-.section summary small { color: var(--color-text-subtle); font-size: 12px; font-weight: 450; }
+.section summary:hover { background: var(--state-hover); }
+.section summary small { color: var(--color-text-subtle); font-size: 12px; font-weight: var(--font-weight-medium); }
 .chevron { color: var(--color-text-muted); font-size: 16px; transition: transform 140ms ease; }
 .section[open] .chevron { transform: rotate(180deg); }
 .content { display: grid; gap: 12px; padding: 4px 16px 18px; }

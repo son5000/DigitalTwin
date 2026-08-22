@@ -30,7 +30,7 @@
   border: 1px solid var(--color-border-strong);
   background: var(--color-surface-overlay);
   color: var(--color-text-muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
   font-size: 12px;
   letter-spacing: 0.11em;
   pointer-events: none;
@@ -47,7 +47,7 @@
   border-radius: var(--radius-small);
   color: var(--color-accent-strong);
   background: var(--color-surface-overlay);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
   font-size: 12px;
   letter-spacing: .08em;
   pointer-events: none;
@@ -74,7 +74,7 @@
   pointer-events: none;
 }
 
-.hoverTooltip strong { font-size: 13px; font-weight: 650; }
+.hoverTooltip strong { font-size: 13px; font-weight: var(--font-weight-semibold); }
 .hoverTooltip span { font-size: 12px; }
 .worldTooltip { border-left: 3px solid var(--world-accent); }
 .worldTooltip span { color: var(--world-panel-accent); }
@@ -96,7 +96,6 @@
   height: 6px;
   border-radius: 50%;
   background: var(--color-positive);
-  box-shadow: 0 0 8px rgb(var(--color-positive-rgb) / 50%);
 }
 
 .axisLegend {

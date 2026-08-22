@@ -1,6 +1,6 @@
 .properties { min-height: 100%; padding-bottom: 20px; }
 .heading { display: flex; padding: 20px 16px 16px; align-items: flex-end; justify-content: space-between; border-bottom: 1px solid var(--color-border); }
-.heading div > span { color: var(--world-panel-accent); font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .12em; }
+.heading div > span { color: var(--world-panel-accent); font-size: 12px; letter-spacing: .12em; }
 .heading h2 { margin-top: 4px; color: var(--color-heading); font-size: 19px; }
 .badge { padding: 4px 7px; border: 1px solid var(--world-accent); border-radius: 999px; color: var(--world-panel-accent); font-size: 12px; }
 .lockNotice { margin: 12px 16px 0; padding: 9px 11px; border: 1px solid var(--world-accent); border-radius: var(--radius-small); color: var(--world-panel-accent); font-size: 13px; }
@@ -11,7 +11,7 @@
 .dimensions { display: grid; gap: 7px; margin: 0; padding: 10px; border-radius: var(--radius-small); background: var(--color-input); }
 .dimensions div { display: flex; justify-content: space-between; gap: 8px; }
 .dimensions dt { color: var(--color-text-subtle); font-size: 12px; }
-.dimensions dd { color: var(--color-text-muted); font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-align: right; }
+.dimensions dd { color: var(--color-text-muted); font-size: 12px; text-align: right; }
 .opacity { display: grid; gap: 5px; }
 .opacity > span { display: flex; justify-content: space-between; color: var(--color-text-muted); font-size: 13px; }
 .opacity input { min-height: 32px; accent-color: var(--world-accent); }
@@ -21,9 +21,9 @@
 .groundSnap small { color: var(--color-text-muted); font-size: 12px; line-height: 1.45; }
 .check { display: flex; min-height: 44px; align-items: center; gap: 10px; color: var(--color-text); font-size: 14px; }
 .check input { width: 20px; height: 20px; accent-color: var(--world-accent); }
-.objectId { overflow-wrap: anywhere; color: var(--color-text-subtle); font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.objectId { overflow-wrap: anywhere; color: var(--color-text-subtle); font-size: 12px; }
 .empty { display: grid; min-height: 100%; padding: 42px 24px; place-content: center; text-align: center; }
 .empty > span { color: var(--world-accent); font-size: 34px; }
-.empty > strong { margin-top: 12px; color: var(--world-panel-accent); font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .12em; }
+.empty > strong { margin-top: 12px; color: var(--world-panel-accent); font-size: 12px; letter-spacing: .12em; }
 .empty h2 { margin-top: 7px; color: var(--color-heading); font-size: 19px; }
 .empty p { max-width: 280px; margin-top: 8px; color: var(--color-text-muted); font-size: 14px; line-height: 1.6; }

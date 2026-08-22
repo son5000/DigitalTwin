@@ -5,6 +5,15 @@ import {
   EQUIPMENT_SHAPE_TEMPLATE_MAP,
   EQUIPMENT_SHAPE_TEMPLATES,
 } from "@/features/digitalTwin/editor/constants/equipmentShapeTemplates";
+import {
+  AddIcon,
+  CloseIcon,
+  EquipmentTemplateIcon,
+  GridViewIcon,
+  ListViewIcon,
+  SearchIcon,
+  StarIcon,
+} from "@/components/icons";
 
 import styles from "./EquipmentLibrary.module.css";
 
@@ -21,12 +30,12 @@ function TemplateCard({ template, activeTemplateId, favoriteTemplateIds, viewMod
         title={`${template.nameKo} (${template.name}) 배치`}
         onClick={() => onSelect(template.id)}
       >
-        <span className={styles.thumbnail} aria-hidden="true">{template.icon}</span>
+        <span className={styles.thumbnail} aria-hidden="true"><EquipmentTemplateIcon template={template} size={26} /></span>
         <span className={styles.cardText}>
           <strong>{template.nameKo}</strong>
           <small>{template.name}</small>
         </span>
-        <span className={styles.addMark}>{isActive ? "×" : "+"}</span>
+        <span className={styles.addMark}>{isActive ? <CloseIcon size={16} /> : <AddIcon size={16} />}</span>
       </button>
       <button
         type="button"
@@ -36,7 +45,7 @@ function TemplateCard({ template, activeTemplateId, favoriteTemplateIds, viewMod
         title={isFavorite ? "즐겨찾기 해제" : "즐겨찾기 추가"}
         onClick={() => onToggleFavorite(template.id)}
       >
-        {isFavorite ? "★" : "☆"}
+        <StarIcon size={18} filled={isFavorite} />
       </button>
     </article>
   );
@@ -98,7 +107,7 @@ export default function EquipmentLibrary({
 
       <label className={styles.searchField}>
         <span className={styles.visuallyHidden}>설비 검색</span>
-        <span aria-hidden="true">⌕</span>
+        <SearchIcon size={18} />
         <input
           type="search"
           value={query}
@@ -119,8 +128,8 @@ export default function EquipmentLibrary({
           </select>
         </label>
         <div className={styles.viewToggle} aria-label="카탈로그 보기 방식">
-          <button type="button" className={viewMode === "grid" ? styles.toggleActive : ""} aria-label="그리드 보기" title="그리드 보기" onClick={() => setViewMode("grid")}>▦</button>
-          <button type="button" className={viewMode === "list" ? styles.toggleActive : ""} aria-label="목록 보기" title="목록 보기" onClick={() => setViewMode("list")}>☷</button>
+          <button type="button" className={viewMode === "grid" ? styles.toggleActive : ""} aria-label="그리드 보기" title="그리드 보기" onClick={() => setViewMode("grid")}><GridViewIcon size={18} /></button>
+          <button type="button" className={viewMode === "list" ? styles.toggleActive : ""} aria-label="목록 보기" title="목록 보기" onClick={() => setViewMode("list")}><ListViewIcon size={18} /></button>
         </div>
       </div>
 

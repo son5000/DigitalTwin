@@ -7,6 +7,10 @@ import {
   VIEW_MODES,
 } from "@/features/digitalTwin/editor/constants/equipmentShapeTemplates";
 import {
+  getDefaultObjectVariants,
+  OBJECT_LIBRARY_DEFINITION_MAP,
+} from "@/features/digitalTwin/editor/constants/objectLibraryCatalog";
+import {
   createEquipmentPart,
   normalizeEquipmentPart,
 } from "@/features/digitalTwin/editor/constants/partTemplates";
@@ -23,6 +27,10 @@ import {
   normalizeSiteObject,
 } from "@/features/digitalTwin/editor/constants/siteEnvironmentTemplates";
 import {
+  DEFAULT_SITE_ENVIRONMENT,
+  normalizeSiteEnvironment,
+} from "@/features/digitalTwin/editor/constants/siteEnvironmentSettings";
+import {
   createInitialNavigationContext,
   EDITOR_DEPTHS,
 } from "@/features/digitalTwin/editor/constants/editorNavigation";
@@ -32,6 +40,7 @@ import {
   findCollidingEquipmentIds,
   snapValue,
 } from "@/features/digitalTwin/editor/utils/editorMath";
+import { placeObjectsInArea } from "@/features/digitalTwin/editor/utils/siteAreaPlacement";
 import {
   findPipeSnapCandidate,
   resolvePipeSnap,
@@ -109,6 +118,9 @@ function mergeEquipment(equipment, changes) {
     appearance: changes.appearance
       ? { ...equipment.appearance, ...changes.appearance }
       : equipment.appearance,
+    metadata: changes.metadata
+      ? { ...(equipment.metadata ?? {}), ...changes.metadata }
+      : equipment.metadata,
     position: changes.position
       ? { ...equipment.position, ...changes.position }
       : equipment.position,
@@ -156,6 +168,7 @@ function createHistorySnapshot(layoutDocument) {
       nodes: layoutDocument.hierarchy.nodes,
     },
     gridSettings: layoutDocument.gridSettings,
+    siteEnvironment: layoutDocument.siteEnvironment,
     siteObjects: layoutDocument.siteObjects,
     roomScenes,
   });
@@ -170,6 +183,8 @@ function mergeBuildingDefinition(building, changes) {
     ? Object.fromEntries(Object.entries({ ...building.parameters, ...changes.parameters }).map(([key, value]) => {
         if (typeof value !== "number") return [key, value];
         if (key === "floorCount") return [key, Math.min(100, Math.max(1, Math.round(value)))];
+        if (key === "entranceCount") return [key, Math.min(12, Math.max(1, Math.round(value)))];
+        if (key === "stairCount") return [key, Math.min(8, Math.max(0, Math.round(value)))];
         if (key === "floorHeight") return [key, Math.max(2, value)];
         if (key === "width" || key === "depth") return [key, Math.max(5, value)];
         return [key, value];
@@ -183,6 +198,7 @@ function mergeBuildingDefinition(building, changes) {
     position: changes.position ? { ...building.position, ...changes.position } : building.position,
     rotation: changes.rotation ? { ...building.rotation, ...changes.rotation } : building.rotation,
     appearance: changes.appearance ? { ...building.appearance, ...changes.appearance } : building.appearance,
+    variants: changes.variants ? { ...building.variants, ...changes.variants } : building.variants,
   };
 }
 
@@ -201,6 +217,47 @@ function createBuildingFloors(building, existingFloors = []) {
   });
 }
 
+function createBuildingDefinitionFromArea({
+  rootId,
+  siblingIndex,
+  area,
+  templateId = "BUILDING",
+  variantOverrides = {},
+  placementOptions = {},
+}) {
+  const definition = OBJECT_LIBRARY_DEFINITION_MAP[templateId]
+    ?? OBJECT_LIBRARY_DEFINITION_MAP.BUILDING;
+  if (!definition?.createsBuilding) return null;
+  const scale = placementOptions.scale ?? { x: 1, y: 1, z: 1 };
+  const scaleX = Math.max(0.01, Number(scale?.x ?? scale) || 1);
+  const scaleY = Math.max(0.01, Number(scale?.y ?? scale) || 1);
+  const scaleZ = Math.max(0.01, Number(scale?.z ?? scale) || 1);
+  const building = createHierarchyNode(HIERARCHY_NODE_TYPES.BUILDING, rootId, siblingIndex, {
+    templateId: definition.id,
+    objectDefinitionId: definition.id,
+    name: `${definition.name} ${String(siblingIndex + 1).padStart(2, "0")}`,
+    variants: { ...getDefaultObjectVariants(definition), ...variantOverrides },
+    position: {
+      x: Number(area?.center?.x) || 0,
+      y: 0,
+      z: Number(area?.center?.z) || 0,
+    },
+    rotation: { x: 0, y: Number(placementOptions.rotationY) || 0, z: 0 },
+    parameters: {
+      ...definition.parameters,
+      width: Math.max(5, (Number(area?.width) || definition.width || 5) * scaleX),
+      depth: Math.max(5, (Number(area?.depth) || definition.depth || 5) * scaleZ),
+      floorHeight: Math.max(2, (definition.parameters?.floorHeight ?? 4) * scaleY),
+      roofType: variantOverrides.roofStyle
+        ?? definition.defaultVariants?.roofStyle
+        ?? definition.parameters?.roofType
+        ?? "FLAT",
+    },
+    appearance: { color: definition.color, material: definition.material },
+  });
+  return { building, floors: createBuildingFloors(building) };
+}
+
 function findHierarchyAncestor(nodes, nodeId, type) {
   let node = nodes.find((item) => item.id === nodeId) ?? null;
   while (node) {
@@ -213,6 +270,7 @@ function findHierarchyAncestor(nodes, nodeId, type) {
 export default function useDigitalTwinEditorState() {
   const [hierarchy, setHierarchy] = useState(createDefaultHierarchy);
   const [roomScenes, setRoomScenes] = useState({});
+  const [siteEnvironment, setSiteEnvironment] = useState(DEFAULT_SITE_ENVIRONMENT);
   const [siteObjects, setSiteObjects] = useState([]);
   const [selectedSiteObjectId, setSelectedSiteObjectId] = useState(null);
   const [world, setWorld] = useState(DEFAULT_WORLD);
@@ -406,6 +464,12 @@ export default function useDigitalTwinEditorState() {
             position: clampPositionToWorld(snappedPosition, defaults.dimensions, world),
             rotation: { x: 0, y: 0, z: 0 },
             detailAssetId: null,
+            metadata: {
+              assetTag: "",
+              manufacturer: "",
+              model: "",
+              serialNumber: "",
+            },
             visible: true,
             locked: false,
             groundSurfaceId: "FLOOR",
@@ -585,6 +649,10 @@ export default function useDigitalTwinEditorState() {
     }));
   }, []);
 
+  const updateSiteEnvironment = useCallback((changes) => {
+    setSiteEnvironment((current) => normalizeSiteEnvironment({ ...current, ...changes }));
+  }, []);
+
   const updateDetailAsset = useCallback((assetId, changes) => {
     setDetailAssets((assets) =>
       assets.map((asset) => asset.id === assetId
@@ -758,6 +826,7 @@ export default function useDigitalTwinEditorState() {
     });
     setHierarchy(createDefaultHierarchy());
     setRoomScenes({});
+    setSiteEnvironment(DEFAULT_SITE_ENVIRONMENT);
     setSiteObjects([]);
     setSelectedSiteObjectId(null);
     setWorld(DEFAULT_WORLD);
@@ -791,6 +860,7 @@ export default function useDigitalTwinEditorState() {
     clearHistory();
     setHierarchy(nextHierarchy);
     setRoomScenes(nextRoomScenes);
+    setSiteEnvironment(normalizeSiteEnvironment(layout?.siteEnvironment));
     setSiteObjects(
       (Array.isArray(layout?.siteObjects) ? layout.siteObjects : [])
         .map(normalizeSiteObject)
@@ -1059,32 +1129,25 @@ export default function useDigitalTwinEditorState() {
     }));
   }, []);
 
-  const addBuildingFromArea = useCallback((area) => {
+  const addBuildingFromArea = useCallback((area, templateId = "BUILDING", variantOverrides = {}) => {
     const siblingCount = hierarchy.nodes.filter(
       (node) => node.parentId === hierarchy.rootId && node.type === HIERARCHY_NODE_TYPES.BUILDING,
     ).length;
-    const building = createHierarchyNode(HIERARCHY_NODE_TYPES.BUILDING, hierarchy.rootId, siblingCount, {
-      position: {
-        x: Number(area?.center?.x) || 0,
-        y: 0,
-        z: Number(area?.center?.z) || 0,
-      },
-      parameters: {
-        width: Math.max(5, Number(area?.width) || 5),
-        depth: Math.max(5, Number(area?.depth) || 5),
-        floorCount: 1,
-        floorHeight: 4,
-        roofType: "FLAT",
-      },
+    const created = createBuildingDefinitionFromArea({
+      rootId: hierarchy.rootId,
+      siblingIndex: siblingCount,
+      area,
+      templateId,
+      variantOverrides,
     });
-    const buildingFloors = createBuildingFloors(building);
+    if (!created) return null;
     setHierarchy((current) => ({
       ...current,
-      selectedNodeId: building.id,
-      nodes: [...current.nodes, building, ...buildingFloors],
+      selectedNodeId: created.building.id,
+      nodes: [...current.nodes, created.building, ...created.floors],
     }));
     setSelectedSiteObjectId(null);
-    return building.id;
+    return created.building.id;
   }, [hierarchy.nodes, hierarchy.rootId]);
 
   const updateBuilding = useCallback((buildingId, changes) => {
@@ -1149,16 +1212,98 @@ export default function useDigitalTwinEditorState() {
     }
   }, [applyRoomScene, currentRoomScene, hierarchy, roomScenes]);
 
-  const addSiteObjectFromArea = useCallback((templateId, area) => {
-    if (templateId === "BUILDING") return addBuildingFromArea(area);
+  const addSiteObjectFromArea = useCallback((templateId, area, variantOverrides = {}) => {
+    const definition = OBJECT_LIBRARY_DEFINITION_MAP[templateId];
+    if (definition?.createsBuilding) return addBuildingFromArea(area, templateId, variantOverrides);
     const sequence = siteObjects.filter((object) => object.type === templateId).length + 1;
-    const object = createSiteObjectFromArea(templateId, area, sequence);
+    const object = createSiteObjectFromArea(templateId, area, sequence, variantOverrides);
     if (!object) return null;
     setSiteObjects((items) => [...items, object]);
     setSelectedSiteObjectId(object.id);
     setHierarchy((current) => ({ ...current, selectedNodeId: current.rootId }));
     return object.id;
   }, [addBuildingFromArea, siteObjects]);
+
+  const addSiteObjectsFromArea = useCallback((templateId, area, variantOverrides = {}, placementOptions = {}) => {
+    const definition = OBJECT_LIBRARY_DEFINITION_MAP[templateId];
+    if (!definition) return { canPlace: false, count: 0, ids: [], message: "알 수 없는 오브젝트입니다." };
+    const plan = placeObjectsInArea({
+      area,
+      object: definition,
+      scale: placementOptions.scale,
+      rotationY: placementOptions.rotationY,
+      padding: placementOptions.padding,
+      gridEnabled: gridSettings.enabled,
+      cellSize: area?.cellSize ?? gridSettings.baseSize,
+    });
+    if (!plan.canPlace) return { ...plan, ids: [] };
+
+    if (definition.createsBuilding) {
+      const siblingCount = hierarchy.nodes.filter(
+        (node) => node.parentId === hierarchy.rootId && node.type === HIERARCHY_NODE_TYPES.BUILDING,
+      ).length;
+      const createdItems = plan.positions.map((position, index) => createBuildingDefinitionFromArea({
+        rootId: hierarchy.rootId,
+        siblingIndex: siblingCount + index,
+        area: {
+          center: { x: position.x, z: position.z },
+          width: definition.width,
+          depth: definition.depth,
+          cellSize: plan.cellSize,
+        },
+        templateId,
+        variantOverrides,
+        placementOptions: {
+          ...placementOptions,
+          scale: plan.footprint.scale,
+          rotationY: plan.footprint.rotationY,
+        },
+      })).filter(Boolean);
+      const ids = createdItems.map(({ building }) => building.id);
+      const nodes = createdItems.flatMap(({ building, floors }) => [building, ...floors]);
+      setHierarchy((current) => ({
+        ...current,
+        selectedNodeId: ids.at(-1) ?? current.selectedNodeId,
+        nodes: [...current.nodes, ...nodes],
+      }));
+      setSelectedSiteObjectId(null);
+      return { ...plan, ids };
+    }
+
+    const sequence = siteObjects.filter((object) => object.type === templateId).length;
+    const createdObjects = plan.positions.map((position, index) => {
+      const object = createSiteObjectFromArea(templateId, {
+        center: { x: position.x, z: position.z },
+        width: definition.width,
+        depth: definition.depth,
+        cellSize: plan.cellSize,
+      }, sequence + index + 1, variantOverrides);
+      if (!object) return null;
+      return normalizeSiteObject({
+        ...object,
+        rotation: { ...object.rotation, y: plan.footprint.rotationY },
+        dimensions: {
+          width: object.dimensions.width * plan.footprint.scale.x,
+          height: object.dimensions.height * plan.footprint.scale.y,
+          depth: object.dimensions.depth * plan.footprint.scale.z,
+        },
+        path: object.path ? {
+          ...object.path,
+          width: object.path.width * Math.min(plan.footprint.scale.x, plan.footprint.scale.z),
+          points: object.path.points.map((point) => ({
+            ...point,
+            x: point.x * plan.footprint.scale.x,
+            z: point.z * plan.footprint.scale.z,
+          })),
+        } : object.path,
+      });
+    }).filter(Boolean);
+    const ids = createdObjects.map((object) => object.id);
+    setSiteObjects((items) => [...items, ...createdObjects]);
+    setSelectedSiteObjectId(ids.at(-1) ?? null);
+    setHierarchy((current) => ({ ...current, selectedNodeId: current.rootId }));
+    return { ...plan, ids };
+  }, [gridSettings.baseSize, gridSettings.enabled, hierarchy.nodes, hierarchy.rootId, siteObjects]);
 
   const selectSiteObject = useCallback((objectId) => {
     const exists = siteObjects.some((object) => object.id === objectId);
@@ -1176,6 +1321,7 @@ export default function useDigitalTwinEditorState() {
         rotation: changes.rotation ? { ...object.rotation, ...changes.rotation } : object.rotation,
         dimensions: changes.dimensions ? { ...object.dimensions, ...changes.dimensions } : object.dimensions,
         appearance: changes.appearance ? { ...object.appearance, ...changes.appearance } : object.appearance,
+        variants: changes.variants ? { ...object.variants, ...changes.variants } : object.variants,
         parameters: changes.parameters ? { ...object.parameters, ...changes.parameters } : object.parameters,
         path: changes.path ? { ...object.path, ...changes.path } : object.path,
       });
@@ -1187,6 +1333,66 @@ export default function useDigitalTwinEditorState() {
     setSiteObjects((items) => items.filter((object) => object.id !== selectedSiteObjectId));
     setSelectedSiteObjectId(null);
   }, [selectedSiteObjectId]);
+
+  const duplicateSelectedSiteEntity = useCallback(() => {
+    const selectedSiteObject = siteObjects.find((object) => object.id === selectedSiteObjectId);
+    if (selectedSiteObject) {
+      const duplicate = normalizeSiteObject({
+        ...structuredClone(selectedSiteObject),
+        id: `SITE_OBJECT_${crypto.randomUUID()}`,
+        name: `${selectedSiteObject.name} 복사본`,
+        position: {
+          ...selectedSiteObject.position,
+          x: selectedSiteObject.position.x + Math.max(1, gridSettings.baseSize),
+          z: selectedSiteObject.position.z + Math.max(1, gridSettings.baseSize),
+        },
+      });
+      setSiteObjects((items) => [...items, duplicate]);
+      setSelectedSiteObjectId(duplicate.id);
+      return duplicate.id;
+    }
+
+    if (!selectedBuilding) return null;
+    const sourceIds = getHierarchyDescendantIds(hierarchy.nodes, selectedBuilding.id);
+    const idMap = new Map([...sourceIds].map((sourceId) => {
+      const node = hierarchy.nodes.find((item) => item.id === sourceId);
+      return [sourceId, `${node?.type ?? "NODE"}_${crypto.randomUUID()}`];
+    }));
+    const clonedNodes = hierarchy.nodes
+      .filter((node) => sourceIds.has(node.id))
+      .map((node) => {
+        const clone = structuredClone(node);
+        clone.id = idMap.get(node.id);
+        clone.parentId = idMap.get(node.parentId) ?? node.parentId;
+        if (node.id === selectedBuilding.id) {
+          clone.name = `${node.name} 복사본`;
+          clone.position = {
+            ...node.position,
+            x: node.position.x + Math.max(2, gridSettings.baseSize * 2),
+            z: node.position.z + Math.max(2, gridSettings.baseSize * 2),
+          };
+        }
+        return clone;
+      });
+    const duplicateBuildingId = idMap.get(selectedBuilding.id);
+    setHierarchy((current) => ({
+      ...current,
+      selectedNodeId: duplicateBuildingId,
+      nodes: [...current.nodes, ...clonedNodes],
+    }));
+    setRoomScenes((current) => {
+      const next = { ...current };
+      hierarchy.nodes
+        .filter((node) => sourceIds.has(node.id) && node.type === HIERARCHY_NODE_TYPES.ROOM)
+        .forEach((room) => {
+          const scene = room.id === hierarchy.activeRoomId ? currentRoomScene : current[room.id];
+          if (scene) next[idMap.get(room.id)] = structuredClone(scene);
+        });
+      return next;
+    });
+    setSelectedSiteObjectId(null);
+    return duplicateBuildingId;
+  }, [currentRoomScene, gridSettings.baseSize, hierarchy.activeRoomId, hierarchy.nodes, selectedBuilding, selectedSiteObjectId, siteObjects]);
 
   const updateRoomLayout = useCallback((roomId, changes) => {
     const { world: worldChanges, ...nodeChanges } = changes;
@@ -1323,11 +1529,12 @@ export default function useDigitalTwinEditorState() {
   const layoutDocument = useMemo(() => ({
     hierarchy,
     gridSettings,
+    siteEnvironment,
     siteObjects,
     roomScenes: hierarchy.activeRoomId
       ? { ...roomScenes, [hierarchy.activeRoomId]: currentRoomScene }
       : roomScenes,
-  }), [currentRoomScene, gridSettings, hierarchy, roomScenes, siteObjects]);
+  }), [currentRoomScene, gridSettings, hierarchy, roomScenes, siteEnvironment, siteObjects]);
 
   const commitHistorySnapshot = useCallback((snapshot) => {
     const currentSnapshot = historyCurrentRef.current;
@@ -1382,6 +1589,7 @@ export default function useDigitalTwinEditorState() {
     setHierarchy(nextHierarchy);
     setRoomScenes(nextRoomScenes);
     setGridSettings(normalizeGridSettings(snapshot.gridSettings));
+    setSiteEnvironment(normalizeSiteEnvironment(snapshot.siteEnvironment));
     setSiteObjects(
       snapshot.siteObjects.map(normalizeSiteObject).filter(Boolean),
     );
@@ -1466,6 +1674,7 @@ export default function useDigitalTwinEditorState() {
     navigationPath,
     buildings,
     floors,
+    siteEnvironment,
     siteObjects,
     selectedSiteObject,
     selectedSiteObjectId,
@@ -1508,6 +1717,7 @@ export default function useDigitalTwinEditorState() {
       removeSelectedEquipment,
       duplicateSelectedEquipment,
       updateWorld,
+      updateSiteEnvironment,
       registerDetailAsset,
       removeDetailAsset,
       updateDetailAsset,
@@ -1532,9 +1742,11 @@ export default function useDigitalTwinEditorState() {
       addBuildingFromArea,
       updateBuilding,
       addSiteObjectFromArea,
+      addSiteObjectsFromArea,
       selectSiteObject,
       updateSiteObject,
       removeSelectedSiteObject,
+      duplicateSelectedSiteEntity,
       updateRoomLayout,
       deleteHierarchyNode,
       selectTemplate,

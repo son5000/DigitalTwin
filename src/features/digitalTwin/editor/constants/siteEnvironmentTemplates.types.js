@@ -1,0 +1,7 @@
+export const SITE_OBJECT_GEOMETRY_MODES = Object.freeze({
+  AREA: "AREA",
+  LINEAR: "LINEAR",
+  CLUSTER: "CLUSTER",
+  PERIMETER: "PERIMETER",
+  POINT: "POINT",
+});

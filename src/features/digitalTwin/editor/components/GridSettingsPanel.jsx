@@ -3,6 +3,7 @@ import {
   GRID_CELL_SIZE_OPTIONS,
   getGridRegionsForScope,
 } from "@/features/digitalTwin/editor/constants/gridSettings";
+import { AddIcon, DeleteIcon } from "@/components/icons";
 
 import NumericField from "./NumericField";
 import styles from "./GridSettingsPanel.module.css";
@@ -56,7 +57,7 @@ export default function GridSettingsPanel({
         </summary>
         <div className={styles.regionIntro}>
           <span>{scopeLabel}</span>
-          <button type="button" onClick={() => onAddRegion(scopeId)}>+ 영역</button>
+          <button type="button" onClick={() => onAddRegion(scopeId)}><AddIcon size={15} /> 영역</button>
         </div>
         {regions.length === 0 ? (
           <p className={styles.empty}>세부 영역을 추가하면 해당 범위에서 더 작은 그리드 단위를 사용합니다.</p>
@@ -93,7 +94,7 @@ export default function GridSettingsPanel({
                   <NumericField label="가로" value={region.size.width} min={0.1} unit="m" onChange={(width) => onUpdateRegion(region.id, { size: { width } })} />
                   <NumericField label="세로" value={region.size.depth} min={0.1} unit="m" onChange={(depth) => onUpdateRegion(region.id, { size: { depth } })} />
                 </div>
-                <button type="button" className={styles.removeButton} onClick={() => onRemoveRegion(region.id)}>영역 삭제</button>
+                <button type="button" className={styles.removeButton} onClick={() => onRemoveRegion(region.id)}><DeleteIcon size={15} /> 영역 삭제</button>
               </article>
             ))}
           </div>

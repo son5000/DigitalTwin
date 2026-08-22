@@ -1,6 +1,16 @@
 import { useCallback, useState } from "react";
 
 import { TRANSFORM_MODES } from "@/features/digitalTwin/editor/constants/equipmentShapeTemplates";
+import {
+  AddIcon,
+  ArrowLeftIcon,
+  ComponentIcon,
+  DeleteIcon,
+  DuplicateIcon,
+  GridIcon,
+  MoveIcon,
+  RotateIcon,
+} from "@/components/icons";
 import { formatGridResolution, GRID_CELL_SIZE_OPTIONS } from "@/features/digitalTwin/editor/constants/gridSettings";
 import { PART_SHAPES } from "@/features/digitalTwin/editor/constants/partTemplates";
 import PartEditorScene from "@/features/digitalTwin/editor/three/PartEditorScene";
@@ -97,24 +107,24 @@ export default function PartEditor({
   return (
     <section className={styles.overlay} aria-label={`${equipment.name} Part Editor`}>
       <header className={styles.header}>
-        <button type="button" className={styles.backButton} onClick={onClose}>← 공간 편집기</button>
+        <button type="button" className={styles.backButton} onClick={onClose}><ArrowLeftIcon size={17} /> 공간 편집기</button>
         <div className={styles.title}><span>설비 / 파트</span><h2>{equipment.name}</h2></div>
         <div className={styles.headerMeta}><span>파트</span><strong>{equipment.parts?.length ?? 0}</strong></div>
       </header>
       <div className={styles.workspace}>
         <aside className={styles.partList}>
-          <div className={styles.listHeading}><span>파트 트리</span><button type="button" onClick={handleAddPart}>＋</button></div>
+          <div className={styles.listHeading}><span>파트 트리</span><button type="button" onClick={handleAddPart} aria-label="파트 추가"><AddIcon size={17} /></button></div>
           <div className={styles.listItems}>
             {(equipment.parts ?? []).map((part, index) => (
               <button key={part.id} type="button" className={part.id === selectedPartId ? styles.selectedPart : ""} onClick={() => setSelectedPartId(part.id)}>
-                <span>{String(index + 1).padStart(2, "0")}</span>
+                <span title={`파트 ${String(index + 1).padStart(2, "0")}`}><ComponentIcon size={17} /></span>
                 <span><strong>{part.name}</strong><small>{part.shape} · {part.status}</small></span>
               </button>
             ))}
           </div>
           <div className={styles.listActions}>
-            <button type="button" disabled={!selectedPart} onClick={handleDuplicate}>복제</button>
-            <button type="button" disabled={!selectedPart} onClick={handleRemove}>삭제</button>
+            <button type="button" disabled={!selectedPart} onClick={handleDuplicate}><DuplicateIcon size={16} /> 복제</button>
+            <button type="button" disabled={!selectedPart} onClick={handleRemove}><DeleteIcon size={16} /> 삭제</button>
           </div>
         </aside>
         <div className={styles.sceneArea}>
@@ -129,9 +139,9 @@ export default function PartEditor({
             onUpdatePart={(partId, changes) => onUpdatePart(equipment.id, partId, changes)}
           />
           <div className={styles.sceneToolbar}>
-            <button type="button" className={transformMode === TRANSFORM_MODES.TRANSLATE ? styles.activeTool : ""} disabled={!selectedPart} onClick={() => setTransformMode(TRANSFORM_MODES.TRANSLATE)}>이동</button>
-            <button type="button" className={transformMode === TRANSFORM_MODES.ROTATE ? styles.activeTool : ""} disabled={!selectedPart} onClick={() => setTransformMode(TRANSFORM_MODES.ROTATE)}>회전</button>
-            <button type="button" role="switch" aria-checked={gridSettings.enabled} className={gridSettings.enabled ? styles.activeTool : ""} onClick={() => onGridSnapChange(!gridSettings.enabled)}>Grid {gridSettings.enabled ? "ON" : "OFF"}</button>
+            <button type="button" className={transformMode === TRANSFORM_MODES.TRANSLATE ? styles.activeTool : ""} disabled={!selectedPart} onClick={() => setTransformMode(TRANSFORM_MODES.TRANSLATE)}><MoveIcon size={16} /> 이동</button>
+            <button type="button" className={transformMode === TRANSFORM_MODES.ROTATE ? styles.activeTool : ""} disabled={!selectedPart} onClick={() => setTransformMode(TRANSFORM_MODES.ROTATE)}><RotateIcon size={16} /> 회전</button>
+            <button type="button" role="switch" aria-checked={gridSettings.enabled} className={gridSettings.enabled ? styles.activeTool : ""} onClick={() => onGridSnapChange(!gridSettings.enabled)}><GridIcon size={16} /> Grid {gridSettings.enabled ? "ON" : "OFF"}</button>
             <select aria-label="Part grid cell size" value={gridSettings.baseSize} disabled={!gridSettings.enabled} onChange={(event) => onGridSizeChange(Number(event.target.value))}>
               {GRID_CELL_SIZE_OPTIONS.map((size) => <option key={size} value={size}>{formatGridResolution(size)}</option>)}
             </select>

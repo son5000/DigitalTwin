@@ -1,0 +1,13 @@
+.panel { display: grid; gap: 0; }
+.root { display: flex; padding: 14px; align-items: center; gap: 10px; border-bottom: 1px solid var(--color-border); color: var(--color-accent-strong); }
+.root div { display: grid; gap: 2px; }
+.root strong { color: var(--color-heading); font-size: 13px; }
+.root span { color: var(--color-text-faint); font-size: 10px; }
+.group { display: grid; gap: 4px; padding: 12px; border-bottom: 1px solid var(--color-border); }
+.group h3 { display: flex; justify-content: space-between; padding: 0 4px 5px; color: var(--color-text-subtle); font-size: 11px; }
+.group h3 span { color: var(--color-text-faint); }
+.group p { padding: 8px 4px; color: var(--color-text-faint); font-size: 11px; }
+.group button { display: grid; min-height: 40px; grid-template-columns: 22px minmax(0, 1fr); padding: 0 9px; align-items: center; border: 1px solid transparent; border-radius: 6px; color: var(--color-text-muted); text-align: left; background: transparent; }
+.group button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group button:hover { color: var(--color-heading); background: var(--state-hover); }
+.group button.selected { border-color: var(--state-selected-border); color: var(--color-accent-strong); background: var(--state-selected); }

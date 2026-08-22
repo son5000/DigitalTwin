@@ -1,3 +1,8 @@
+import {
+  BUILDING_OBJECT_DEFINITIONS,
+  getDefaultObjectVariants,
+} from "@/features/digitalTwin/editor/constants/objectLibraryCatalog";
+
 export const HIERARCHY_NODE_TYPES = Object.freeze({
   SITE: "SITE",
   BUILDING: "BUILDING",
@@ -18,15 +23,18 @@ export const HIERARCHY_TYPE_LABELS = Object.freeze({
   [HIERARCHY_NODE_TYPES.ROOM]: "공간",
 });
 
-export const BUILDING_TEMPLATES = Object.freeze([
-  { id: "INDUSTRIAL_BLOCK", name: "산업동", roofType: "FLAT" },
-  { id: "WAREHOUSE_GABLE", name: "박공지붕 창고", roofType: "GABLE" },
-  { id: "SAWTOOTH_FACTORY", name: "톱니지붕 공장", roofType: "SAWTOOTH" },
-]);
+export const BUILDING_TEMPLATES = Object.freeze(BUILDING_OBJECT_DEFINITIONS.map((definition) => ({
+  id: definition.id,
+  name: definition.name,
+  roofType: definition.defaultVariants.roofStyle,
+  definition,
+})));
 
 export const DEFAULT_BUILDING_DEFINITION = Object.freeze({
-  templateId: "INDUSTRIAL_BLOCK",
-  parameters: Object.freeze({ width: 40, depth: 24, floorCount: 1, floorHeight: 4, roofType: "FLAT" }),
+  templateId: "BUILDING",
+  objectDefinitionId: "BUILDING",
+  parameters: Object.freeze({ width: 24, depth: 16, floorCount: 5, floorHeight: 3.6, roofType: "FLAT", entranceCount: 2, stairCount: 2, extras: [] }),
+  variants: Object.freeze(getDefaultObjectVariants(BUILDING_OBJECT_DEFINITIONS[0])),
   position: Object.freeze({ x: 0, y: 0, z: 0 }),
   rotation: Object.freeze({ x: 0, y: 0, z: 0 }),
   appearance: Object.freeze({ color: "#9aa7ad", material: "CONCRETE" }),
@@ -66,6 +74,7 @@ export function normalizeHierarchy(hierarchy) {
           ...DEFAULT_BUILDING_DEFINITION,
           ...node,
           parameters: { ...DEFAULT_BUILDING_DEFINITION.parameters, ...node.parameters },
+          variants: { ...DEFAULT_BUILDING_DEFINITION.variants, ...node.variants },
           position: { ...DEFAULT_BUILDING_DEFINITION.position, ...node.position },
           rotation: { ...DEFAULT_BUILDING_DEFINITION.rotation, ...node.rotation },
           appearance: { ...DEFAULT_BUILDING_DEFINITION.appearance, ...node.appearance },
@@ -154,6 +163,7 @@ export function createHierarchyNode(type, parentId, siblingCount, overrides = {}
       position: { ...DEFAULT_BUILDING_DEFINITION.position },
       rotation: { ...DEFAULT_BUILDING_DEFINITION.rotation },
       appearance: { ...DEFAULT_BUILDING_DEFINITION.appearance },
+      variants: { ...DEFAULT_BUILDING_DEFINITION.variants },
     });
   }
 

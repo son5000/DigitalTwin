@@ -48,7 +48,7 @@
 
 .contextBadge {
   color: var(--color-accent-strong);
-  background: rgb(var(--color-accent-rgb) / 10%);
+  background: var(--state-selected);
 }
 
 .button:hover:not(:disabled),
@@ -61,15 +61,15 @@
 
 .button.active,
 .snapToggle.snapEnabled {
-  border-color: rgb(var(--color-accent-rgb) / 58%);
+  border-color: var(--state-selected-border);
   color: var(--color-accent-strong);
-  background: rgb(var(--color-accent-rgb) / 14%);
+  background: var(--state-selected);
   box-shadow: inset 3px 0 var(--color-accent);
 }
 
 .button:disabled {
   cursor: not-allowed;
-  opacity: 0.34;
+  opacity: var(--state-disabled-opacity);
 }
 
 .button:focus-visible,
@@ -81,8 +81,17 @@
 }
 
 .icon {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+}
+
+.icon svg,
+.snapToggle svg,
+.contextBadge svg,
+.overflow > summary svg {
   display: block;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .divider {
@@ -110,14 +119,14 @@
   border: 1px solid var(--color-border);
   border-radius: 5px;
   color: var(--color-text-subtle);
-  font: 10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
   text-align: center;
   background: var(--color-surface-raised);
 }
 
 .snapSize select:disabled {
   cursor: not-allowed;
-  opacity: 0.38;
+  opacity: var(--state-disabled-opacity);
 }
 
 .overflow {
@@ -152,7 +161,7 @@
   border: 1px solid var(--color-border-strong);
   border-radius: 8px;
   background: var(--color-surface-overlay);
-  box-shadow: var(--shadow-panel);
+  box-shadow: var(--shadow-popover);
   backdrop-filter: blur(12px);
 }
 
@@ -174,7 +183,7 @@
 
 .menuItem kbd {
   color: var(--color-text-faint);
-  font: 10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
 }
 
 .overflowMenu .divider {
@@ -208,11 +217,11 @@
   border-radius: 5px;
   color: var(--color-heading);
   background: var(--color-surface-overlay);
-  box-shadow: var(--shadow-panel);
+  box-shadow: var(--shadow-popover);
   content: attr(data-tooltip);
   font-family: inherit;
   font-size: 11px;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   line-height: 1.2;
   letter-spacing: 0;
   pointer-events: none;

@@ -15,9 +15,10 @@ export function saveLayout(layout) {
     ]),
   );
   const payload = {
-    version: 8,
+    version: 10,
     savedAt: new Date().toISOString(),
     hierarchy: layout.hierarchy,
+    siteEnvironment: layout.siteEnvironment,
     sitePaths: layout.sitePaths ?? [],
     siteObjects: layout.siteObjects ?? [],
     gridSettings: layout.gridSettings,

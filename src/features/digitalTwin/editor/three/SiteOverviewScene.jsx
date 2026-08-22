@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
 
-import { TRANSFORM_MODES } from "@/features/digitalTwin/editor/constants/equipmentShapeTemplates";
+import { TRANSFORM_MODES, VIEW_MODES } from "@/features/digitalTwin/editor/constants/equipmentShapeTemplates";
 import {
   formatGridResolution,
   getGridRegionsForScope,
@@ -11,6 +11,12 @@ import {
   snapHorizontalPosition,
 } from "@/features/digitalTwin/editor/constants/gridSettings";
 import { SCENE_THEMES } from "@/features/digitalTwin/editor/constants/sceneThemes";
+import { OBJECT_LIBRARY_DRAG_TYPE } from "@/features/digitalTwin/editor/constants/objectLibraryCatalog";
+import {
+  DEFAULT_SITE_ENVIRONMENT,
+  SITE_BACKGROUND_PRESETS,
+  SITE_GROUND_MATERIAL_OPTIONS,
+} from "@/features/digitalTwin/editor/constants/siteEnvironmentSettings";
 import {
   createSiteObjectFromArea,
   createSitePlacementArea,
@@ -32,6 +38,7 @@ import {
   createSiteEnvironmentObject,
   getSiteObjectSignature,
 } from "@/features/digitalTwin/editor/world/SiteEnvironmentFactory";
+import { placeObjectsInArea } from "@/features/digitalTwin/editor/utils/siteAreaPlacement";
 
 import { disposeObject3D } from "./disposeObject3D";
 import styles from "./SiteOverviewScene.module.css";
@@ -64,14 +71,21 @@ function resizeRuntime(runtime) {
   const { width, height } = runtime.container.getBoundingClientRect();
   if (!width || !height) return;
   runtime.renderer.setSize(width, height, false);
-  runtime.camera.aspect = width / height;
-  runtime.camera.updateProjectionMatrix();
+  const aspect = width / height;
+  runtime.perspectiveCamera.aspect = aspect;
+  runtime.perspectiveCamera.updateProjectionMatrix();
+  const halfHeight = runtime.orthographicSize / 2;
+  runtime.orthographicCamera.left = -halfHeight * aspect;
+  runtime.orthographicCamera.right = halfHeight * aspect;
+  runtime.orthographicCamera.top = halfHeight;
+  runtime.orthographicCamera.bottom = -halfHeight;
+  runtime.orthographicCamera.updateProjectionMatrix();
 }
 
-function configureSiteTransformControls(transformControls, transformMode) {
+function configureSiteTransformControls(transformControls, transformMode, viewMode = VIEW_MODES.VIEW_3D) {
   transformControls.setMode(transformMode);
   transformControls.showX = transformMode === TRANSFORM_MODES.TRANSLATE;
-  transformControls.showY = true;
+  transformControls.showY = viewMode === VIEW_MODES.VIEW_3D;
   transformControls.showZ = transformMode === TRANSFORM_MODES.TRANSLATE;
 }
 
@@ -81,11 +95,11 @@ function disposeGrid(grid) {
   else grid.material.dispose();
 }
 
-function replaceSiteGrid(runtime, siteTheme, cellSize) {
+function replaceSiteGrid(runtime, siteTheme, cellSize, span) {
   runtime.scene.remove(runtime.grid);
   disposeGrid(runtime.grid);
-  const divisions = Math.min(240, Math.max(1, Math.round(220 / cellSize)));
-  runtime.grid = new THREE.GridHelper(220, divisions, siteTheme.gridCenter, siteTheme.grid);
+  const divisions = Math.min(240, Math.max(1, Math.round(span / cellSize)));
+  runtime.grid = new THREE.GridHelper(span, divisions, siteTheme.gridCenter, siteTheme.grid);
   runtime.grid.position.y = -0.01;
   runtime.scene.add(runtime.grid);
 }
@@ -129,28 +143,44 @@ function makePlacementPreviewTransparent(root) {
   });
 }
 
-function createPlacementPreview(templateId, theme) {
+function createPlacementPreview(templateId, variants, theme) {
   const template = SITE_CREATION_TEMPLATE_MAP[templateId];
   const area = createSitePlacementArea(templateId, { x: 0, z: 0 });
   if (!template || !area) return null;
 
   if (template.createsBuilding) {
-    const group = new THREE.Group();
-    const material = new THREE.MeshStandardMaterial({
-      color: SCENE_THEMES[theme].selection,
-      transparent: true,
-      opacity: 0.34,
-      depthWrite: false,
-      roughness: 0.74,
+    const floorCount = Math.max(1, template.parameters?.floorCount ?? 1);
+    const building = {
+      id: "PLACEMENT_PREVIEW",
+      name: template.name,
+      templateId: template.id,
+      objectDefinitionId: template.id,
+      variants: { ...template.defaultVariants, ...variants },
+      parameters: {
+        ...template.parameters,
+        width: area.width,
+        depth: area.depth,
+        roofType: variants?.roofStyle ?? template.defaultVariants?.roofStyle ?? "FLAT",
+      },
+      appearance: { color: template.color, material: template.material },
+    };
+    const floors = Array.from({ length: floorCount }, (_, index) => ({
+      id: `PREVIEW_FLOOR_${index}`,
+      parentId: building.id,
+      level: index + 1,
+    }));
+    const preview = createBuildingObject(building, floors, {
+      selected: true,
+      expanded: false,
+      selectedFloorId: null,
+      theme,
+      edgeColor: SITE_VISUAL_THEMES[theme].edge,
+      floorColor: SITE_VISUAL_THEMES[theme].floor,
+      apronColor: SITE_VISUAL_THEMES[theme].apron,
+      selectionColor: SCENE_THEMES[theme].selection,
     });
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(area.width, 4, area.depth), material);
-    mesh.position.y = 2;
-    mesh.add(new THREE.LineSegments(
-      new THREE.EdgesGeometry(mesh.geometry),
-      new THREE.LineBasicMaterial({ color: SCENE_THEMES[theme].selection, transparent: true, opacity: 0.92 }),
-    ));
-    group.add(mesh);
-    return group;
+    makePlacementPreviewTransparent(preview);
+    return preview;
   }
 
   const definition = createSiteObjectFromArea(templateId, area, 1);
@@ -165,7 +195,33 @@ function createPlacementPreview(templateId, theme) {
   return preview;
 }
 
+function clearPlacementGhosts(root) {
+  if (!root) return;
+  [...root.children].forEach(disposeObject3D);
+  root.clear();
+}
+
+function updatePlacementGhosts(root, templateId, variants, theme, plan) {
+  clearPlacementGhosts(root);
+  if (!plan?.fits || plan.previewPositions.length === 0) return;
+  const source = createPlacementPreview(templateId, variants, theme);
+  if (!source) return;
+  plan.previewPositions.forEach((position, index) => {
+    const ghost = index === 0 ? source : source.clone(true);
+    ghost.position.set(position.x, 0.04, position.z);
+    ghost.rotation.y = plan.footprint.rotationY;
+    ghost.scale.set(
+      plan.footprint.scale.x,
+      plan.footprint.scale.y,
+      plan.footprint.scale.z,
+    );
+    ghost.visible = true;
+    root.add(ghost);
+  });
+}
+
 export default function SiteOverviewScene({
+  siteEnvironment = DEFAULT_SITE_ENVIRONMENT,
   buildings,
   floors,
   siteObjects,
@@ -176,8 +232,10 @@ export default function SiteOverviewScene({
   focusRequestKey,
   interactionMode,
   placementTemplateId,
+  placementVariants,
   areaSelection,
   theme,
+  viewMode,
   transformMode,
   gridSettings,
   gridScopeId,
@@ -190,6 +248,7 @@ export default function SiteOverviewScene({
   onEnterFloor,
   onAreaSelectionChange,
   onPlaceTemplate,
+  onPlaceTemplateArea,
 }) {
   const containerRef = useRef(null);
   const runtimeRef = useRef(null);
@@ -197,27 +256,44 @@ export default function SiteOverviewScene({
   const gridScopeIdRef = useRef(gridScopeId);
   const interactionModeRef = useRef(interactionMode);
   const placementTemplateIdRef = useRef(placementTemplateId);
+  const placementVariantsRef = useRef(placementVariants);
+  const areaSelectionRef = useRef(areaSelection);
   const [dragSnapSize, setDragSnapSize] = useState(null);
   const [liveArea, setLiveArea] = useState(null);
+  const areaPlacementPlan = useMemo(() => {
+    const area = liveArea ?? areaSelection;
+    const definition = SITE_CREATION_TEMPLATE_MAP[placementTemplateId];
+    if (!area || !definition || interactionMode !== SITE_INTERACTION_MODES.PLACE_OBJECT) return null;
+    return placeObjectsInArea({
+      area,
+      object: definition,
+      gridEnabled: gridSettings.enabled,
+      cellSize: area.cellSize ?? gridSettings.baseSize,
+    });
+  }, [areaSelection, gridSettings.baseSize, gridSettings.enabled, interactionMode, liveArea, placementTemplateId]);
   const handlersRef = useRef({});
 
   useEffect(() => {
     handlersRef.current = {
       onSelectBuilding, onSelectSiteObject, onUpdateBuilding, onUpdateSiteObject,
-      onEnterBuilding, onSelectFloor, onEnterFloor, onAreaSelectionChange, onPlaceTemplate,
+      onEnterBuilding, onSelectFloor, onEnterFloor, onAreaSelectionChange, onPlaceTemplate, onPlaceTemplateArea,
     };
-  }, [onAreaSelectionChange, onEnterBuilding, onEnterFloor, onPlaceTemplate, onSelectBuilding, onSelectFloor, onSelectSiteObject, onUpdateBuilding, onUpdateSiteObject]);
+  }, [onAreaSelectionChange, onEnterBuilding, onEnterFloor, onPlaceTemplate, onPlaceTemplateArea, onSelectBuilding, onSelectFloor, onSelectSiteObject, onUpdateBuilding, onUpdateSiteObject]);
 
   useEffect(() => {
     gridSettingsRef.current = gridSettings;
     gridScopeIdRef.current = gridScopeId;
     interactionModeRef.current = interactionMode;
     placementTemplateIdRef.current = placementTemplateId;
+    placementVariantsRef.current = placementVariants;
+    areaSelectionRef.current = areaSelection;
     const runtime = runtimeRef.current;
     if (!runtime) return;
     runtime.renderer.domElement.style.cursor = interactionMode === SITE_INTERACTION_MODES.NAVIGATE ? "grab" : "crosshair";
     runtime.areaStart = null;
     runtime.placementPointerDown = false;
+    runtime.placementAreaStart = null;
+    runtime.placementDragArea = null;
     runtime.orbitControls.enabled = !runtime.dragging;
     if (runtime.placementPreview && interactionMode !== SITE_INTERACTION_MODES.PLACE_OBJECT) {
       runtime.placementPreview.visible = false;
@@ -225,7 +301,7 @@ export default function SiteOverviewScene({
     if (interactionMode !== SITE_INTERACTION_MODES.PLACE_OBJECT) {
       updateGridSnapMarker(runtime.gridSnapMarker, { x: 0, z: 0 }, false);
     }
-  }, [gridScopeId, gridSettings, interactionMode, placementTemplateId]);
+  }, [areaSelection, gridScopeId, gridSettings, interactionMode, placementTemplateId, placementVariants]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -241,18 +317,22 @@ export default function SiteOverviewScene({
     renderer.domElement.setAttribute("role", "application");
     container.appendChild(renderer.domElement);
 
-    const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 500);
-    camera.position.copy(OVERVIEW_CAMERA);
-    const orbitControls = new OrbitControls(camera, renderer.domElement);
+    const perspectiveCamera = new THREE.PerspectiveCamera(48, 1, 0.1, 500);
+    perspectiveCamera.position.copy(OVERVIEW_CAMERA);
+    const orthographicCamera = new THREE.OrthographicCamera(-60, 60, 60, -60, 0.1, 500);
+    orthographicCamera.position.set(0, 140, 0);
+    orthographicCamera.up.set(0, 0, -1);
+    orthographicCamera.lookAt(0, 0, 0);
+    const orbitControls = new OrbitControls(perspectiveCamera, renderer.domElement);
     orbitControls.target.copy(OVERVIEW_TARGET);
     orbitControls.enableDamping = true;
     orbitControls.dampingFactor = 0.08;
     orbitControls.minDistance = 8;
-    orbitControls.maxDistance = 260;
+    orbitControls.maxDistance = 480;
     orbitControls.maxPolarAngle = Math.PI / 2 - 0.015;
     orbitControls.update();
 
-    const transformControls = new TransformControls(camera, renderer.domElement);
+    const transformControls = new TransformControls(perspectiveCamera, renderer.domElement);
     transformControls.setMode(TRANSFORM_MODES.TRANSLATE);
     transformControls.setTranslationSnap(null);
     transformControls.setRotationSnap(THREE.MathUtils.degToRad(15));
@@ -260,6 +340,14 @@ export default function SiteOverviewScene({
     const objectRoot = new THREE.Group();
     objectRoot.name = "부지 오브젝트";
     scene.add(objectRoot);
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1),
+      new THREE.MeshStandardMaterial({ color: 0x9ca7ad, roughness: 0.92, metalness: 0 }),
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -0.045;
+    ground.receiveShadow = true;
+    scene.add(ground);
     const grid = new THREE.GridHelper(220, 110, 0x4f7180, 0x2b4652);
     grid.position.y = -0.01;
     scene.add(grid);
@@ -269,7 +357,7 @@ export default function SiteOverviewScene({
     scene.add(gridSnapMarker);
 
     const groundPicker = new THREE.Mesh(
-      new THREE.PlaneGeometry(220, 220),
+      new THREE.PlaneGeometry(1, 1),
       new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }),
     );
     groundPicker.rotation.x = -Math.PI / 2;
@@ -285,6 +373,9 @@ export default function SiteOverviewScene({
     ));
     areaGuide.visible = false;
     scene.add(areaGuide);
+    const placementGhostRoot = new THREE.Group();
+    placementGhostRoot.name = "영역 배치 미리보기";
+    scene.add(placementGhostRoot);
 
     const hemisphereLight = new THREE.HemisphereLight(sceneTheme.hemisphereSky, sceneTheme.hemisphereGround, 1.8);
     const keyLight = new THREE.DirectionalLight(sceneTheme.keyLight, 2.4);
@@ -294,10 +385,12 @@ export default function SiteOverviewScene({
     scene.add(hemisphereLight, keyLight, fillLight);
 
     const runtime = {
-      container, scene, renderer, camera, orbitControls, transformControls, objectRoot,
+      container, scene, renderer, perspectiveCamera, orthographicCamera,
+      activeCamera: perspectiveCamera, orthographicSize: 120, orbitControls, transformControls, objectRoot,
       buildingObjects: new Map(), siteEnvironmentObjects: new Map(), grid, gridRegionRoot,
-      gridSnapMarker, groundPicker, areaGuide, hemisphereLight, keyLight, fillLight,
-      dragging: false, areaStart: null, placementPointerDown: false, placementPreview: null,
+      gridSnapMarker, ground, groundPicker, areaGuide, placementGhostRoot, hemisphereLight, keyLight, fillLight,
+      dragging: false, areaStart: null, placementPointerDown: false, placementAreaStart: null,
+      placementDragArea: null, placementPreview: null,
       cameraDestination: null, targetDestination: null,
     };
     runtimeRef.current = runtime;
@@ -305,7 +398,7 @@ export default function SiteOverviewScene({
     const raycaster = new THREE.Raycaster();
     const pointerStart = new THREE.Vector2();
     const hitGround = (event) => {
-      raycaster.setFromCamera(getPointer(event, renderer.domElement), camera);
+      raycaster.setFromCamera(getPointer(event, renderer.domElement), runtime.activeCamera);
       return raycaster.intersectObject(groundPicker, false)[0]?.point ?? null;
     };
     function handlePointerDown(event) {
@@ -315,7 +408,12 @@ export default function SiteOverviewScene({
         interactionModeRef.current === SITE_INTERACTION_MODES.PLACE_OBJECT
         && placementTemplateIdRef.current
       ) {
+        if (areaSelectionRef.current) return;
+        const point = hitGround(event);
+        if (!point) return;
         runtime.placementPointerDown = true;
+        runtime.placementAreaStart = snapAreaPoint(point, gridSettingsRef.current, gridScopeIdRef.current);
+        runtime.placementDragArea = null;
         runtime.orbitControls.enabled = false;
         renderer.domElement.setPointerCapture?.(event.pointerId);
         return;
@@ -339,10 +437,26 @@ export default function SiteOverviewScene({
         setLiveArea(area);
         return;
       }
+      if (runtime.placementPointerDown && runtime.placementAreaStart) {
+        const pointerDistance = pointerStart.distanceTo(new THREE.Vector2(event.clientX, event.clientY));
+        if (pointerDistance > 5) {
+          const point = hitGround(event);
+          if (!point) return;
+          const area = createArea(
+            runtime.placementAreaStart,
+            snapAreaPoint(point, gridSettingsRef.current, gridScopeIdRef.current),
+          );
+          runtime.placementDragArea = area;
+          if (runtime.placementPreview) runtime.placementPreview.visible = false;
+          setLiveArea(area);
+          return;
+        }
+      }
       if (
         interactionModeRef.current !== SITE_INTERACTION_MODES.PLACE_OBJECT
         || !placementTemplateIdRef.current
         || !runtime.placementPreview
+        || areaSelectionRef.current
       ) return;
       const point = hitGround(event);
       if (!point) {
@@ -370,8 +484,21 @@ export default function SiteOverviewScene({
       }
       if (runtime.placementPointerDown) {
         runtime.placementPointerDown = false;
+        const placementArea = runtime.placementDragArea;
+        runtime.placementAreaStart = null;
+        runtime.placementDragArea = null;
         runtime.orbitControls.enabled = true;
         renderer.domElement.releasePointerCapture?.(event.pointerId);
+        if (placementArea) {
+          setLiveArea(null);
+          const result = handlersRef.current.onPlaceTemplateArea?.(
+            placementTemplateIdRef.current,
+            placementArea,
+            placementVariantsRef.current,
+          );
+          if (result && !result.canPlace) handlersRef.current.onAreaSelectionChange(placementArea);
+          return;
+        }
         if (pointerStart.distanceTo(new THREE.Vector2(event.clientX, event.clientY)) > 5) return;
         const point = hitGround(event);
         if (!point || !placementTemplateIdRef.current) return;
@@ -381,11 +508,15 @@ export default function SiteOverviewScene({
           snappedPoint,
           snappedPoint.cellSize,
         );
-        handlersRef.current.onPlaceTemplate(placementTemplateIdRef.current, area);
+        handlersRef.current.onPlaceTemplate(
+          placementTemplateIdRef.current,
+          area,
+          placementVariantsRef.current,
+        );
         return;
       }
       if (pointerStart.distanceTo(new THREE.Vector2(event.clientX, event.clientY)) > 5 || transformControls.axis) return;
-      raycaster.setFromCamera(getPointer(event, renderer.domElement), camera);
+      raycaster.setFromCamera(getPointer(event, renderer.domElement), runtime.activeCamera);
       const intersections = raycaster.intersectObjects(objectRoot.children, true);
       const intersection = intersections[0];
       const floorIntersection = intersections.find((item) => findUserData(item.object, "floorId", objectRoot));
@@ -398,7 +529,7 @@ export default function SiteOverviewScene({
     }
     function handleDoubleClick(event) {
       if (interactionModeRef.current !== SITE_INTERACTION_MODES.NAVIGATE) return;
-      raycaster.setFromCamera(getPointer(event, renderer.domElement), camera);
+      raycaster.setFromCamera(getPointer(event, renderer.domElement), runtime.activeCamera);
       const intersections = raycaster.intersectObjects([...runtime.buildingObjects.values()], true);
       const floorIntersection = intersections.find((item) => findUserData(item.object, "floorId", objectRoot));
       const floorId = floorIntersection ? findUserData(floorIntersection.object, "floorId", objectRoot) : null;
@@ -406,6 +537,21 @@ export default function SiteOverviewScene({
       const [intersection] = intersections;
       const buildingId = intersection ? findUserData(intersection.object, "buildingId", objectRoot) : null;
       if (buildingId) handlersRef.current.onEnterBuilding(buildingId);
+    }
+    function handleDragOver(event) {
+      if (!event.dataTransfer?.types.includes(OBJECT_LIBRARY_DRAG_TYPE)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+    }
+    function handleDrop(event) {
+      const templateId = event.dataTransfer?.getData(OBJECT_LIBRARY_DRAG_TYPE);
+      if (!templateId) return;
+      event.preventDefault();
+      const point = hitGround(event);
+      if (!point) return;
+      const snappedPoint = snapAreaPoint(point, gridSettingsRef.current, gridScopeIdRef.current);
+      const area = createSitePlacementArea(templateId, snappedPoint, snappedPoint.cellSize);
+      handlersRef.current.onPlaceTemplate(templateId, area, placementVariantsRef.current);
     }
     function handleObjectChange() {
       const object = transformControls.object;
@@ -437,6 +583,8 @@ export default function SiteOverviewScene({
     renderer.domElement.addEventListener("pointermove", handlePointerMove);
     renderer.domElement.addEventListener("pointerup", handlePointerUp);
     renderer.domElement.addEventListener("dblclick", handleDoubleClick);
+    renderer.domElement.addEventListener("dragover", handleDragOver);
+    renderer.domElement.addEventListener("drop", handleDrop);
     transformControls.addEventListener("objectChange", handleObjectChange);
     transformControls.addEventListener("dragging-changed", handleDraggingChanged);
     const resizeObserver = new ResizeObserver(() => resizeRuntime(runtime));
@@ -446,9 +594,9 @@ export default function SiteOverviewScene({
     let animationFrameId;
     function renderFrame() {
       if (runtime.cameraDestination && runtime.targetDestination) {
-        camera.position.lerp(runtime.cameraDestination, 0.075);
+        perspectiveCamera.position.lerp(runtime.cameraDestination, 0.075);
         orbitControls.target.lerp(runtime.targetDestination, 0.075);
-        if (camera.position.distanceTo(runtime.cameraDestination) < 0.08) {
+        if (perspectiveCamera.position.distanceTo(runtime.cameraDestination) < 0.08) {
           runtime.cameraDestination = null;
           runtime.targetDestination = null;
         }
@@ -463,7 +611,7 @@ export default function SiteOverviewScene({
         });
       });
       orbitControls.update();
-      renderer.render(scene, camera);
+      renderer.render(scene, runtime.activeCamera);
       animationFrameId = requestAnimationFrame(renderFrame);
     }
     renderFrame();
@@ -476,6 +624,8 @@ export default function SiteOverviewScene({
       renderer.domElement.removeEventListener("pointermove", handlePointerMove);
       renderer.domElement.removeEventListener("pointerup", handlePointerUp);
       renderer.domElement.removeEventListener("dblclick", handleDoubleClick);
+      renderer.domElement.removeEventListener("dragover", handleDragOver);
+      renderer.domElement.removeEventListener("drop", handleDrop);
       transformControls.removeEventListener("objectChange", handleObjectChange);
       transformControls.removeEventListener("dragging-changed", handleDraggingChanged);
       transformControls.detach();
@@ -484,9 +634,12 @@ export default function SiteOverviewScene({
       runtime.buildingObjects.forEach(disposeObject3D);
       runtime.siteEnvironmentObjects.forEach(disposeObject3D);
       if (runtime.placementPreview) disposeObject3D(runtime.placementPreview);
+      clearPlacementGhosts(runtime.placementGhostRoot);
       disposeObject3D(runtime.gridRegionRoot);
       disposeObject3D(runtime.gridSnapMarker);
       disposeObject3D(runtime.areaGuide);
+      ground.geometry.dispose();
+      ground.material.dispose();
       groundPicker.geometry.dispose();
       groundPicker.material.dispose();
       disposeGrid(runtime.grid);
@@ -500,16 +653,29 @@ export default function SiteOverviewScene({
     if (!runtime) return;
     const sceneTheme = SCENE_THEMES[theme];
     const siteTheme = SITE_VISUAL_THEMES[theme];
-    runtime.scene.background.set(sceneTheme.background);
-    runtime.scene.fog.color.set(sceneTheme.fog);
-    runtime.hemisphereLight.color.set(sceneTheme.hemisphereSky);
-    runtime.hemisphereLight.groundColor.set(sceneTheme.hemisphereGround);
-    runtime.keyLight.color.set(sceneTheme.keyLight);
-    runtime.fillLight.color.set(sceneTheme.fillLight);
+    const backgroundPreset = SITE_BACKGROUND_PRESETS[siteEnvironment.backgroundTheme]
+      ?? SITE_BACKGROUND_PRESETS.DAY;
+    const groundPreset = SITE_GROUND_MATERIAL_OPTIONS.find((option) => option.id === siteEnvironment.groundMaterial)
+      ?? SITE_GROUND_MATERIAL_OPTIONS[0];
+    const width = Math.max(20, siteEnvironment.width);
+    const depth = Math.max(20, siteEnvironment.depth);
+    const span = Math.max(width, depth);
+    runtime.scene.background.set(backgroundPreset.background);
+    runtime.scene.fog.color.set(backgroundPreset.fog);
+    runtime.scene.fog.near = Math.max(70, span * 0.55);
+    runtime.scene.fog.far = Math.max(180, span * 1.8);
+    runtime.hemisphereLight.color.set(backgroundPreset.sky);
+    runtime.hemisphereLight.groundColor.set(backgroundPreset.ground);
+    runtime.keyLight.color.set(backgroundPreset.key);
+    runtime.fillLight.color.set(backgroundPreset.fill);
+    runtime.ground.scale.set(width, depth, 1);
+    runtime.ground.material.color.set(groundPreset.color);
+    runtime.ground.material.roughness = groundPreset.roughness;
+    runtime.groundPicker.scale.set(width, depth, 1);
     runtime.areaGuide.material.color.set(sceneTheme.selection);
     runtime.areaGuide.children[0].material.color.set(sceneTheme.selection);
-    replaceSiteGrid(runtime, siteTheme, gridSettings.baseSize);
-  }, [gridSettings.baseSize, theme]);
+    replaceSiteGrid(runtime, siteTheme, gridSettings.baseSize, span);
+  }, [gridSettings.baseSize, siteEnvironment, theme]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -520,7 +686,7 @@ export default function SiteOverviewScene({
       runtime.placementPreview = null;
     }
     if (!placementTemplateId || interactionMode !== SITE_INTERACTION_MODES.PLACE_OBJECT) return undefined;
-    const preview = createPlacementPreview(placementTemplateId, theme);
+    const preview = createPlacementPreview(placementTemplateId, placementVariants, theme);
     if (!preview) return undefined;
     preview.visible = false;
     runtime.placementPreview = preview;
@@ -533,7 +699,7 @@ export default function SiteOverviewScene({
       disposeObject3D(preview);
       activeRuntime.placementPreview = null;
     };
-  }, [interactionMode, placementTemplateId, theme]);
+  }, [interactionMode, placementTemplateId, placementVariants, theme]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -631,6 +797,34 @@ export default function SiteOverviewScene({
   useEffect(() => {
     const runtime = runtimeRef.current;
     if (!runtime) return;
+    const is3D = viewMode === VIEW_MODES.VIEW_3D;
+    runtime.activeCamera = is3D ? runtime.perspectiveCamera : runtime.orthographicCamera;
+    runtime.orbitControls.object = runtime.activeCamera;
+    runtime.orbitControls.enableRotate = is3D;
+    runtime.orbitControls.screenSpacePanning = !is3D;
+    runtime.orbitControls.touches.ONE = is3D ? THREE.TOUCH.ROTATE : THREE.TOUCH.PAN;
+    runtime.orbitControls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
+    runtime.transformControls.camera = runtime.activeCamera;
+    runtime.renderer.domElement.setAttribute("aria-label", `${is3D ? "3D" : "2D Top"} 월드 편집 화면`);
+
+    if (is3D) {
+      runtime.perspectiveCamera.up.set(0, 1, 0);
+    } else {
+      runtime.cameraDestination = null;
+      runtime.targetDestination = null;
+      runtime.orthographicSize = Math.max(30, siteEnvironment.width, siteEnvironment.depth) * 1.08;
+      runtime.orthographicCamera.position.set(0, Math.max(100, runtime.orthographicSize), 0.001);
+      runtime.orthographicCamera.up.set(0, 0, -1);
+      runtime.orbitControls.target.set(0, 0, 0);
+      runtime.orthographicCamera.lookAt(0, 0, 0);
+    }
+    resizeRuntime(runtime);
+    runtime.orbitControls.update();
+  }, [siteEnvironment.depth, siteEnvironment.width, viewMode]);
+
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime || viewMode === VIEW_MODES.LAYOUT_2D) return;
     const building = buildings.find((item) => item.id === focusedBuildingId);
     if (!building) {
       runtime.cameraDestination = OVERVIEW_CAMERA.clone();
@@ -649,16 +843,26 @@ export default function SiteOverviewScene({
       focusHeight + Math.max(building.parameters.floorHeight * 2.2, radius * 0.62),
       building.position.z + radius * 1.1,
     );
-  }, [buildings, floors, focusedBuildingId, focusRequestKey, selectedFloorId]);
+  }, [buildings, floors, focusedBuildingId, focusRequestKey, selectedFloorId, viewMode]);
 
   useEffect(() => {
-    updateAreaGuide(runtimeRef.current?.areaGuide, liveArea ?? areaSelection, Boolean(liveArea ?? areaSelection));
-  }, [areaSelection, liveArea]);
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
+    const area = liveArea ?? areaSelection;
+    updateAreaGuide(runtime.areaGuide, area, Boolean(area));
+    if (!area || !areaPlacementPlan) {
+      clearPlacementGhosts(runtime.placementGhostRoot);
+      return;
+    }
+    updatePlacementGhosts(runtime.placementGhostRoot, placementTemplateId, placementVariants, theme, areaPlacementPlan);
+  }, [areaPlacementPlan, areaSelection, liveArea, placementTemplateId, placementVariants, theme]);
 
   useEffect(() => {
     const transformControls = runtimeRef.current?.transformControls;
-    if (transformControls) configureSiteTransformControls(transformControls, transformMode);
-  }, [transformMode]);
+    if (transformControls) {
+      configureSiteTransformControls(transformControls, transformMode, viewMode);
+    }
+  }, [transformMode, viewMode]);
 
   const selectedPosition = buildings.find((building) => building.id === selectedBuildingId)?.position
     ?? siteObjects.find((object) => object.id === selectedSiteObjectId)?.position;
@@ -668,15 +872,22 @@ export default function SiteOverviewScene({
   const displayedArea = liveArea ?? areaSelection;
 
   return (
-    <section className={styles.viewport} aria-label="부지 3D 편집 화면">
+    <section className={styles.viewport} aria-label={`부지 ${viewMode === VIEW_MODES.LAYOUT_2D ? "2D" : "3D"} 편집 화면`}>
       <div ref={containerRef} className={styles.canvasMount} />
-      <div className={styles.sceneStatus}><span /> 부지 편집 · 저상세</div>
+      <div className={styles.sceneStatus}><span /> {viewMode === VIEW_MODES.LAYOUT_2D ? "2D Top View · 배치/정렬" : "3D View · 공간 확인"}</div>
       {effectiveSnapSize !== null && <div className={styles.gridSnapStatus}>그리드 스냅 · {formatGridResolution(effectiveSnapSize)}</div>}
-      {displayedArea && <div className={styles.areaStatus}>{displayedArea.width.toFixed(1)} × {displayedArea.depth.toFixed(1)} m</div>}
+      {displayedArea && (
+        <div className={styles.areaStatus}>
+          <strong>{displayedArea.width.toFixed(1)} × {displayedArea.depth.toFixed(1)} m</strong>
+          {areaPlacementPlan ? <span>{areaPlacementPlan.canPlace ? `예상 배치 ${areaPlacementPlan.count}개` : areaPlacementPlan.message}</span> : null}
+        </div>
+      )}
       <div className={styles.hint}>{interactionMode === SITE_INTERACTION_MODES.AREA_SELECT
         ? "그리드 위를 드래그해 영역 선택"
         : interactionMode === SITE_INTERACTION_MODES.PLACE_OBJECT
-          ? "미리보기를 움직이고 그리드를 클릭해 배치 · Esc로 종료"
+          ? areaSelection
+            ? "Ghost 배치를 확인한 뒤 패널에서 배치를 확정하세요"
+            : "클릭하면 1개 · 드래그하면 영역에 최대 개수 배치 · Esc로 종료"
           : "드래그로 월드 이동/회전 · 클릭은 선택 · 더블 클릭은 내부로 이동"}</div>
       <div className={styles.axisLegend} aria-hidden="true"><b>X</b><b>Y</b><b>Z</b><span>미터</span></div>
     </section>

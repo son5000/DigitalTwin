@@ -4,6 +4,7 @@ import {
 } from "@/features/digitalTwin/editor/constants/worldStructureTemplates";
 import { degreesToRadians, radiansToDegrees } from "@/features/digitalTwin/editor/utils/editorMath";
 import { getWorldStructureDimensions } from "@/features/digitalTwin/editor/world/WorldStructureFactory";
+import { StructureIcon } from "@/components/icons";
 
 import NumericField from "./NumericField";
 import PropertySection from "./PropertySection";
@@ -13,7 +14,7 @@ export default function WorldStructureProperties({ structure, spaces, worldLocke
   if (!structure) {
     return (
       <section className={styles.empty}>
-        <span aria-hidden="true">▧</span>
+        <span aria-hidden="true"><StructureIcon size={34} /></span>
         <strong>월드 구조물</strong>
         <h2>선택된 구조물 없음</h2>
         <p>월드 편집에서 공간 구조물을 선택하거나 새 구조물을 배치하세요.</p>

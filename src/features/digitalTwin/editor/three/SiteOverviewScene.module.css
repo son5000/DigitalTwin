@@ -28,7 +28,7 @@
   border-radius: var(--radius-small);
   color: var(--color-text-muted);
   background: var(--color-surface-overlay);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
   font-size: 11px;
   letter-spacing: 0.1em;
   pointer-events: none;
@@ -38,12 +38,18 @@
 .areaStatus {
   top: 54px;
   left: 50%;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
   padding: 8px 12px;
   border-color: rgb(var(--color-accent-rgb) / 65%);
   color: var(--color-accent-strong);
   font-size: 13px;
   transform: translateX(-50%);
 }
+
+.areaStatus strong { color: var(--color-accent-strong); font-size: 13px; }
+.areaStatus span { max-width: 340px; color: var(--color-text-muted); font-size: 11px; letter-spacing: .02em; text-align: center; }
 
 .gridSnapStatus {
   top: 14px;
