@@ -53,8 +53,8 @@ function addFacadeWindows(group, building, width, depth, floorCount, floorHeight
     color: style === "FULL_GLASS" || style === "CURTAIN_WALL" ? 0x3f6f86 : 0x55788a,
     roughness: 0.18,
     metalness: 0.34,
-    transparent: true,
-    opacity: 0.82,
+    transparent: false,
+    opacity: 1,
   });
   const rows = Math.min(20, Math.max(1, floorCount));
   const frontColumns = Math.min(18, Math.max(2, Math.round(width / (style === "VERTICAL" ? 2 : 3.2))));
@@ -160,17 +160,14 @@ export function updateBuildingFloorVisualState(group, building, floors, visualSt
     .sort((left, right) => (left.level ?? 0) - (right.level ?? 0));
   const selectedIndex = Math.max(0, buildingFloors.findIndex((floor) => floor.id === visualState.selectedFloorId));
   const floorHeight = building.parameters.floorHeight;
-  const explodeGap = Math.max(1.6, floorHeight * 0.7);
 
   group.traverse((child) => {
     if (!child.userData.floorId) return;
     const index = buildingFloors.findIndex((floor) => floor.id === child.userData.floorId);
     if (index < 0) return;
     const isSelectedFloor = index === selectedIndex;
-    const direction = Math.sign(index - selectedIndex);
-    const distance = Math.abs(index - selectedIndex);
-    child.userData.targetY = index * floorHeight + 0.08 + direction * explodeGap * distance;
-    child.userData.targetOpacity = isSelectedFloor ? 0.96 : 0.38;
+    child.position.y = index * floorHeight + 0.08;
+    child.material.opacity = isSelectedFloor ? 0.96 : 0.38;
     child.material.color.set(isSelectedFloor ? visualState.selectionColor : visualState.floorColor);
     child.material.emissive.set(isSelectedFloor ? visualState.selectionColor : 0x000000);
     child.material.emissiveIntensity = isSelectedFloor ? 0.14 : 0;
@@ -205,7 +202,7 @@ export function createBuildingObject(building, floors, visualState) {
     emissive: visualState.selected ? visualState.selectionColor : 0x000000,
     emissiveIntensity: visualState.selected ? 0.035 : 0,
     transparent: visualState.expanded,
-    opacity: visualState.expanded ? 0.14 : 0.9,
+    opacity: visualState.expanded ? 0.14 : 1,
     depthWrite: !visualState.expanded,
   });
   addBuildingMasses(group, building, width, depth, totalHeight, bodyMaterial, visualState.edgeColor);
@@ -279,8 +276,6 @@ export function createBuildingObject(building, floors, visualState) {
         slab.position.y = index * floorHeight + 0.08;
         slab.userData.buildingId = building.id;
         slab.userData.floorId = floor.id;
-        slab.userData.targetY = slab.position.y;
-        slab.userData.targetOpacity = isSelectedFloor ? 0.96 : 0.38;
         slab.add(createEdgeOverlay(slabGeometry, visualState.edgeColor));
         group.add(slab);
       });

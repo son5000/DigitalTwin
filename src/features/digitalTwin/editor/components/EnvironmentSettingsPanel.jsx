@@ -6,7 +6,7 @@ import {
 import NumericField from "./NumericField";
 import styles from "./EnvironmentSettingsPanel.module.css";
 
-export default function EnvironmentSettingsPanel({ environment, onChange }) {
+export default function EnvironmentSettingsPanel({ environment, boundaryNotice, onChange }) {
   return (
     <section className={styles.panel} aria-label="환경 설정">
       <header className={styles.heading}>
@@ -16,7 +16,8 @@ export default function EnvironmentSettingsPanel({ environment, onChange }) {
       </header>
 
       <div className={styles.section}>
-        <h3>지면 영역</h3>
+        <h3>부지 크기</h3>
+        <p className={styles.siteDescription}>부지 크기를 변경하면 월드 그리드와 오브젝트 배치 가능 영역이 함께 변경됩니다.</p>
         <div className={styles.fieldGrid}>
           <NumericField label="가로" value={environment.width} min={20} max={400} unit="m" onChange={(width) => onChange({ width })} />
           <NumericField label="세로" value={environment.depth} min={20} max={400} unit="m" onChange={(depth) => onChange({ depth })} />
@@ -27,6 +28,7 @@ export default function EnvironmentSettingsPanel({ environment, onChange }) {
             {SITE_GROUND_MATERIAL_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
           </select>
         </label>
+        {boundaryNotice ? <p className={styles.boundaryNotice} role="status">{boundaryNotice}</p> : null}
       </div>
 
       <div className={styles.section}>

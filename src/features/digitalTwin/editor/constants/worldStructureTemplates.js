@@ -24,15 +24,6 @@ const meter = (key, label, defaultValue, min = 0.02) => ({
   defaultValue,
 });
 
-const count = (key, label, defaultValue, min = 1) => ({
-  key,
-  label,
-  unit: "ea",
-  step: 1,
-  min,
-  defaultValue,
-});
-
 function template({
   id,
   group,
@@ -41,6 +32,7 @@ function template({
   parameters,
   appearance,
   variants,
+  isVertical = false,
   defaultPositionY = 0,
   defaultGroundSnap = true,
 }) {
@@ -61,22 +53,24 @@ function template({
       ...appearance,
     },
     variants,
+    isVertical,
     defaultPositionY,
     defaultGroundSnap,
   };
 }
 
 export const WORLD_STRUCTURE_GROUPS = [
-  { id: "SPACE", name: "Space", nameKo: "공간" },
+  { id: "SPACE", name: "Space", nameKo: "공간 구획·통로" },
   { id: "STRUCTURE", name: "Structure", nameKo: "구조" },
   { id: "FLOOR", name: "Floor", nameKo: "바닥·레벨" },
   { id: "OPENING", name: "Opening", nameKo: "개구부" },
   { id: "BOUNDARY", name: "Boundary", nameKo: "경계·안전" },
+  { id: "VERTICAL", name: "Vertical Core", nameKo: "수직 연결" },
   { id: "CUSTOM", name: "Custom", nameKo: "사용자 구조물" },
 ];
 
 export const WORLD_STRUCTURE_TEMPLATES = [
-  template({ id: "ROOM", group: "SPACE", name: "Room", nameKo: "룸", parameters: [meter("width", "Width", 6), meter("depth", "Depth", 5), meter("height", "Height", 3)], appearance: { color: "#AAB8BE", opacity: 0.12, materialPreset: "GENERIC" } }),
+  template({ id: "ROOM", group: "SPACE", name: "Space Zone", nameKo: "공간 구획", parameters: [meter("width", "Width", 6), meter("depth", "Depth", 5), meter("height", "Height", 3)], appearance: { color: "#AAB8BE", opacity: 0.18, materialPreset: "GENERIC" } }),
   template({ id: "CORRIDOR", group: "SPACE", name: "Corridor", nameKo: "복도", parameters: [meter("width", "Width", 2), meter("length", "Length", 6), meter("height", "Height", 3)], appearance: { color: "#AAB8BE", opacity: 0.12, materialPreset: "GENERIC" } }),
   template({ id: "UTILITY_AREA", group: "SPACE", name: "Utility Area", nameKo: "유틸리티 구역", parameters: [meter("width", "Width", 4), meter("depth", "Depth", 3)], appearance: { color: "#AAB8BE", opacity: 0.12, materialPreset: "GENERIC" } }),
 
@@ -100,7 +94,10 @@ export const WORLD_STRUCTURE_TEMPLATES = [
 
   template({ id: "RAILING", group: "BOUNDARY", name: "Railing", nameKo: "난간", parameters: [meter("length", "Length", 3), meter("height", "Height", 1.1), meter("postInterval", "Post Interval", 1), meter("thickness", "Thickness", 0.06)], appearance: { color: "#78858B", opacity: 1, materialPreset: "PAINTED_STEEL" } }),
   template({ id: "FENCE", group: "BOUNDARY", name: "Fence", nameKo: "펜스", parameters: [meter("length", "Length", 3), meter("height", "Height", 1.8), meter("thickness", "Thickness", 0.05)], variants: ["SOLID", "MESH", "SAFETY_FENCE"], appearance: { color: "#C69A36", opacity: 0.9, materialPreset: "MESH" } }),
-  template({ id: "STAIR", group: "BOUNDARY", name: "Stair", nameKo: "계단", parameters: [meter("width", "Width", 1.2), meter("totalHeight", "Total Height", 1.5), meter("totalLength", "Total Length", 2.4), count("stepCount", "Step Count", 8, 2)] }),
+  template({ id: "STAIR", group: "VERTICAL", name: "Stair", nameKo: "계단", isVertical: true, parameters: [meter("width", "Width", 1.2), meter("treadDepth", "Tread Depth", 0.28), meter("riserHeight", "Target Riser Height", 0.18), meter("landingDepth", "Landing Depth", 1.2)] }),
+  template({ id: "STAIRWELL", group: "VERTICAL", name: "Stairwell", nameKo: "계단실", isVertical: true, parameters: [meter("width", "Width", 3), meter("depth", "Depth", 5), meter("height", "Floor Height", 3)], appearance: { color: "#8FA0A8", opacity: 0.32, materialPreset: "CONCRETE" } }),
+  template({ id: "ELEVATOR", group: "VERTICAL", name: "Elevator", nameKo: "엘리베이터", isVertical: true, parameters: [meter("width", "Car Width", 2.1), meter("depth", "Car Depth", 2.1), meter("height", "Floor Height", 3)], appearance: { color: "#6F8D99", opacity: 0.42, materialPreset: "STEEL" } }),
+  template({ id: "SHAFT", group: "VERTICAL", name: "Shaft", nameKo: "샤프트", isVertical: true, parameters: [meter("width", "Width", 1.5), meter("depth", "Depth", 1.5), meter("height", "Floor Height", 3)], appearance: { color: "#7D8790", opacity: 0.26, materialPreset: "GENERIC" } }),
 
   template({ id: "CUSTOM_STRUCTURE", group: "CUSTOM", name: "Custom Structure", nameKo: "사용자 구조물", parameters: [meter("width", "Width", 1), meter("height", "Height", 1), meter("depth", "Depth", 1)], variants: ["BOX", "CYLINDER", "PLANE", "LINEAR_STRUCTURE"], appearance: { color: "#7F8A90", opacity: 0.9, materialPreset: "GENERIC" } }),
 ];
@@ -123,6 +120,7 @@ export const DEFAULT_VISIBILITY_FILTERS = {
   COLUMN: true,
   PLATFORM: true,
   BOUNDARY: true,
+  VERTICAL: true,
   OTHER: true,
   EQUIPMENT: true,
 };

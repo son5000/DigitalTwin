@@ -1,0 +1,203 @@
+.navigator {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-bottom: 1px solid var(--color-border-strong);
+  background: var(--color-surface-raised);
+}
+
+.currentTarget,
+.summaryRow,
+.sequenceActions,
+.listItem {
+  display: flex;
+  align-items: center;
+}
+
+.currentTarget {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.currentTarget > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.currentTarget > div > span {
+  color: var(--color-text-faint);
+  font-size: var(--editor-font-size-xs);
+  letter-spacing: .08em;
+}
+
+.currentTarget strong {
+  overflow: hidden;
+  color: var(--color-heading);
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saveState {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  color: var(--color-text-subtle);
+  background: var(--color-surface);
+  font-size: var(--editor-font-size-xs);
+}
+
+.saveState[data-saving] {
+  color: var(--color-accent-strong);
+  border-color: rgb(var(--color-accent-rgb) / 38%);
+}
+
+.summaryRow {
+  justify-content: space-between;
+  color: var(--color-text-subtle);
+  font-size: var(--editor-font-size-xs);
+}
+
+.toggleButton {
+  display: inline-flex;
+  min-height: 30px;
+  padding: 0 8px;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  color: var(--color-heading);
+  background: var(--color-input);
+}
+
+.list {
+  display: grid;
+  gap: 6px;
+  max-height: 240px;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
+.listItem {
+  width: 100%;
+  min-width: 0;
+  padding: 9px;
+  gap: 9px;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  color: var(--color-text);
+  text-align: left;
+  background: var(--color-surface);
+}
+
+.listItem:hover {
+  border-color: var(--color-border-strong);
+  background: var(--state-hover);
+}
+
+.listItem.active {
+  border-color: rgb(var(--color-accent-rgb) / 62%);
+  background: var(--state-selected);
+  box-shadow: inset 3px 0 var(--color-accent);
+}
+
+.itemIcon {
+  display: grid;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 6px;
+  color: var(--color-accent-strong);
+  background: rgb(var(--color-accent-rgb) / 10%);
+}
+
+.itemText {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+}
+
+.itemText strong,
+.itemText span,
+.itemText code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itemText strong { color: var(--color-heading); font-size: var(--editor-font-size-sm); }
+.itemText span { color: var(--color-text-subtle); font-size: var(--editor-font-size-xs); }
+.itemText code { color: var(--color-text-faint); font-size: var(--editor-font-size-xs); }
+
+.statusBadge {
+  flex: 0 0 auto;
+  padding: 3px 6px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: var(--editor-font-size-xs);
+}
+
+.unset { color: var(--color-text-faint); }
+.inProgress { color: var(--color-accent-strong); }
+.complete { color: var(--color-positive); }
+
+.sequenceActions {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 6px;
+}
+
+.sequenceActions button {
+  display: inline-flex;
+  min-height: 34px;
+  padding: 0 8px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  color: var(--color-heading);
+  background: var(--color-input);
+  font-size: var(--editor-font-size-xs);
+}
+
+.sequenceActions button:disabled {
+  color: var(--color-disabled);
+  background: var(--state-disabled-bg);
+}
+
+.sequenceActions .completeButton {
+  color: var(--color-primary-contrast);
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+}
+
+.sequenceActions .completedButton {
+  color: var(--color-positive);
+  border-color: rgb(var(--color-positive-rgb) / 40%);
+  background: rgb(var(--color-positive-rgb) / 9%);
+}
+
+.emptyState {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  padding: 22px 12px;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: 7px;
+  color: var(--color-text-faint);
+  text-align: center;
+}
+
+.emptyState strong { color: var(--color-heading); font-size: var(--editor-font-size-sm); }
+.emptyState span { font-size: var(--editor-font-size-xs); }
+
+@media (max-width: 480px) {
+  .sequenceActions { grid-template-columns: 1fr 1fr; }
+  .sequenceActions .completeButton,
+  .sequenceActions .completedButton { grid-column: 1 / -1; grid-row: 1; }
+}

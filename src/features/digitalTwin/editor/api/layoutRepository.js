@@ -14,14 +14,23 @@ export function saveLayout(layout) {
       },
     ]),
   );
+  const gridSettings = { ...(layout.gridSettings ?? {}) };
+  delete gridSettings.gridSize;
+  delete gridSettings.siteSize;
+  delete gridSettings.worldGridSize;
   const payload = {
-    version: 10,
+    version: 11,
     savedAt: new Date().toISOString(),
     hierarchy: layout.hierarchy,
-    siteEnvironment: layout.siteEnvironment,
+    siteEnvironment: {
+      width: layout.siteEnvironment.width,
+      depth: layout.siteEnvironment.depth,
+      groundMaterial: layout.siteEnvironment.groundMaterial,
+      backgroundTheme: layout.siteEnvironment.backgroundTheme,
+    },
     sitePaths: layout.sitePaths ?? [],
     siteObjects: layout.siteObjects ?? [],
-    gridSettings: layout.gridSettings,
+    gridSettings,
     roomScenes,
   };
 

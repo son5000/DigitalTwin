@@ -17,5 +17,8 @@
 .toggle button { display: inline-flex; min-width: 58px; min-height: 36px; padding: 0 9px; align-items: center; justify-content: center; gap: 5px; border: 1px solid transparent; border-radius: 5px; color: var(--color-text-muted); background: transparent; font-size: 12px; font-weight: 600; }
 .toggle button:hover { color: var(--color-heading); background: var(--state-hover); }
 .toggle button.active { border-color: var(--state-selected-border); color: var(--color-accent-strong); background: var(--state-selected); }
+.toggle button:disabled { cursor: not-allowed; opacity: .58; }
+.toggle button:disabled:hover { color: var(--color-text-muted); background: transparent; }
+.toggle button.active:disabled { color: var(--color-accent-strong); background: var(--state-selected); }
 
 @media (max-width: 760px), (orientation: portrait) { .toggle { right: 8px; bottom: 8px; } }

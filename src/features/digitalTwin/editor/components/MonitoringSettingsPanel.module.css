@@ -1,0 +1,22 @@
+.panel { display: grid; gap: 12px; padding-bottom: 18px; }
+.panel header, .content { display: grid; gap: 10px; padding: 15px; border-bottom: 1px solid var(--color-border); }
+.panel header span { color: var(--color-accent-strong); font-size: 10px; letter-spacing: .12em; }
+.panel header h2 { margin: 0; color: var(--color-heading); font-size: 19px; }
+.panel header p, .help { margin: 0; color: var(--color-text-subtle); font-size: 11px; line-height: 1.5; }
+.tabs { display: grid; grid-template-columns: repeat(3,1fr); gap: 5px; padding: 0 15px; }
+.tabs button { min-height: 36px; border: 1px solid var(--color-border); border-radius: 7px; color: var(--color-text-muted); background: var(--color-input); font-size: 10px; font-weight: 700; }
+.tabs button[aria-selected="true"] { border-color: var(--color-accent); color: var(--color-accent-strong); background: rgb(var(--color-accent-rgb) / 12%); }
+.field { display: grid; gap: 5px; padding: 0 15px; color: var(--color-text-subtle); font-size: 11px; }
+.content .field { padding: 0; }
+.field input, .field select, .field textarea { width: 100%; min-height: 38px; padding: 8px; border: 1px solid var(--color-border); border-radius: 7px; color: var(--color-heading); background: var(--color-input); }
+.field textarea { min-height: 64px; resize: vertical; }
+.actionRow { display: grid; grid-template-columns: repeat(2,1fr); gap: 6px; }
+.actionRow button, .primaryAction { min-height: 38px; border: 1px solid rgb(var(--color-accent-rgb) / 45%); border-radius: 7px; color: var(--color-accent-strong); background: rgb(var(--color-accent-rgb) / 9%); font-weight: 700; }
+.itemList { display: grid; gap: 5px; }
+.itemList button { display: grid; gap: 2px; padding: 9px; border: 1px solid var(--color-border); border-radius: 7px; color: var(--color-heading); background: var(--color-input); text-align: left; }
+.itemList button[aria-pressed="true"] { border-color: var(--color-accent); }
+.itemList small { color: var(--color-text-faint); }
+.rangeGrid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 6px; }
+.check { display: flex; align-items: center; gap: 7px; color: var(--color-text-subtle); font-size: 11px; }
+.preview { display: grid; gap: 5px; padding: 11px; border: 1px solid rgb(var(--color-accent-rgb) / 35%); border-radius: 8px; background: rgb(var(--color-accent-rgb) / 7%); }
+.preview span { color: var(--color-text-subtle); font-size: 10px; }.preview strong { color: var(--color-accent-strong); font-size: 18px; }.preview code { overflow: hidden; color: var(--color-text-faint); font-size: 9px; text-overflow: ellipsis; }

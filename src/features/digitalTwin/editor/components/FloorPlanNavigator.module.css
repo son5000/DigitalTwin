@@ -1,0 +1,18 @@
+.panel { position: absolute; z-index: 6; left: 82px; top: 92px; width: 224px; max-height: calc(100% - 158px); overflow: auto; display: grid; gap: 10px; padding: 13px; border: 1px solid var(--line-soft); border-radius: 12px; background: color-mix(in srgb, var(--surface-panel) 94%, transparent); box-shadow: 0 16px 36px rgb(0 0 0 / 22%); backdrop-filter: blur(14px); }
+.panel header span, .currentFloor span { color: var(--text-muted); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+.panel header h2 { margin: 3px 0 0; color: var(--text-strong); font-size: 15px; }
+.currentFloor { display: flex; justify-content: space-between; align-items: center; padding: 8px 9px; border-radius: 8px; background: var(--surface-soft); }
+.currentFloor strong { color: var(--accent-strong); font-size: 12px; }
+.floorList { display: grid; gap: 5px; }
+.floorRow { display: grid; grid-template-columns: minmax(0,1fr) 24px; align-items: center; border: 1px solid var(--line-soft); border-radius: 8px; overflow: hidden; }
+.floorRow.active { border-color: var(--accent-strong); background: color-mix(in srgb, var(--accent-strong) 12%, transparent); }
+.floorRow button { min-width: 0; display: grid; gap: 2px; padding: 8px; border: 0; color: var(--text-strong); background: transparent; text-align: left; cursor: pointer; }
+.floorRow button span { overflow: hidden; color: var(--text-muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.floorRow label { display: grid; place-items: center; }
+.actions { display: grid; grid-template-columns: 1fr; gap: 6px; }
+.actions button { padding: 8px; border: 1px solid var(--line-soft); border-radius: 7px; color: var(--text-strong); background: var(--surface-soft); cursor: pointer; font-size: 10px; font-weight: 700; }
+.actions button:disabled { opacity: .42; cursor: not-allowed; }
+.referenceToggle { display: flex; align-items: center; gap: 7px; color: var(--text-muted); font-size: 10px; }
+.panel > p { margin: 0; color: var(--text-muted); font-size: 9px; line-height: 1.45; }
+.srOnly { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+@media (max-width: 900px) { .panel { left: 16px; top: 82px; width: min(210px, calc(100% - 32px)); max-height: 42%; } }

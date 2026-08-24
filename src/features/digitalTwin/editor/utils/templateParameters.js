@@ -83,6 +83,19 @@ export function normalizeEquipmentInstance(equipment, template) {
       ? equipment.parts.map(normalizeEquipmentPart)
       : defaults.parts,
     detailAssetId: equipment.detailAssetId ?? null,
+    dataBindings: Array.isArray(equipment.dataBindings) ? equipment.dataBindings : [],
+    operationalState: {
+      status: "UNCOMMISSIONED",
+      alarmLevel: "NONE",
+      lastUpdatedAt: null,
+      ...equipment.operationalState,
+    },
+    control: {
+      enabled: false,
+      mode: "MONITOR_ONLY",
+      endpoint: "",
+      ...equipment.control,
+    },
     visible: equipment.visible ?? true,
     locked: equipment.locked ?? false,
   };

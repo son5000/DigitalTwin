@@ -38,6 +38,9 @@ export default function EquipmentProperties({
   onUpdateAsset,
   onSnap,
   onOpenPartEditor,
+  placementOnly = false,
+  floors = [],
+  spaces = [],
 }) {
   const [uploadMessage, setUploadMessage] = useState("");
 
@@ -53,6 +56,18 @@ export default function EquipmentProperties({
 
   const template = EQUIPMENT_SHAPE_TEMPLATE_MAP[equipment.shapeTemplateId];
   const calibration = detailAsset?.calibration;
+  const primaryBinding = equipment.dataBindings?.[0] ?? {
+    protocol: "MQTT",
+    endpoint: "",
+    metric: "",
+    unit: "",
+  };
+
+  function updatePrimaryBinding(changes) {
+    onChange({
+      dataBindings: [{ ...primaryBinding, ...changes }, ...(equipment.dataBindings?.slice(1) ?? [])],
+    });
+  }
 
   function handleFileChange(event) {
     const [file] = event.target.files;
@@ -133,6 +148,81 @@ export default function EquipmentProperties({
         </label>
       </PropertySection>
 
+      {placementOnly ? (
+        <PropertySection title="배치 소속" summary={floors.find((floor) => floor.id === equipment.floorId)?.name ?? "층 미지정"} defaultOpen>
+          <label className={styles.textField}>
+            <span>소속 층</span>
+            <select value={equipment.floorId ?? ""} onChange={(event) => onChange({ floorId: event.target.value })}>
+              {floors.map((floor) => <option key={floor.id} value={floor.id}>{floor.name}</option>)}
+            </select>
+          </label>
+          <label className={styles.textField}>
+            <span>소속 공간</span>
+            <select value={equipment.spaceId ?? ""} onChange={(event) => onChange({ spaceId: event.target.value || null })}>
+              <option value="">공간 미지정</option>
+              {spaces.map((space) => <option key={space.id} value={space.id}>{space.name}</option>)}
+            </select>
+          </label>
+          <dl className={styles.metadata}>
+            <div><dt>원본 템플릿</dt><dd>{equipment.sourceTemplateId ?? equipment.shapeTemplateId}</dd></div>
+            <div><dt>일괄 배치 그룹</dt><dd>{equipment.batchGroupId ?? "개별 배치"}</dd></div>
+          </dl>
+          <p className={styles.description}>센서, 카메라, 데이터 수신과 경고 범위는 다음 단계의 설비 관측 설정에서 연결합니다.</p>
+        </PropertySection>
+      ) : null}
+
+      {!placementOnly ? <PropertySection title="Sensor Data" summary={primaryBinding.endpoint || "연결 안 됨"} defaultOpen>
+        <label className={styles.textField}>
+          <span>프로토콜</span>
+          <select value={primaryBinding.protocol} onChange={(event) => updatePrimaryBinding({ protocol: event.target.value })}>
+            <option value="MQTT">MQTT</option>
+            <option value="HTTP">HTTP / REST</option>
+            <option value="BACNET">BACnet</option>
+            <option value="MODBUS">Modbus</option>
+            <option value="OPC_UA">OPC UA</option>
+          </select>
+        </label>
+        <label className={styles.textField}><span>엔드포인트 또는 토픽</span><input type="text" value={primaryBinding.endpoint} placeholder="예: building/1/ahu/01" onChange={(event) => updatePrimaryBinding({ endpoint: event.target.value })} /></label>
+        <label className={styles.textField}><span>측정 항목</span><input type="text" value={primaryBinding.metric} placeholder="예: temperature" onChange={(event) => updatePrimaryBinding({ metric: event.target.value })} /></label>
+        <label className={styles.textField}><span>단위</span><input type="text" value={primaryBinding.unit} placeholder="예: °C" onChange={(event) => updatePrimaryBinding({ unit: event.target.value })} /></label>
+      </PropertySection> : null}
+
+      {!placementOnly ? <PropertySection title="Operation Status" summary={equipment.operationalState?.status ?? "UNCOMMISSIONED"} defaultOpen>
+        <label className={styles.textField}>
+          <span>운전 상태</span>
+          <select value={equipment.operationalState?.status ?? "UNCOMMISSIONED"} onChange={(event) => onChange({ operationalState: { status: event.target.value, lastUpdatedAt: new Date().toISOString() } })}>
+            <option value="UNCOMMISSIONED">미연결</option>
+            <option value="OFFLINE">오프라인</option>
+            <option value="IDLE">대기</option>
+            <option value="RUNNING">운전 중</option>
+            <option value="FAULT">고장</option>
+            <option value="MAINTENANCE">점검 중</option>
+          </select>
+        </label>
+        <label className={styles.textField}>
+          <span>알람 수준</span>
+          <select value={equipment.operationalState?.alarmLevel ?? "NONE"} onChange={(event) => onChange({ operationalState: { alarmLevel: event.target.value, lastUpdatedAt: new Date().toISOString() } })}>
+            <option value="NONE">없음</option>
+            <option value="INFO">정보</option>
+            <option value="WARNING">주의</option>
+            <option value="CRITICAL">위험</option>
+          </select>
+        </label>
+      </PropertySection> : null}
+
+      {!placementOnly ? <PropertySection title="Control" summary={equipment.control?.enabled ? "제어 가능" : "모니터링 전용"} defaultOpen>
+        <label className={styles.checkField}><input type="checkbox" checked={equipment.control?.enabled ?? false} onChange={(event) => onChange({ control: { enabled: event.target.checked } })} /><span>원격 제어 허용</span></label>
+        <label className={styles.textField}>
+          <span>제어 모드</span>
+          <select disabled={!equipment.control?.enabled} value={equipment.control?.mode ?? "MONITOR_ONLY"} onChange={(event) => onChange({ control: { mode: event.target.value } })}>
+            <option value="MONITOR_ONLY">모니터링 전용</option>
+            <option value="MANUAL">수동 명령</option>
+            <option value="AUTOMATION">자동 제어</option>
+          </select>
+        </label>
+        <label className={styles.textField}><span>제어 엔드포인트</span><input type="text" disabled={!equipment.control?.enabled} value={equipment.control?.endpoint ?? ""} onChange={(event) => onChange({ control: { endpoint: event.target.value } })} /></label>
+      </PropertySection> : null}
+
       <PropertySection title="Transform" summary="m / deg" defaultOpen>
         {snapCandidate && (
           <div className={styles.snapNotice}>
@@ -209,16 +299,16 @@ export default function EquipmentProperties({
         </label>
       </PropertySection>
 
-      <PropertySection title="Parts" summary={`${equipment.parts?.length ?? 0} Parts`} defaultOpen>
+      {!placementOnly ? <PropertySection title="Parts" summary={`${equipment.parts?.length ?? 0} Parts`} defaultOpen>
         <div className={styles.partSummary}>
           <div><span>설비</span><strong>{equipment.name}</strong></div>
           <div><span>파트 노드</span><strong>{equipment.parts?.length ?? 0}</strong></div>
         </div>
         <p className={styles.description}>파트 메시는 공간 장면에 상시 렌더링하지 않고 상세 편집 화면에서만 불러옵니다.</p>
         <button type="button" className={styles.partEditorButton} onClick={onOpenPartEditor}><ComponentIcon size={16} /> 파트 편집기 열기</button>
-      </PropertySection>
+      </PropertySection> : null}
 
-      <PropertySection title="3D Scan" summary={detailAsset ? STATUS_LABELS[detailAsset.status] : "미등록"}>
+      {!placementOnly ? <PropertySection title="3D Scan" summary={detailAsset ? STATUS_LABELS[detailAsset.status] : "미등록"}>
         {!detailAsset ? (
           <p className={styles.description}>설비 인스턴스에 정밀 스캔 모델을 연결합니다. 기본 장면에는 불러오지 않습니다.</p>
         ) : (
@@ -245,7 +335,7 @@ export default function EquipmentProperties({
         </div>
         {uploadMessage && <p className={styles.uploadMessage} role="status">{uploadMessage}</p>}
         <p className={styles.fileHelp}>GLB, GLTF, OBJ, PLY · 파일은 현재 브라우저 세션에서만 미리보기 가능</p>
-      </PropertySection>
+      </PropertySection> : null}
 
       <PropertySection title="Advanced" summary={equipment.locked ? "Locked" : "Calibration"}>
         <label className={styles.checkField}>

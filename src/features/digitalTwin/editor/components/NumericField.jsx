@@ -20,8 +20,10 @@ export default function NumericField({
 }) {
   const [draftValue, setDraftValue] = useState(() => formatValue(value));
   const isEditingRef = useRef(false);
+  const externalValueRef = useRef(value);
 
   useEffect(() => {
+    externalValueRef.current = value;
     if (!isEditingRef.current || disabled) {
       setDraftValue(formatValue(value));
     }
@@ -59,6 +61,9 @@ export default function NumericField({
     if (committedValue !== Number(value)) {
       onChange(committedValue);
     }
+    window.requestAnimationFrame(() => {
+      setDraftValue(formatValue(externalValueRef.current));
+    });
   }
 
   return (

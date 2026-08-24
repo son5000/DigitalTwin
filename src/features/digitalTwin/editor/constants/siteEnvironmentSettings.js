@@ -31,6 +31,16 @@ function finite(value, fallback) {
   return Number.isFinite(number) ? number : fallback;
 }
 
+function resolveSize(value) {
+  if (typeof value === "number") return { width: value, depth: value };
+  if (!value || typeof value !== "object") return null;
+  const size = finite(value.size, Number.NaN);
+  return {
+    width: finite(value.width, size),
+    depth: finite(value.depth, size),
+  };
+}
+
 export function normalizeSiteEnvironment(environment) {
   const groundMaterial = SITE_GROUND_MATERIAL_OPTIONS.some((option) => option.id === environment?.groundMaterial)
     ? environment.groundMaterial
@@ -43,5 +53,78 @@ export function normalizeSiteEnvironment(environment) {
     depth: Math.min(400, Math.max(20, finite(environment?.depth, DEFAULT_SITE_ENVIRONMENT.depth))),
     groundMaterial,
     backgroundTheme,
+  };
+}
+
+export function resolveSiteEnvironmentFromLayout(layout) {
+  const current = resolveSize(layout?.siteEnvironment ?? layout?.worldSettings?.site);
+  const legacySite = resolveSize(layout?.siteSize ?? layout?.worldSettings?.siteSize);
+  const legacyGrid = resolveSize(layout?.gridSize ?? layout?.worldGridSize ?? layout?.gridSettings?.gridSize);
+  const dimensions = current ?? legacySite ?? legacyGrid ?? DEFAULT_SITE_ENVIRONMENT;
+  return normalizeSiteEnvironment({
+    ...dimensions,
+    ...(layout?.siteEnvironment ?? layout?.worldSettings?.site),
+  });
+}
+
+export function getSiteBounds(environment) {
+  const site = normalizeSiteEnvironment(environment);
+  return {
+    width: site.width,
+    depth: site.depth,
+    minX: -site.width / 2,
+    maxX: site.width / 2,
+    minZ: -site.depth / 2,
+    maxZ: site.depth / 2,
+  };
+}
+
+export function getRotatedFootprint(dimensions, rotationY = 0) {
+  const width = Math.max(0, finite(dimensions?.width, 0));
+  const depth = Math.max(0, finite(dimensions?.depth, 0));
+  const angle = finite(rotationY, 0);
+  const cosine = Math.abs(Math.cos(angle));
+  const sine = Math.abs(Math.sin(angle));
+  return {
+    width: width * cosine + depth * sine,
+    depth: width * sine + depth * cosine,
+  };
+}
+
+export function clampObjectPositionToSite(position, dimensions, rotationY, environment) {
+  const bounds = getSiteBounds(environment);
+  const footprint = getRotatedFootprint(dimensions, rotationY);
+  const fits = footprint.width <= bounds.width && footprint.depth <= bounds.depth;
+  const xLimit = Math.max(0, (bounds.width - footprint.width) / 2);
+  const zLimit = Math.max(0, (bounds.depth - footprint.depth) / 2);
+  const currentX = finite(position?.x, 0);
+  const currentZ = finite(position?.z, 0);
+  const x = Math.min(xLimit, Math.max(-xLimit, currentX));
+  const z = Math.min(zLimit, Math.max(-zLimit, currentZ));
+
+  return {
+    position: { ...position, x, z },
+    footprint,
+    fits,
+    wasClamped: Math.abs(x - currentX) > 1e-6 || Math.abs(z - currentZ) > 1e-6,
+  };
+}
+
+export function intersectAreaWithSite(area, environment) {
+  const bounds = getSiteBounds(environment);
+  const width = Math.max(0, finite(area?.width, 0));
+  const depth = Math.max(0, finite(area?.depth, 0));
+  const centerX = finite(area?.center?.x, 0);
+  const centerZ = finite(area?.center?.z, 0);
+  const minX = Math.max(bounds.minX, centerX - width / 2);
+  const maxX = Math.min(bounds.maxX, centerX + width / 2);
+  const minZ = Math.max(bounds.minZ, centerZ - depth / 2);
+  const maxZ = Math.min(bounds.maxZ, centerZ + depth / 2);
+  if (minX >= maxX || minZ >= maxZ) return null;
+  return {
+    ...area,
+    center: { x: (minX + maxX) / 2, z: (minZ + maxZ) / 2 },
+    width: maxX - minX,
+    depth: maxZ - minZ,
   };
 }

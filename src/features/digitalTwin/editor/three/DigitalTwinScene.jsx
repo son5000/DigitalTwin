@@ -235,7 +235,7 @@ export default function DigitalTwinScene({
     );
     transformControls.setMode(TRANSFORM_MODES.TRANSLATE);
     transformControls.setTranslationSnap(null);
-    transformControls.setRotationSnap(THREE.MathUtils.degToRad(15));
+    transformControls.setRotationSnap(THREE.MathUtils.degToRad(5));
     transformControls.showY = false;
 
     const worldRoot = new THREE.Group();

@@ -36,7 +36,17 @@ export function getWorldStructureDimensions(structure) {
     return { width: parameter.length, height: parameter.height, depth: parameter.thickness };
   }
   if (structure.type === "STAIR") {
-    return { width: parameter.width, height: parameter.totalHeight, depth: parameter.totalLength };
+    const riserHeight = Number(parameter.riserHeight)
+      || (Number(parameter.totalHeight) ? Number(parameter.totalHeight) / Math.max(2, parameter.stepCount ?? 16) : 0.18);
+    const stepCount = Math.max(2, Math.round(parameter.stepCount ?? 18));
+    return {
+      width: parameter.width,
+      height: parameter.totalHeight ?? riserHeight * stepCount,
+      depth: parameter.totalLength ?? (parameter.treadDepth ?? 0.28) * (stepCount - 1) + (parameter.landingDepth ?? 1.2),
+    };
+  }
+  if (["STAIRWELL", "ELEVATOR", "SHAFT"].includes(structure.type)) {
+    return { width: parameter.width, height: parameter.height, depth: parameter.depth };
   }
   if (structure.type === "STRUCTURAL_FRAME") {
     return { width: parameter.width, height: parameter.height, depth: parameter.depth };
@@ -118,8 +128,8 @@ function generateRamp(structure, dimensions, edgeColor) {
 
 function generateStair(structure, dimensions, edgeColor) {
   const group = new THREE.Group();
-  const stepCount = Math.max(2, Math.round(structure.parameters.stepCount));
-  const stepDepth = dimensions.depth / stepCount;
+  const stepCount = Math.max(2, Math.round(structure.parameters.stepCount ?? dimensions.height / (structure.parameters.riserHeight ?? 0.18)));
+  const stepDepth = structure.parameters.treadDepth ?? dimensions.depth / stepCount;
   const stepHeight = dimensions.height / stepCount;
   for (let index = 0; index < stepCount; index += 1) {
     const height = stepHeight * (index + 1);
@@ -206,6 +216,8 @@ export function createWorldStructureObject(structure, { selected, theme, sceneTh
     ? "WALL"
     : definition.group === "BOUNDARY"
     ? "BOUNDARY"
+    : definition.group === "VERTICAL"
+      ? "VERTICAL"
     : ["PARTITION", "TEMPORARY_WALL"].includes(structure.type)
       ? "PARTITION"
       : structure.type === "COLUMN"

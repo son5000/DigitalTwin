@@ -135,7 +135,7 @@ export default function FloorOverviewScene({
 
     const transformControls = new TransformControls(camera, renderer.domElement);
     transformControls.setTranslationSnap(null);
-    transformControls.setRotationSnap(THREE.MathUtils.degToRad(15));
+    transformControls.setRotationSnap(THREE.MathUtils.degToRad(5));
     transformControls.showY = false;
     scene.add(transformControls.getHelper());
 

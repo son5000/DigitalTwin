@@ -44,6 +44,13 @@ function normalizeStructure(structure) {
     rotation: { x: 0, y: 0, z: 0, ...structure.rotation },
     appearance: { ...definition.defaultAppearance, ...structure.appearance },
     spaceId: structure.spaceId ?? DEFAULT_WORLD_SPACE.id,
+    applicationScope: {
+      mode: definition.isVertical ? "RANGE" : "CURRENT",
+      startFloorId: null,
+      endFloorId: null,
+      floorIds: [],
+      ...structure.applicationScope,
+    },
     visible: structure.visible ?? true,
     locked: structure.locked ?? false,
     groundSnap: structure.groundSnap ?? definition.defaultGroundSnap,
@@ -198,6 +205,7 @@ export default function useWorldStructureState({ gridSettings, gridScopeId }) {
       });
       setSelectedWorldStructureId(id);
       setActiveWorldTemplateId(null);
+      return id;
     },
     [gridScopeId, gridSettings, worldStructuresLocked],
   );
@@ -230,6 +238,9 @@ export default function useWorldStructureState({ gridSettings, gridScopeId }) {
         appearance: changes.appearance
           ? { ...structure.appearance, ...changes.appearance }
           : structure.appearance,
+        applicationScope: changes.applicationScope
+          ? { ...structure.applicationScope, ...changes.applicationScope }
+          : structure.applicationScope,
       };
       return applyGroundSnap(nextStructure, structures);
     }));

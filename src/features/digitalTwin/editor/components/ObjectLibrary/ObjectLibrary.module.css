@@ -45,17 +45,17 @@
 .previewCompact { width: 32px; height: 32px; border-color: rgb(var(--color-accent-rgb) / 26%); background: rgb(var(--color-accent-rgb) / 7%); }
 .itemText { display: grid; min-width: 0; gap: 3px; }
 .itemText strong { overflow: hidden; color: var(--color-heading); font-size: 12px; font-weight: var(--font-weight-medium); text-overflow: ellipsis; white-space: nowrap; }
-.itemText small { display: -webkit-box; overflow: hidden; color: var(--color-text-faint); font-size: 10px; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.itemText small { display: -webkit-box; overflow: hidden; color: var(--color-text-faint); font-size: var(--editor-font-size-xs); line-height: var(--editor-line-height); -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .itemAction { display: grid; width: 24px; height: 24px; place-items: center; border-radius: 6px; color: var(--color-text-faint); background: var(--color-surface-raised); }
 .itemActive .itemAction { color: var(--color-accent); background: rgb(var(--color-accent-rgb) / 10%); }
 .variants { display: grid; gap: 10px; padding: 12px; border-top: 1px solid var(--color-border); background: var(--color-surface-raised); }
 .variants > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.variants > header span { color: var(--color-text-faint); font-size: 9px; font-weight: var(--font-weight-semibold); letter-spacing: .11em; }
-.variants > header strong { overflow: hidden; color: var(--color-heading); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.variants > header span { color: var(--color-text-faint); font-size: var(--editor-font-size-xs); font-weight: var(--editor-font-weight-semibold); letter-spacing: .11em; }
+.variants > header strong { overflow: hidden; color: var(--color-heading); font-size: var(--editor-font-size-sm); text-overflow: ellipsis; white-space: nowrap; }
 .variantGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.variantGrid label { display: grid; min-width: 0; gap: 4px; color: var(--color-text-muted); font-size: 9px; }
-.variantGrid select { width: 100%; min-height: 36px; padding: 0 7px; border: 1px solid var(--color-border); border-radius: 7px; color: var(--color-heading); background: var(--color-input); font-size: 11px; }
-.help { margin: 0; padding: 10px 12px 12px; color: var(--color-text-faint); font-size: 10px; line-height: 1.5; }
+.variantGrid label { display: grid; min-width: 0; gap: 4px; color: var(--color-text-muted); font-size: var(--editor-font-size-xs); }
+.variantGrid select { width: 100%; min-height: 36px; padding: 0 7px; border: 1px solid var(--color-border); border-radius: 7px; color: var(--color-heading); background: var(--color-input); font-size: var(--editor-font-size-sm); }
+.help { margin: 0; padding: 10px 12px 12px; color: var(--color-text-faint); font-size: var(--editor-font-size-xs); line-height: var(--editor-line-height); }
 .empty { padding: 24px 16px; color: var(--color-text-faint); font-size: 12px; text-align: center; }
 .visuallyHidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 

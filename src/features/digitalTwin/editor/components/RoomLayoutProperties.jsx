@@ -7,7 +7,7 @@ export default function RoomLayoutProperties({ room, scene, roomCount, showEnter
     return (
       <section className={styles.emptyState}>
         <span aria-hidden="true"><SpaceIcon size={38} /></span>
-        <h2>공간 배치</h2>
+        <h2>공간 구획</h2>
         <p>층 화면에서 공간을 선택하거나 새 공간을 추가하세요.</p>
         <button type="button" onClick={onAddRoom}><AddIcon size={16} /> 공간 추가</button>
         <small>이 층의 공간 {roomCount}개</small>

@@ -2,6 +2,7 @@ import {
   BUILDING_OBJECT_DEFINITIONS,
   getDefaultObjectVariants,
 } from "@/features/digitalTwin/editor/constants/objectLibraryCatalog";
+import { DEFAULT_BUILDING_SETTING_STATUS } from "@/features/digitalTwin/editor/constants/buildingDetail";
 
 export const HIERARCHY_NODE_TYPES = Object.freeze({
   SITE: "SITE",
@@ -33,6 +34,8 @@ export const BUILDING_TEMPLATES = Object.freeze(BUILDING_OBJECT_DEFINITIONS.map(
 export const DEFAULT_BUILDING_DEFINITION = Object.freeze({
   templateId: "BUILDING",
   objectDefinitionId: "BUILDING",
+  detailSettingStatus: "UNSET",
+  settingStatus: DEFAULT_BUILDING_SETTING_STATUS,
   parameters: Object.freeze({ width: 24, depth: 16, floorCount: 5, floorHeight: 3.6, roofType: "FLAT", entranceCount: 2, stairCount: 2, extras: [] }),
   variants: Object.freeze(getDefaultObjectVariants(BUILDING_OBJECT_DEFINITIONS[0])),
   position: Object.freeze({ x: 0, y: 0, z: 0 }),
@@ -74,6 +77,7 @@ export function normalizeHierarchy(hierarchy) {
           ...DEFAULT_BUILDING_DEFINITION,
           ...node,
           parameters: { ...DEFAULT_BUILDING_DEFINITION.parameters, ...node.parameters },
+          settingStatus: { ...DEFAULT_BUILDING_SETTING_STATUS, ...node.settingStatus },
           variants: { ...DEFAULT_BUILDING_DEFINITION.variants, ...node.variants },
           position: { ...DEFAULT_BUILDING_DEFINITION.position, ...node.position },
           rotation: { ...DEFAULT_BUILDING_DEFINITION.rotation, ...node.rotation },

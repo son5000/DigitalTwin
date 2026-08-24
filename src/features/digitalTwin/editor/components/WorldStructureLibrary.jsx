@@ -25,6 +25,7 @@ const FILTER_LABELS = {
   COLUMN: "Column",
   PLATFORM: "Platform",
   BOUNDARY: "Railing / Fence",
+  VERTICAL: "Stair / Elevator / Shaft",
   OTHER: "Other World",
   EQUIPMENT: "Equipment",
 };
@@ -41,27 +42,42 @@ export default function WorldStructureLibrary({
   onSelectEquipment,
   onToggleVisibility,
   onToggleWorldLock,
+  activeRoomName = "현재 공간",
+  showEquipment = false,
+  allowedTemplateIds,
+  title = "공간 구조물",
+  eyebrow = "도면 편집 도구",
+  badge = "월드",
+  treeTitle = "월드 구조물",
+  baseNodeLabel = "내부 공간",
+  help = "도구를 선택한 뒤 장면의 기준 위치를 클릭하고 X / Y / Z로 배치합니다.",
+  showLockControl = true,
 }) {
   const [activeGroup, setActiveGroup] = useState("STRUCTURE");
   const templates = useMemo(
-    () => WORLD_STRUCTURE_TEMPLATES.filter((item) => item.group === activeGroup),
-    [activeGroup],
+    () => WORLD_STRUCTURE_TEMPLATES.filter((item) => (
+      item.group === activeGroup && (!allowedTemplateIds || allowedTemplateIds.includes(item.id))
+    )),
+    [activeGroup, allowedTemplateIds],
   );
+  const availableGroups = useMemo(() => WORLD_STRUCTURE_GROUPS.filter((group) => (
+    WORLD_STRUCTURE_TEMPLATES.some((item) => item.group === group.id && (!allowedTemplateIds || allowedTemplateIds.includes(item.id)))
+  )), [allowedTemplateIds]);
 
   return (
     <section className={styles.panel}>
       <div className={styles.heading}>
         <div>
-          <span>월드 편집 도구</span>
-          <h2>공간 구조물</h2>
+          <span>{eyebrow}</span>
+          <h2>{title}</h2>
         </div>
-        <span className={styles.worldBadge}>월드</span>
+        <span className={styles.worldBadge}>{badge}</span>
       </div>
 
       <label className={styles.groupSelect}>
         <span>도구 그룹</span>
         <select value={activeGroup} onChange={(event) => setActiveGroup(event.target.value)}>
-          {WORLD_STRUCTURE_GROUPS.map((group) => (
+          {availableGroups.map((group) => (
             <option key={group.id} value={group.id}>{group.nameKo} · {group.name}</option>
           ))}
         </select>
@@ -84,7 +100,7 @@ export default function WorldStructureLibrary({
             </button>
         ))}
       </div>
-      <p className={styles.help}>도구를 선택한 뒤 장면의 기준 위치를 클릭하고 X / Y / Z로 배치합니다.</p>
+      <p className={styles.help}>{help}</p>
 
       <details className={styles.filterSection}>
         <summary><span className={styles.summaryLabel}><VisibilityIcon size={16} /> 표시 필터</span><span>{Object.values(visibilityFilters).filter(Boolean).length}</span></summary>
@@ -98,7 +114,7 @@ export default function WorldStructureLibrary({
         </div>
       </details>
 
-      <button
+      {showLockControl ? <button
         type="button"
         className={`${styles.worldLock} ${worldLocked ? styles.worldLockActive : ""}`}
         aria-pressed={worldLocked}
@@ -106,13 +122,13 @@ export default function WorldStructureLibrary({
       >
         {worldLocked ? <LockIcon size={17} /> : <UnlockIcon size={17} />}
         {worldLocked ? "World Structure 잠금 해제" : "World Structure 전체 잠금"}
-      </button>
+      </button> : null}
 
       <div className={styles.tree}>
         <section>
-          <h3><span>월드 구조물</span><strong>{structures.length}</strong></h3>
+          <h3><span>{treeTitle}</span><strong>{structures.length}</strong></h3>
           <button type="button" className={styles.baseNode} onClick={() => onSelectStructure(null)}>
-            <span><ChevronDownIcon size={15} /><WorldIcon size={17} /> 기계실 A</span><small>기본 월드</small>
+            <span><ChevronDownIcon size={15} /><WorldIcon size={17} /> {activeRoomName}</span><small>{baseNodeLabel}</small>
           </button>
           {structures.map((structure) => (
               <button
@@ -126,7 +142,7 @@ export default function WorldStructureLibrary({
               </button>
           ))}
         </section>
-        <section>
+        {showEquipment ? <section>
           <h3><span>설비</span><strong>{equipment.length}</strong></h3>
           {equipment.length === 0 ? (
             <p>배치된 설비가 없습니다.</p>
@@ -135,7 +151,7 @@ export default function WorldStructureLibrary({
               <span><EquipmentIcon size={17} /> {item.name}</span><small>설비</small>
             </button>
           ))}
-        </section>
+        </section> : null}
       </div>
     </section>
   );

@@ -55,6 +55,10 @@ export default function EquipmentLibrary({
   activeTemplateId,
   favoriteTemplateIds,
   recentTemplateIds,
+  floors = [],
+  currentFloorId = null,
+  targetFloorIds = [],
+  onTargetFloorIdsChange,
   onSelect,
   onToggleFavorite,
 }) {
@@ -116,6 +120,19 @@ export default function EquipmentLibrary({
         />
       </label>
 
+      {floors.length > 0 ? (
+        <fieldset className={styles.floorTargets}>
+          <legend>배치 대상 층</legend>
+          <p>현재 층은 항상 포함되며, 여러 층을 고르면 독립 인스턴스로 일괄 배치됩니다.</p>
+          <div>
+            {floors.map((floor) => {
+              const checked = floor.id === currentFloorId || targetFloorIds.includes(floor.id);
+              return <label key={floor.id}><input type="checkbox" checked={checked} disabled={floor.id === currentFloorId} onChange={(event) => onTargetFloorIdsChange?.(event.target.checked ? [...targetFloorIds, floor.id] : targetFloorIds.filter((id) => id !== floor.id))} /><span>{floor.name}</span></label>;
+            })}
+          </div>
+        </fieldset>
+      ) : null}
+
       <div className={styles.filters}>
         <label>
           <span className={styles.visuallyHidden}>카테고리</span>
@@ -157,7 +174,7 @@ export default function EquipmentLibrary({
         </section>
       </div>
 
-      <p className={styles.help}>타입을 고른 뒤 중앙 바닥을 클릭하여 배치합니다.</p>
+      <p className={styles.help}>타입을 고른 뒤 중앙 바닥을 클릭하여 배치합니다. 일괄 배치된 설비도 이후 개별 편집할 수 있습니다.</p>
     </section>
   );
 }

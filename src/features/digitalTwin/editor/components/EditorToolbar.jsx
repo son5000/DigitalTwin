@@ -1,7 +1,4 @@
-import {
-  TRANSFORM_MODES,
-  VIEW_MODES,
-} from "@/features/digitalTwin/editor/constants/equipmentShapeTemplates";
+import { VIEW_MODES } from "@/features/digitalTwin/editor/constants/equipmentShapeTemplates";
 import {
   formatGridResolution,
   GRID_CELL_SIZE_OPTIONS,
@@ -36,7 +33,7 @@ import {
 
 import styles from "./EditorToolbar.module.css";
 
-function ToolbarButton({ icon, label, shortcut, active = false, menuItem = false, ...buttonProps }) {
+function ToolbarButton({ icon, label, shortcut, active = false, pressed, menuItem = false, ...buttonProps }) {
   return (
     <button
       type="button"
@@ -44,6 +41,7 @@ function ToolbarButton({ icon, label, shortcut, active = false, menuItem = false
       aria-label={label}
       title={shortcut ? `${label} (${shortcut})` : label}
       data-tooltip={shortcut ? `${label} · ${shortcut}` : label}
+      aria-pressed={pressed}
       {...buttonProps}
     >
       <span className={styles.icon} aria-hidden="true">{icon}</span>
@@ -139,7 +137,7 @@ export default function EditorToolbar({
   siteInteractionMode = SITE_INTERACTION_MODES.NAVIGATE,
   editorMode,
   viewMode,
-  transformMode,
+  transformTools,
   snapSize,
   gridSnapEnabled,
   hasSelection,
@@ -150,7 +148,7 @@ export default function EditorToolbar({
   onEditorModeChange,
   onSiteInteractionModeChange,
   onViewModeChange,
-  onTransformModeChange,
+  onTransformToolToggle,
   onSnapSizeChange,
   onGridSnapChange,
   onToggleWorldLock,
@@ -201,8 +199,8 @@ export default function EditorToolbar({
         ) : null}
         <Divider />
         <div className={styles.group} aria-label="이동과 회전">
-          <ToolbarButton icon={<MoveIcon />} label="이동" shortcut="W" active={transformMode === TRANSFORM_MODES.TRANSLATE} disabled={!hasSelection} onClick={() => onTransformModeChange(TRANSFORM_MODES.TRANSLATE)} />
-          <ToolbarButton icon={<RotateIcon />} label="회전" shortcut="E" active={transformMode === TRANSFORM_MODES.ROTATE} disabled={!hasSelection} onClick={() => onTransformModeChange(TRANSFORM_MODES.ROTATE)} />
+          <ToolbarButton icon={<MoveIcon />} label="이동" shortcut="W" active={transformTools.translate} pressed={transformTools.translate} disabled={!hasSelection} onClick={() => onTransformToolToggle("translate")} />
+          <ToolbarButton icon={<RotateIcon />} label="Y축 회전" shortcut="E" active={transformTools.rotate} pressed={transformTools.rotate} disabled={!hasSelection} onClick={() => onTransformToolToggle("rotate")} />
         </div>
         <Divider />
         <GridSnapControl enabled={gridSnapEnabled} snapSize={snapSize} onToggle={onGridSnapChange} onSnapSizeChange={onSnapSizeChange} />
@@ -237,8 +235,8 @@ export default function EditorToolbar({
         <>
           <Divider />
           <div className={styles.group} aria-label="이동과 회전">
-            <ToolbarButton icon={<MoveIcon />} label="이동" shortcut="W" active={transformMode === TRANSFORM_MODES.TRANSLATE} disabled={!hasSelection} onClick={() => onTransformModeChange(TRANSFORM_MODES.TRANSLATE)} />
-            <ToolbarButton icon={<RotateIcon />} label="회전" shortcut="E" active={transformMode === TRANSFORM_MODES.ROTATE} disabled={!hasSelection} onClick={() => onTransformModeChange(TRANSFORM_MODES.ROTATE)} />
+            <ToolbarButton icon={<MoveIcon />} label="이동" shortcut="W" active={transformTools.translate} pressed={transformTools.translate} disabled={!hasSelection} onClick={() => onTransformToolToggle("translate")} />
+            <ToolbarButton icon={<RotateIcon />} label="Y축 회전" shortcut="E" active={transformTools.rotate} pressed={transformTools.rotate} disabled={!hasSelection} onClick={() => onTransformToolToggle("rotate")} />
           </div>
           <Divider />
           <GridSnapControl enabled={gridSnapEnabled} snapSize={snapSize} onToggle={onGridSnapChange} onSnapSizeChange={onSnapSizeChange} />

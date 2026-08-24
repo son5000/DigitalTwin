@@ -7,6 +7,15 @@
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
   --font-weight-bold: 700;
+  --editor-font-size-xs: 12px;
+  --editor-font-size-sm: 13px;
+  --editor-font-size-md: 14px;
+  --editor-font-size-lg: 16px;
+  --editor-font-size-xl: 18px;
+  --editor-font-weight-normal: 400;
+  --editor-font-weight-medium: 500;
+  --editor-font-weight-semibold: 600;
+  --editor-line-height: 1.5;
   font-family: var(--font-family-base);
   font-weight: var(--font-weight-regular);
   line-height: 1.5;
@@ -25,8 +34,8 @@
   --color-text: #d8e0e9;
   --color-heading: #f1f5f9;
   --color-text-muted: #9aa8b8;
-  --color-text-subtle: #8291a3;
-  --color-text-faint: #647386;
+  --color-text-subtle: #9aa8b8;
+  --color-text-faint: #8796a8;
   --color-disabled: #596779;
   --color-primary: #6f95cf;
   --color-primary-strong: #9bb7df;
@@ -85,8 +94,8 @@
   --color-text: #334155;
   --color-heading: #0f172a;
   --color-text-muted: #64748b;
-  --color-text-subtle: #7c8a9a;
-  --color-text-faint: #94a3b8;
+  --color-text-subtle: #5f6f82;
+  --color-text-faint: #718196;
   --color-disabled: #a8b3c2;
   --color-primary: #3566a8;
   --color-primary-strong: #244f87;
