@@ -2,6 +2,7 @@ import * as THREE from "three";
 
 import { WORLD_STRUCTURE_TEMPLATE_MAP } from "@/features/digitalTwin/editor/constants/worldStructureTemplates";
 import { createPresetMaterial } from "@/features/digitalTwin/editor/three/presetMaterial";
+import { createProceduralWorldObject } from "./ProceduralObjectFactory";
 
 export function getWorldStructureDimensions(structure) {
   const parameter = structure.parameters;
@@ -57,6 +58,8 @@ export function getWorldStructureDimensions(structure) {
 
 function addSolid(group, geometry, appearance, edgeColor, position = [0, 0, 0], rotation = [0, 0, 0]) {
   const mesh = new THREE.Mesh(geometry, createPresetMaterial(appearance));
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
   mesh.position.set(...position);
   mesh.rotation.set(...rotation);
   group.add(mesh);
@@ -180,6 +183,7 @@ export function getWorldStructureSignature(structure, { selected, theme }) {
     structure.variant,
     JSON.stringify(structure.parameters),
     JSON.stringify(structure.appearance),
+    JSON.stringify(structure.appearanceSlots),
     selected,
     theme,
   ].join("|");
@@ -188,9 +192,10 @@ export function getWorldStructureSignature(structure, { selected, theme }) {
 export function createWorldStructureObject(structure, { selected, theme, sceneTheme }) {
   const dimensions = getWorldStructureDimensions(structure);
   const edgeColor = selected ? sceneTheme.worldSelection : sceneTheme.worldEdge;
-  const generator = STRUCTURE_GENERATORS[structure.type] ?? generateBoxStructure;
-  const visual = generator(structure, dimensions, edgeColor);
   const definition = WORLD_STRUCTURE_TEMPLATE_MAP[structure.type];
+  const generator = STRUCTURE_GENERATORS[structure.type] ?? generateBoxStructure;
+  const visual = createProceduralWorldObject(structure, dimensions, definition, { selected, edgeColor })
+    ?? generator(structure, dimensions, edgeColor);
 
   const object = new THREE.Group();
   object.name = structure.name;
