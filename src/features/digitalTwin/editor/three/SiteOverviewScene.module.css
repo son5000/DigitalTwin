@@ -18,7 +18,6 @@
 }
 
 .sceneStatus,
-.axisLegend,
 .gridSnapStatus,
 .areaStatus {
   position: absolute;
@@ -35,7 +34,7 @@
 }
 
 .areaStatus {
-  top: 54px;
+  top: var(--editor-overlay-top-secondary, 62px);
   left: 50%;
   display: grid;
   justify-items: center;
@@ -51,20 +50,30 @@
 .areaStatus span { max-width: 340px; color: var(--color-text-muted); font-size: 11px; letter-spacing: .02em; text-align: center; }
 
 .gridSnapStatus {
-  top: 14px;
-  right: 14px;
+  top: calc(var(--editor-overlay-top-secondary, 62px) + 38px);
+  right: var(--editor-overlay-right-safe, var(--editor-overlay-gap, 12px));
   padding: 7px 9px;
   border-color: rgb(var(--color-accent-rgb) / 55%);
   color: var(--color-accent-strong);
 }
 
 .sceneStatus {
-  top: 70px;
-  left: 14px;
+  top: var(--editor-overlay-gap, 12px);
+  right: var(--scene-status-right, var(--editor-overlay-gap, 12px));
   display: flex;
+  width: var(--scene-status-inline-size, 92px);
+  min-height: var(--editor-overlay-control-height, 40px);
+  box-sizing: border-box;
   align-items: center;
+  justify-content: center;
   gap: 7px;
-  padding: 7px 9px;
+  padding: 3px 9px;
+  border-radius: var(--editor-overlay-radius, 8px);
+  box-shadow: var(--shadow-panel);
+  font-size: var(--editor-font-size-xs, 12px);
+  font-weight: var(--editor-font-weight-semibold, 600);
+  letter-spacing: 0;
+  backdrop-filter: blur(10px);
 }
 
 .sceneStatus span {
@@ -77,8 +86,8 @@
 .cameraResetButton {
   position: absolute;
   z-index: 3;
-  bottom: 14px;
-  left: 14px;
+  bottom: var(--editor-overlay-gap, 12px);
+  left: var(--editor-overlay-left-safe, 74px);
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -101,23 +110,7 @@
   color: var(--color-accent-strong);
 }
 
-.axisLegend {
-  right: 14px;
-  bottom: 14px;
-  display: flex;
-  gap: 8px;
-  padding: 7px 9px;
-}
-
-.axisLegend b:nth-child(1) { color: var(--color-axis-x); }
-.axisLegend b:nth-child(2) { color: var(--color-axis-y); }
-.axisLegend b:nth-child(3) { color: var(--color-axis-z); }
-
-@media (max-width: 1279px), (orientation: portrait) {
-  .sceneStatus { top: 112px; left: 10px; }
-}
-
-@media (orientation: portrait) {
-  .cameraResetButton { bottom: 10px; left: 10px; }
-  .axisLegend { right: 10px; bottom: 10px; }
+@media (max-width: 900px), (orientation: portrait) {
+  .sceneStatus { right: var(--editor-overlay-gap, 8px); }
+  .cameraResetButton { bottom: var(--editor-overlay-mobile-bottom-safe, 74px); left: var(--editor-overlay-gap, 8px); }
 }

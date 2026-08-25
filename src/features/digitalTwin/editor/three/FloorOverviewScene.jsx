@@ -353,7 +353,6 @@ export default function FloorOverviewScene({
       <div className={styles.sceneStatus}><span /> 층 편집 · 중간 상세</div>
       {effectiveSnapSize !== null && <div className={styles.gridSnapStatus}>그리드 스냅 · {formatGridResolution(effectiveSnapSize)}</div>}
       <div className={styles.floorName}>{building?.name} / {floor?.name}</div>
-      <div className={styles.hint}>공간 선택 · 더블 클릭으로 상세 월드 진입</div>
       <div className={styles.axisLegend} aria-hidden="true"><b>X</b><b>Y</b><b>Z</b><span>미터</span></div>
     </section>
   );

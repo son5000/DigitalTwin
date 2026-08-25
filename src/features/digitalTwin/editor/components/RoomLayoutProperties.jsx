@@ -8,7 +8,6 @@ export default function RoomLayoutProperties({ room, scene, roomCount, showEnter
       <section className={styles.emptyState}>
         <span aria-hidden="true"><SpaceIcon size={38} /></span>
         <h2>공간 구획</h2>
-        <p>층 화면에서 공간을 선택하거나 새 공간을 추가하세요.</p>
         <button type="button" onClick={onAddRoom}><AddIcon size={16} /> 공간 추가</button>
         <small>이 층의 공간 {roomCount}개</small>
       </section>
@@ -23,7 +22,6 @@ export default function RoomLayoutProperties({ room, scene, roomCount, showEnter
       <header className={styles.heading}>
         <span>층 / 공간</span>
         <h2>{room.name}</h2>
-        <p>공간의 바닥 영역과 상세 월드 크기를 함께 편집합니다.</p>
       </header>
 
       <div className={styles.actions}>
@@ -73,7 +71,6 @@ export default function RoomLayoutProperties({ room, scene, roomCount, showEnter
           </span>
         </label>
       </div>
-      <p className={styles.hint}>층 화면은 중간 상세도만 사용하며, 설비는 개수 요약 표시로 보여줍니다.</p>
     </section>
   );
 }

@@ -1,20 +1,20 @@
 .field {
   display: grid;
-  grid-template-columns: 70px minmax(0, 1fr);
+  grid-template-columns: 58px minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
+  gap: 7px;
 }
 
 .label {
   color: var(--color-text-muted);
-  font-size: 14px;
+  font-size: var(--editor-font-size-xs);
 }
 
 .inputShell {
   display: flex;
   align-items: center;
   min-width: 0;
-  min-height: 44px;
+  min-height: 36px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-small);
   background: var(--color-input);
@@ -32,7 +32,7 @@
   padding: 0 8px;
   color: var(--color-text);
 
-  font-size: 14px;
+  font-size: var(--editor-font-size-sm);
   font-variant-numeric: tabular-nums;
 }
 

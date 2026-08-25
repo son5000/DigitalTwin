@@ -43,10 +43,6 @@ export default function ObjectLibrary({ definitions, activeTemplateId, activeVar
 
   return (
     <section className={styles.library} aria-label="Object Library">
-      <header className={styles.libraryHeading}>
-        <div><span>WORLD ASSET CATALOG</span><h2>Object Library</h2></div>
-        <strong>{definitions.length}</strong>
-      </header>
       <ObjectLibrarySearch value={query} resultCount={filteredDefinitions.length} onChange={setQuery} />
 
       {activeDefinition ? (
@@ -76,7 +72,6 @@ export default function ObjectLibrary({ definitions, activeTemplateId, activeVar
         value={activeVariants}
         onChange={onVariantsChange}
       />
-      <p className={styles.help}>클릭 후 Scene에 배치하거나 항목을 Scene으로 드래그하세요.</p>
     </section>
   );
 }

@@ -16,6 +16,21 @@
   --editor-font-weight-medium: 500;
   --editor-font-weight-semibold: 600;
   --editor-line-height: 1.5;
+  --editor-panel-bg: #18212c;
+  --editor-panel-bg-elevated: #202b38;
+  --editor-panel-bg-input: #141c26;
+  --editor-panel-border: #344457;
+  --editor-panel-border-strong: #4a5b70;
+  --editor-panel-text-heading: #f8fafc;
+  --editor-panel-text-body: #d8e0e9;
+  --editor-panel-text-muted: #a6b2c1;
+  --editor-panel-text-subtle: #8f9fb1;
+  --editor-panel-hover: #233142;
+  --editor-panel-active: #29394e;
+  --editor-panel-selected: rgb(111 149 207 / 18%);
+  --editor-panel-selected-border: rgb(111 149 207 / 58%);
+  --editor-panel-disabled-bg: rgb(255 255 255 / 4%);
+  --editor-panel-disabled-text: #667588;
   font-family: var(--font-family-base);
   font-weight: var(--font-weight-regular);
   line-height: 1.5;
@@ -82,6 +97,21 @@
 
 [data-theme="light"] {
   color-scheme: light;
+  --editor-panel-bg: #ffffff;
+  --editor-panel-bg-elevated: #f8fafc;
+  --editor-panel-bg-input: #f8fafc;
+  --editor-panel-border: #d6dee8;
+  --editor-panel-border-strong: #b8c4d1;
+  --editor-panel-text-heading: #0f172a;
+  --editor-panel-text-body: #334155;
+  --editor-panel-text-muted: #526174;
+  --editor-panel-text-subtle: #64748b;
+  --editor-panel-hover: #eef3f8;
+  --editor-panel-active: #e5edf6;
+  --editor-panel-selected: #e8f0fb;
+  --editor-panel-selected-border: rgb(53 102 168 / 50%);
+  --editor-panel-disabled-bg: #f1f5f9;
+  --editor-panel-disabled-text: #94a3b8;
   --color-background: #f4f6f8;
   --color-surface: #ffffff;
   --color-surface-raised: #f8fafc;

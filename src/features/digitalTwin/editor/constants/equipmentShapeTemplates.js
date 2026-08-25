@@ -1,14 +1,44 @@
+import { createMaterialAppearance } from "@/features/digitalTwin/editor/constants/materialPresets";
+import {
+  createObjectModelMetadata,
+  getEquipmentModelFamily,
+  OBJECT_PLACEMENT_TYPES,
+} from "./objectModelRegistry.js";
+
+const EQUIPMENT_MATERIAL_SLOTS = Object.freeze({
+  CABINET: [
+    { id: "body", label: "본체", defaultAppearance: { materialPreset: "PAINTED_METAL", color: "#607D8B" } },
+    { id: "hardware", label: "손잡이·하드웨어", defaultAppearance: { materialPreset: "STAINLESS", color: "#AAB4B8" } },
+  ],
+  MECHANICAL: [
+    { id: "body", label: "장비 본체", defaultAppearance: { materialPreset: "PAINTED_METAL", color: "#557B86" } },
+    { id: "frame", label: "베이스·프레임", defaultAppearance: { materialPreset: "STEEL", color: "#59666B" } },
+  ],
+  SAFETY: [
+    { id: "body", label: "안전 표면", defaultAppearance: { materialPreset: "PAINTED_METAL", color: "#D99A36" } },
+    { id: "hardware", label: "고정부", defaultAppearance: { materialPreset: "STEEL", color: "#59666B" } },
+  ],
+  SENSOR: [
+    { id: "housing", label: "하우징", defaultAppearance: { materialPreset: "PLASTIC", color: "#D5DDE0" } },
+    { id: "lens", label: "렌즈·감지부", defaultAppearance: { materialPreset: "GLASS", color: "#3D7FA2", opacity: 0.7 } },
+  ],
+  UTILITY: [
+    { id: "body", label: "본체", defaultAppearance: { materialPreset: "ALUMINUM", color: "#87979B" } },
+    { id: "detail", label: "기능부", defaultAppearance: { materialPreset: "PLASTIC", color: "#D7C067" } },
+  ],
+});
+
 const APPEARANCE_PRESETS = {
-  BASIC: { color: "#5D8FA3", opacity: 0.35, showEdges: true },
-  CABINET: { color: "#4B718C", opacity: 0.3, showEdges: true },
-  MECHANICAL: { color: "#4F7F89", opacity: 0.38, showEdges: true },
-  PIPE: { color: "#78909C", opacity: 0.42, showEdges: true },
-  DUCT: { color: "#7295A3", opacity: 0.32, showEdges: true },
-  TANK: { color: "#477D91", opacity: 0.34, showEdges: true },
-  SAFETY: { color: "#D99A36", opacity: 0.55, showEdges: true },
-  SENSOR: { color: "#4C91C7", opacity: 0.7, showEdges: true },
-  UTILITY: { color: "#618B72", opacity: 0.45, showEdges: true },
-  CUSTOM: { color: "#7A6E98", opacity: 0.35, showEdges: true },
+  BASIC: createMaterialAppearance("PAINTED_METAL", { color: "#5D8FA3", opacity: 0.86, showEdges: true }),
+  CABINET: createMaterialAppearance("PAINTED_METAL", { color: "#4B718C", opacity: 0.86, showEdges: true }),
+  MECHANICAL: createMaterialAppearance("PAINTED_METAL", { color: "#4F7F89", opacity: 0.86, showEdges: true }),
+  PIPE: createMaterialAppearance("GALVANIZED", { color: "#78909C", opacity: 0.86, showEdges: true }),
+  DUCT: createMaterialAppearance("GALVANIZED", { color: "#8A9DA4", opacity: 0.86, showEdges: true }),
+  TANK: createMaterialAppearance("STAINLESS", { color: "#8CA0A7", opacity: 0.86, showEdges: true }),
+  SAFETY: createMaterialAppearance("PAINTED_METAL", { color: "#D99A36", opacity: 0.86, showEdges: true }),
+  SENSOR: createMaterialAppearance("PLASTIC", { color: "#4C91C7", opacity: 0.86, showEdges: true }),
+  UTILITY: createMaterialAppearance("ALUMINUM", { color: "#829B8C", opacity: 0.86, showEdges: true }),
+  CUSTOM: createMaterialAppearance("PAINTED_METAL", { color: "#7A6E98", opacity: 0.86, showEdges: true }),
 };
 
 function createTemplate({
@@ -21,7 +51,10 @@ function createTemplate({
   parameters = {},
   parameterDefinitions = [],
   generator = category,
+  description,
+  placement,
 }) {
+  const family = getEquipmentModelFamily(id, category);
   return {
     id,
     domain: "EQUIPMENT",
@@ -36,6 +69,15 @@ function createTemplate({
     defaultParameters: parameters,
     parameterDefinitions,
     defaultAppearance: APPEARANCE_PRESETS[category],
+    ...createObjectModelMetadata({
+      id,
+      familyId: family.id,
+      subtype: id,
+      description: description ?? `${nameKo}의 실제 비율과 핵심 구조를 반영한 절차적 모델`,
+      placement: placement ?? (category === "DUCT" ? OBJECT_PLACEMENT_TYPES.CEILING : category === "SENSOR" ? OBJECT_PLACEMENT_TYPES.WALL : OBJECT_PLACEMENT_TYPES.FLOOR),
+      materialSlots: EQUIPMENT_MATERIAL_SLOTS[category] ?? [],
+      legacyOnly: category === "BASIC" || category === "CUSTOM",
+    }),
   };
 }
 

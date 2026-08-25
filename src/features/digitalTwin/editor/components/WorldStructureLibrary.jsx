@@ -50,7 +50,6 @@ export default function WorldStructureLibrary({
   badge = "월드",
   treeTitle = "월드 구조물",
   baseNodeLabel = "내부 공간",
-  help = "도구를 선택한 뒤 장면의 기준 위치를 클릭하고 X / Y / Z로 배치합니다.",
   showLockControl = true,
 }) {
   const [activeGroup, setActiveGroup] = useState("STRUCTURE");
@@ -100,8 +99,6 @@ export default function WorldStructureLibrary({
             </button>
         ))}
       </div>
-      <p className={styles.help}>{help}</p>
-
       <details className={styles.filterSection}>
         <summary><span className={styles.summaryLabel}><VisibilityIcon size={16} /> 표시 필터</span><span>{Object.values(visibilityFilters).filter(Boolean).length}</span></summary>
         <div className={styles.filters}>

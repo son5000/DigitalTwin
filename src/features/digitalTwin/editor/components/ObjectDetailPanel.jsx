@@ -5,9 +5,7 @@ export default function ObjectDetailPanel({
   building,
   siteObject,
   floorCount,
-  buildingSettingsTab,
   floorPlanSummary,
-  onBuildingSettingsTabChange,
   onBuildingChange,
   onOpenFloorPlans,
   onSiteObjectChange,
@@ -18,13 +16,9 @@ export default function ObjectDetailPanel({
       <BuildingProperties
         building={building}
         floorCount={floorCount}
-        activeTab={buildingSettingsTab}
         floorPlanSummary={floorPlanSummary}
-        onTabChange={onBuildingSettingsTabChange}
-        showEnterAction={false}
         onChange={onBuildingChange}
         onOpenFloorPlans={onOpenFloorPlans}
-        onEnter={() => {}}
       />
     );
   }

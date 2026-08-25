@@ -173,7 +173,6 @@ export default function HierarchyNavigator({
               );
             })}
           </div>
-          <p className={styles.panelHint}>한 번 클릭은 선택, 더블 클릭은 해당 편집 단계로 이동합니다.</p>
         </section>
       ) : null}
     </div>

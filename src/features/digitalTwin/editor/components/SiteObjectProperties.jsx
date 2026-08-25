@@ -10,7 +10,21 @@ import NumericField from "./NumericField";
 import { ObjectVariantSelector } from "./ObjectLibrary";
 import styles from "./SiteObjectProperties.module.css";
 
+const COLOR_PRESETS = ["#455A64", "#607D8B", "#78909C", "#9E9E9E", "#D7CCC8", "#795548", "#8D6E63", "#558B2F", "#2E7D32", "#00838F", "#1565C0", "#F9A825"];
+
 export default function SiteObjectProperties({ object, onChange, onDelete }) {
+  const [isColorPaletteOpen, setIsColorPaletteOpen] = useState(false);
+  const colorControlRef = useRef(null);
+
+  useEffect(() => {
+    if (!isColorPaletteOpen) return undefined;
+    const handlePointerDown = (event) => {
+      if (!colorControlRef.current?.contains(event.target)) setIsColorPaletteOpen(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [isColorPaletteOpen]);
+
   if (!object) return null;
   const template = SITE_CREATION_TEMPLATE_MAP[object.type];
   const isRepeated = object.geometryMode === SITE_OBJECT_GEOMETRY_MODES.CLUSTER;
@@ -28,7 +42,40 @@ export default function SiteObjectProperties({ object, onChange, onDelete }) {
         <h3>기본 정보</h3>
         <label><span>이름</span><input value={object.name} onChange={(event) => onChange({ name: event.target.value })} /></label>
         <label><span>재질</span><select value={object.appearance.material} onChange={(event) => onChange({ appearance: { material: event.target.value } })}>{SITE_MATERIAL_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
-        <label className={styles.color}><span>색상</span><input type="color" value={object.appearance.color} onChange={(event) => onChange({ appearance: { color: event.target.value } })} /></label>
+        <div className={styles.color} ref={colorControlRef}>
+          <span>색상</span>
+          <button
+            type="button"
+            className={styles.colorTrigger}
+            aria-haspopup="dialog"
+            aria-expanded={isColorPaletteOpen}
+            onClick={() => setIsColorPaletteOpen((open) => !open)}
+          >
+            <i style={{ backgroundColor: object.appearance.color }} aria-hidden="true" />
+            <code>{object.appearance.color.toUpperCase()}</code>
+          </button>
+          {isColorPaletteOpen ? (
+            <div className={styles.colorPalette} role="dialog" aria-label="오브젝트 색상 팔레트">
+              <div className={styles.colorSwatches}>
+                {COLOR_PRESETS.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    title={color}
+                    aria-label={`${color} 색상 적용`}
+                    aria-pressed={object.appearance.color.toLowerCase() === color.toLowerCase()}
+                    style={{ backgroundColor: color }}
+                    onClick={() => onChange({ appearance: { color } })}
+                  />
+                ))}
+              </div>
+              <label className={styles.colorHex}>
+                <span>HEX</span>
+                <input value={object.appearance.color.toUpperCase()} onChange={(event) => /^#[0-9a-f]{6}$/i.test(event.target.value) && onChange({ appearance: { color: event.target.value } })} />
+              </label>
+            </div>
+          ) : null}
+        </div>
       </div>
 
       <ObjectVariantSelector
@@ -54,7 +101,6 @@ export default function SiteObjectProperties({ object, onChange, onDelete }) {
           />}
           {hasSpacing && <NumericField label="기둥 간격" value={object.parameters.spacing} min={0.5} unit="m" onChange={(spacing) => onChange({ parameters: { spacing } })} />}
         </div>
-        {isLinear && <p>내부 데이터는 경로 점과 폭으로 유지되어 곡선·다중 경로로 확장할 수 있습니다.</p>}
       </div>
 
       <div className={styles.section}>
@@ -71,3 +117,4 @@ export default function SiteObjectProperties({ object, onChange, onDelete }) {
     </section>
   );
 }
+import { useEffect, useRef, useState } from "react";

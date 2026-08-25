@@ -1,4 +1,16 @@
 .editor {
+  --editor-overlay-gap: 12px;
+  --editor-overlay-radius: 8px;
+  --editor-overlay-control-height: 40px;
+  --editor-overlay-inner-height: 32px;
+  --scene-status-inline-size: 92px;
+  --view-toggle-inline-size: 83px;
+  --floor-view-toggle-offset: 0px;
+  --editor-overlay-toolbar-width: 50px;
+  --editor-overlay-left-safe: 74px;
+  --editor-overlay-top-secondary: 62px;
+  --editor-overlay-panel-width: clamp(300px, 23vw, 360px);
+
   display: grid;
   grid-template-rows: 72px minmax(0, 1fr);
   width: 100%;
@@ -30,6 +42,106 @@
 
 .editor :where(h2, h3, strong) {
   font-weight: var(--editor-font-weight-semibold);
+}
+
+.editor :global([data-editor-panel]) {
+  --color-surface: var(--editor-panel-bg);
+  --color-surface-raised: var(--editor-panel-bg-elevated);
+  --color-surface-overlay: var(--editor-panel-bg);
+  --color-input: var(--editor-panel-bg-input);
+  --color-border: var(--editor-panel-border);
+  --color-border-strong: var(--editor-panel-border-strong);
+  --color-heading: var(--editor-panel-text-heading);
+  --color-text: var(--editor-panel-text-body);
+  --color-text-muted: var(--editor-panel-text-muted);
+  --color-text-subtle: var(--editor-panel-text-muted);
+  --color-text-faint: var(--editor-panel-text-subtle);
+  --color-disabled: var(--editor-panel-disabled-text);
+  --state-hover: var(--editor-panel-hover);
+  --state-active: var(--editor-panel-active);
+  --state-selected: var(--editor-panel-selected);
+  --state-selected-border: var(--editor-panel-selected-border);
+  --state-disabled-bg: var(--editor-panel-disabled-bg);
+  --state-disabled-opacity: .62;
+  --surface-panel: var(--editor-panel-bg);
+  --surface-soft: var(--editor-panel-bg-elevated);
+  --text-strong: var(--editor-panel-text-heading);
+  --text-muted: var(--editor-panel-text-muted);
+  --line-soft: var(--editor-panel-border);
+  --accent-strong: var(--color-primary);
+
+  color: var(--editor-panel-text-body);
+  background-color: var(--editor-panel-bg);
+  font-size: var(--editor-font-size-sm);
+  font-weight: var(--editor-font-weight-normal);
+}
+
+.editor :global([data-editor-panel] :where(h1, h2, h3, h4, strong)) {
+  color: var(--editor-panel-text-heading);
+  font-weight: var(--editor-font-weight-semibold);
+}
+
+.editor :global([data-editor-panel] :where(h2)) {
+  font-size: var(--editor-font-size-lg);
+  line-height: 1.35;
+}
+
+.editor :global([data-editor-panel] :where(h3)) {
+  font-size: var(--editor-font-size-sm);
+  line-height: 1.4;
+}
+
+.editor :global([data-editor-panel] :where(p, li, dt, dd, label)) {
+  color: var(--editor-panel-text-body);
+  font-size: var(--editor-font-size-sm);
+}
+
+.editor :global([data-editor-panel] :where(small, [class*="eyebrow"], [class*="help"], [class*="description"])) {
+  color: var(--editor-panel-text-muted);
+  font-size: var(--editor-font-size-xs) !important;
+}
+
+.editor :global([data-editor-panel] :where(button, input, select, textarea)) {
+  font-size: var(--editor-font-size-sm) !important;
+}
+
+.editor :global([data-editor-panel] :where(button)) {
+  font-weight: var(--editor-font-weight-medium);
+  transition: border-color 140ms ease, color 140ms ease, background-color 140ms ease, opacity 140ms ease;
+}
+
+.editor :global([data-editor-panel] :where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]), select, textarea)) {
+  border-color: var(--editor-panel-border);
+  color: var(--editor-panel-text-heading);
+  background-color: var(--editor-panel-bg-input);
+}
+
+.editor :global([data-editor-panel] :where(input, textarea)::placeholder) {
+  color: var(--editor-panel-text-subtle);
+  opacity: 1;
+}
+
+.editor :global([data-editor-panel] :where(input:not(:disabled), select:not(:disabled), textarea:not(:disabled)):hover) {
+  border-color: var(--editor-panel-border-strong);
+}
+
+.editor :global([data-editor-panel] :where(input, select, textarea):focus-visible) {
+  border-color: var(--color-primary);
+}
+
+.editor :global([data-editor-panel] :where(button[aria-pressed="true"], [aria-selected="true"], [data-selected="true"]):not(:disabled)) {
+  border-color: var(--editor-panel-selected-border);
+  color: var(--editor-panel-text-heading);
+  background-color: var(--editor-panel-selected);
+}
+
+.editor :global([data-editor-panel] :where(button, input, select, textarea):disabled) {
+  color: var(--editor-panel-disabled-text);
+  background-color: var(--editor-panel-disabled-bg);
+}
+
+.editor :global([data-editor-panel] input[type="checkbox"]) {
+  accent-color: var(--color-primary);
 }
 
 .detailLoading {
@@ -157,70 +269,43 @@
 
 .topNavigationRow {
   position: absolute;
-  top: 12px;
-  right: calc(98px + clamp(320px, 25vw, 400px));
-  left: 80px;
+  top: var(--editor-overlay-gap);
+  right: var(--editor-overlay-right-safe, var(--editor-overlay-gap));
+  left: var(--editor-overlay-left-safe);
   z-index: 8;
   display: flex;
   min-width: 0;
   align-items: flex-start;
-  gap: 12px;
+  gap: 8px;
 }
 
-.stepNavigation {
-  width: min(620px, 100%);
+.workspaceNavigation {
+  width: fit-content;
+  max-width: 100%;
   min-width: 0;
-  flex: 0 1 620px;
+  flex: 0 1 auto;
 }
 
 .stageGuide {
   width: fit-content;
-  max-width: min(260px, 32vw);
+  max-width: min(230px, 30vw);
   flex: 0 0 auto;
   display: flex;
-  min-height: 46px;
-  padding: 5px 6px 5px 10px;
+  min-height: var(--editor-overlay-control-height);
+  padding: 3px;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 0;
   border: 1px solid var(--color-border-strong);
-  border-radius: 8px;
+  border-radius: var(--editor-overlay-radius);
   background: var(--color-surface-overlay);
   box-shadow: var(--shadow-panel);
   backdrop-filter: blur(10px);
 }
 
-.stageIdentity {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 8px;
-}
-
-.stageIdentity span {
-  display: grid;
-  width: 24px;
-  height: 24px;
-  flex: 0 0 24px;
-  place-items: center;
-  border-radius: 50%;
-  color: var(--color-accent-strong);
-  background: var(--state-selected);
-  font-size: var(--editor-font-size-xs);
-  font-weight: var(--font-weight-semibold);
-}
-
-.stageGuide h2 {
-  overflow: hidden;
-  color: var(--color-heading);
-  font-size: var(--editor-font-size-sm);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .stageGuide button {
   display: inline-flex;
-  min-height: 34px;
+  min-height: var(--editor-overlay-inner-height);
   flex: 0 0 auto;
   padding: 0 10px;
   align-items: center;
@@ -250,16 +335,16 @@
 
 .workspaceControls {
   position: absolute;
-  top: 76px;
+  top: var(--editor-overlay-top-secondary);
   left: 50%;
   z-index: 8;
   display: flex;
-  max-width: calc(100% - 760px);
-  padding: 5px;
+  max-width: calc(100% - var(--editor-overlay-left-safe) - var(--editor-overlay-right-safe, var(--editor-overlay-gap)));
+  padding: 3px;
   align-items: center;
   gap: 6px;
   border: 1px solid var(--color-border-strong);
-  border-radius: 8px;
+  border-radius: var(--editor-overlay-radius);
   background: var(--color-surface-overlay);
   box-shadow: var(--shadow-panel);
   transform: translateX(-50%);
@@ -268,7 +353,7 @@
 
 .workspaceControls > div { display: flex; gap: 3px; }
 .workspaceControls > div + div { padding-left: 6px; border-left: 1px solid var(--color-border); }
-.workspaceControls button { min-height: 34px; padding: 0 10px; border-radius: 6px; color: var(--color-text-muted); font-size: var(--editor-font-size-xs); background: transparent; white-space: nowrap; }
+.workspaceControls button { min-height: 32px; padding: 0 9px; border-radius: 5px; color: var(--color-text-muted); font-size: var(--editor-font-size-xs); background: transparent; white-space: nowrap; }
 .workspaceControls button:hover { color: var(--color-heading); background: var(--color-input); }
 .workspaceControls button.activeControl { color: var(--color-accent-strong); background: var(--state-selected); box-shadow: inset 0 0 0 1px var(--state-selected-border); }
 
@@ -346,6 +431,10 @@
 
 @media (orientation: portrait) {
   .editor {
+    --editor-overlay-gap: 8px;
+    --editor-overlay-left-safe: 8px;
+    --editor-overlay-top-secondary: 100px;
+
     grid-template-rows: 64px minmax(0, 1fr);
   }
 
@@ -409,14 +498,6 @@
 
   .sceneArea {
     grid-area: canvas;
-  }
-
-  .stageGuide {
-    top: 54px;
-    right: 8px;
-    left: 8px;
-    min-height: 44px;
-    padding: 5px 6px 5px 9px;
   }
 
   .stageGuide button {
@@ -516,35 +597,43 @@
 
 .mobilePanelTabs { display: none; }
 
-@media (max-width: 1279px), (orientation: portrait) {
-  .topNavigationRow {
-    top: 8px;
-    right: 8px;
-    left: 8px;
-    display: grid;
-    gap: 2px;
+@media (max-width: 900px), (orientation: portrait) {
+  .editor {
+    --editor-overlay-gap: 8px;
+    --editor-overlay-left-safe: 8px;
+    --editor-overlay-top-secondary: 100px;
   }
 
-  .stepNavigation {
-    width: min(620px, 100%);
+  .topNavigationRow {
+    top: var(--editor-overlay-gap);
+    right: var(--editor-overlay-gap);
+    left: var(--editor-overlay-gap);
+    display: grid;
+    justify-items: center;
+    gap: 4px;
+  }
+
+  .workspaceNavigation {
+    width: fit-content;
+    max-width: 100%;
     justify-self: center;
   }
 
   .stageGuide {
-    width: auto;
-    max-width: none;
-    min-height: 44px;
-    padding: 5px 6px 5px 9px;
+    width: fit-content;
+    max-width: min(250px, calc(100vw - 16px));
+    min-height: 38px;
+    padding: 3px 4px 3px 9px;
   }
 
   .stageGuide h2 { font-size: 12px; }
   .stageGuide button { max-width: 44%; min-height: 32px; padding-inline: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .workspaceControls {
-    top: 112px;
-    left: 8px;
+    top: var(--editor-overlay-top-secondary);
+    left: 50%;
     max-width: calc(100% - 16px);
     overflow-x: auto;
-    transform: none;
+    transform: translateX(-50%);
   }
 }

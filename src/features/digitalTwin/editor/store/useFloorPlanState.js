@@ -4,6 +4,7 @@ import {
   DEFAULT_VISIBILITY_FILTERS,
   WORLD_STRUCTURE_TEMPLATE_MAP,
 } from "@/features/digitalTwin/editor/constants/worldStructureTemplates";
+import { normalizeFloorSurfaceStyle } from "@/features/digitalTwin/editor/constants/floorSurfaceStyles";
 import { clampDimension } from "@/features/digitalTwin/editor/utils/editorMath";
 import { getBuildingFootprint } from "@/features/digitalTwin/editor/utils/buildingFootprint";
 import {
@@ -111,12 +112,15 @@ function synchronizeVerticalStructure(structure, scopedFloors, currentFloorId) {
   };
   if (structure.type !== "STAIR") return synchronized;
   const values = getStairValues(synchronized);
-  return {
+  const stairForScope = {
     ...synchronized,
-    stairType: synchronized.stairType ?? "STRAIGHT",
     startFloorId: synchronized.applicationScope.startFloorId,
     endFloorId: synchronized.applicationScope.endFloorId,
-    servedFloorIds: getStairServedFloorIds(synchronized, scopedFloors),
+  };
+  return {
+    ...stairForScope,
+    stairType: synchronized.stairType ?? "STRAIGHT",
+    servedFloorIds: getStairServedFloorIds(stairForScope, scopedFloors),
     width: values.width,
     treadDepth: values.treadDepth,
     riserHeight: values.riserHeight,
@@ -263,13 +267,12 @@ export default function useFloorPlanState({ buildings, floors, currentBuilding, 
       setFloorPlansById((plans) => ({
         ...plans,
         [targetFloor.id]: {
+          ...plans[targetFloor.id],
           floorId: targetFloor.id,
           structures: [...(plans[targetFloor.id]?.structures ?? []), structure],
         },
       }));
     }
-    setSelectedFloorPlanStructureId(id);
-    setActiveFloorPlanTemplateId(null);
     return id;
   }, [activeStructures, buildings, currentBuilding, currentFloor, floorPlansById, floors, gridSettings.baseSize, verticalStructuresByBuildingId]);
 
@@ -364,20 +367,25 @@ export default function useFloorPlanState({ buildings, floors, currentBuilding, 
     } else {
       setFloorPlansById((plans) => ({
         ...plans,
-        [duplicate.floorId]: { floorId: duplicate.floorId, structures: [...(plans[duplicate.floorId]?.structures ?? []), duplicate] },
+        [duplicate.floorId]: {
+          ...plans[duplicate.floorId],
+          floorId: duplicate.floorId,
+          structures: [...(plans[duplicate.floorId]?.structures ?? []), duplicate],
+        },
       }));
     }
     setFloorPlanValidationMessage("");
     setSelectedFloorPlanStructureId(duplicate.id);
   }, [buildings, currentFloor?.id, floors, selectedFloorPlanStructure, verticalStructuresByBuildingId]);
 
-  const copyPreviousFloorPlan = useCallback(() => {
-    const currentIndex = buildingFloors.findIndex((floor) => floor.id === currentFloor?.id);
-    if (currentIndex <= 0) return false;
-    const source = floorPlansById[buildingFloors[currentIndex - 1].id]?.structures ?? [];
+  const copyFloorPlanFromFloor = useCallback((sourceFloorId) => {
+    if (!currentFloor || !sourceFloorId || sourceFloorId === currentFloor.id) return false;
+    if (!buildingFloors.some((floor) => floor.id === sourceFloorId)) return false;
+    const source = floorPlansById[sourceFloorId]?.structures ?? [];
     setFloorPlansById((plans) => ({
       ...plans,
       [currentFloor.id]: {
+        ...plans[currentFloor.id],
         floorId: currentFloor.id,
         structures: source.map((structure) => normalizeStructure({ ...structure, id: createId(), floorId: currentFloor.id, name: structure.name })),
       },
@@ -393,6 +401,7 @@ export default function useFloorPlanState({ buildings, floors, currentBuilding, 
       const next = { ...plans };
       targetFloorIds.filter((floorId) => floorId !== currentFloor.id).forEach((floorId) => {
         next[floorId] = {
+          ...plans[floorId],
           floorId,
           structures: source.map((structure) => normalizeStructure({ ...structure, id: createId(), floorId })),
         };
@@ -400,6 +409,26 @@ export default function useFloorPlanState({ buildings, floors, currentBuilding, 
       return next;
     });
   }, [currentFloor, floorPlansById]);
+
+  const applyFloorStyleToFloors = useCallback((targetFloorIds, floorStyle) => {
+    const validFloorIds = new Set(buildingFloors.map((floor) => floor.id));
+    const scopedFloorIds = [...new Set(targetFloorIds ?? [])].filter((floorId) => validFloorIds.has(floorId));
+    if (!scopedFloorIds.length) return false;
+    const normalizedStyle = normalizeFloorSurfaceStyle(floorStyle);
+    setFloorPlansById((plans) => {
+      const next = { ...plans };
+      scopedFloorIds.forEach((floorId) => {
+        next[floorId] = {
+          ...plans[floorId],
+          floorId,
+          structures: plans[floorId]?.structures ?? [],
+          floorStyle: normalizedStyle,
+        };
+      });
+      return next;
+    });
+    return true;
+  }, [buildingFloors]);
 
   const toggleVisibilityFilter = useCallback((filterId) => {
     setVisibilityFilters((filters) => ({ ...filters, [filterId]: !filters[filterId] }));
@@ -434,8 +463,9 @@ export default function useFloorPlanState({ buildings, floors, currentBuilding, 
       selectFloorPlanStructure: setSelectedFloorPlanStructureId,
       removeSelectedFloorPlanStructure,
       duplicateSelectedFloorPlanStructure,
-      copyPreviousFloorPlan,
+      copyFloorPlanFromFloor,
       applyFloorPlanToFloors,
+      applyFloorStyleToFloors,
       toggleFloorPlanVisibilityFilter: toggleVisibilityFilter,
     },
   };

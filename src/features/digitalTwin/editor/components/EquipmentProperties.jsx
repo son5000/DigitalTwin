@@ -1,14 +1,15 @@
 import { useState } from "react";
 
 import {
-  APPEARANCE_COLOR_PRESETS,
   EQUIPMENT_SHAPE_TEMPLATE_MAP,
   EQUIPMENT_SHAPE_TEMPLATES,
 } from "@/features/digitalTwin/editor/constants/equipmentShapeTemplates";
+import { EQUIPMENT_MATERIAL_PRESET_IDS } from "@/features/digitalTwin/editor/constants/materialPresets";
 import { degreesToRadians, radiansToDegrees } from "@/features/digitalTwin/editor/utils/editorMath";
 import { ComponentIcon, DeleteIcon, EnterIcon, EquipmentIcon, SnapIcon } from "@/components/icons";
 
 import NumericField from "./NumericField";
+import MaterialAppearanceEditor from "./MaterialAppearanceEditor";
 import PropertySection from "./PropertySection";
 import styles from "./EquipmentProperties.module.css";
 
@@ -49,7 +50,6 @@ export default function EquipmentProperties({
       <section className={styles.emptyState}>
         <div className={styles.emptyIcon} aria-hidden="true"><EquipmentIcon size={34} /></div>
         <h2>선택된 설비 없음</h2>
-        <p>장면에서 설비를 선택하면 파라미터와 좌표를 편집할 수 있습니다.</p>
       </section>
     );
   }
@@ -79,17 +79,9 @@ export default function EquipmentProperties({
 
   return (
     <section className={styles.properties}>
-      <div className={styles.heading}>
-        <div>
-          <span className={styles.eyebrow}>설비</span>
-          <h2>설비 속성</h2>
-        </div>
-        <span className={styles.selectedBadge}>설비</span>
-      </div>
-
       {hasCollision && <div className={styles.warning}>다른 설비와 겹쳐 있습니다.</div>}
 
-      <PropertySection title="Equipment" summary={template.nameKo} defaultOpen>
+      <PropertySection title="기본 정보" summary={template.nameKo} defaultOpen>
         <label className={styles.textField}>
           <span>이름</span>
           <input type="text" value={equipment.name} onChange={(event) => onChange({ name: event.target.value })} />
@@ -104,12 +96,11 @@ export default function EquipmentProperties({
         </label>
         <dl className={styles.metadata}>
           <div><dt>카테고리</dt><dd>{template.category}</dd></div>
-          <div><dt>인스턴스 ID</dt><dd title={equipment.id}>{equipment.id.slice(-12)}</dd></div>
         </dl>
       </PropertySection>
 
       <PropertySection
-        title="Metadata"
+        title="자산 정보"
         summary={equipment.metadata?.assetTag || "자산 정보"}
         defaultOpen
       >
@@ -163,11 +154,6 @@ export default function EquipmentProperties({
               {spaces.map((space) => <option key={space.id} value={space.id}>{space.name}</option>)}
             </select>
           </label>
-          <dl className={styles.metadata}>
-            <div><dt>원본 템플릿</dt><dd>{equipment.sourceTemplateId ?? equipment.shapeTemplateId}</dd></div>
-            <div><dt>일괄 배치 그룹</dt><dd>{equipment.batchGroupId ?? "개별 배치"}</dd></div>
-          </dl>
-          <p className={styles.description}>센서, 카메라, 데이터 수신과 경고 범위는 다음 단계의 설비 관측 설정에서 연결합니다.</p>
         </PropertySection>
       ) : null}
 
@@ -223,7 +209,7 @@ export default function EquipmentProperties({
         <label className={styles.textField}><span>제어 엔드포인트</span><input type="text" disabled={!equipment.control?.enabled} value={equipment.control?.endpoint ?? ""} onChange={(event) => onChange({ control: { endpoint: event.target.value } })} /></label>
       </PropertySection> : null}
 
-      <PropertySection title="Transform" summary="m / deg" defaultOpen>
+      <PropertySection title="크기 및 배치" defaultOpen>
         {snapCandidate && (
           <div className={styles.snapNotice}>
             <span>연결점 후보 · {(snapCandidate.distance * 1000).toFixed(0)} mm</span>
@@ -276,27 +262,13 @@ export default function EquipmentProperties({
         </div>
       </PropertySection>
 
-      <PropertySection title="Appearance" summary={`${Math.round(equipment.appearance.opacity * 100)}%`} defaultOpen>
-        <label className={styles.colorField}>
-          <span>색상</span>
-          <span className={styles.colorInputs}>
-            <input type="color" value={equipment.appearance.color} aria-label="설비 색상" onChange={(event) => onChange({ appearance: { color: event.target.value } })} />
-            <input type="text" value={equipment.appearance.color.toUpperCase()} aria-label="설비 색상 HEX" onChange={(event) => /^#[0-9a-f]{6}$/i.test(event.target.value) && onChange({ appearance: { color: event.target.value } })} />
-          </span>
-        </label>
-        <div className={styles.swatches} aria-label="색상 프리셋">
-          {APPEARANCE_COLOR_PRESETS.map((color) => (
-            <button key={color} type="button" aria-label={`${color} 색상 적용`} title={color} style={{ "--swatch-color": color }} className={equipment.appearance.color.toLowerCase() === color.toLowerCase() ? styles.swatchActive : ""} onClick={() => onChange({ appearance: { color } })} />
-          ))}
-        </div>
-        <label className={styles.rangeField}>
-          <span><span>불투명도</span><output>{Math.round(equipment.appearance.opacity * 100)}%</output></span>
-          <input type="range" min="0.05" max="1" step="0.05" value={equipment.appearance.opacity} onChange={(event) => onChange({ appearance: { opacity: Number(event.target.value) } })} />
-        </label>
-        <label className={styles.checkField}>
-          <input type="checkbox" checked={equipment.appearance.showEdges} onChange={(event) => onChange({ appearance: { showEdges: event.target.checked } })} />
-          <span>Edge 표시</span>
-        </label>
+      <PropertySection title="재질" defaultOpen>
+        <MaterialAppearanceEditor
+          appearance={equipment.appearance}
+          presetIds={EQUIPMENT_MATERIAL_PRESET_IDS}
+          showEdges
+          onChange={(appearance) => onChange({ appearance })}
+        />
       </PropertySection>
 
       {!placementOnly ? <PropertySection title="Parts" summary={`${equipment.parts?.length ?? 0} Parts`} defaultOpen>
@@ -304,14 +276,11 @@ export default function EquipmentProperties({
           <div><span>설비</span><strong>{equipment.name}</strong></div>
           <div><span>파트 노드</span><strong>{equipment.parts?.length ?? 0}</strong></div>
         </div>
-        <p className={styles.description}>파트 메시는 공간 장면에 상시 렌더링하지 않고 상세 편집 화면에서만 불러옵니다.</p>
         <button type="button" className={styles.partEditorButton} onClick={onOpenPartEditor}><ComponentIcon size={16} /> 파트 편집기 열기</button>
       </PropertySection> : null}
 
       {!placementOnly ? <PropertySection title="3D Scan" summary={detailAsset ? STATUS_LABELS[detailAsset.status] : "미등록"}>
-        {!detailAsset ? (
-          <p className={styles.description}>설비 인스턴스에 정밀 스캔 모델을 연결합니다. 기본 장면에는 불러오지 않습니다.</p>
-        ) : (
+        {detailAsset ? (
           <div className={styles.assetCard}>
             <div><strong>{detailAsset.originalFileName}</strong><span>{detailAsset.originalFormat} · {formatFileSize(detailAsset.fileSize)}</span></div>
             <span className={`${styles.assetStatus} ${styles[detailAsset.status.toLowerCase()]}`}>{STATUS_LABELS[detailAsset.status]}</span>
@@ -320,7 +289,7 @@ export default function EquipmentProperties({
               <p className={styles.processingSteps}>메시 최적화 · 미리보기 생성</p>
             )}
           </div>
-        )}
+        ) : null}
         <div className={styles.assetActions}>
           <label className={styles.uploadButton}>
             {detailAsset?.status === "FAILED" || detailAsset?.status === "MISSING_LOCAL_FILE"
@@ -334,10 +303,9 @@ export default function EquipmentProperties({
           {detailAsset && <button type="button" className={styles.dangerButton} onClick={onRemoveAsset}><DeleteIcon size={15} /> 삭제</button>}
         </div>
         {uploadMessage && <p className={styles.uploadMessage} role="status">{uploadMessage}</p>}
-        <p className={styles.fileHelp}>GLB, GLTF, OBJ, PLY · 파일은 현재 브라우저 세션에서만 미리보기 가능</p>
       </PropertySection> : null}
 
-      <PropertySection title="Advanced" summary={equipment.locked ? "Locked" : "Calibration"}>
+      <PropertySection title="표시 및 잠금" summary={equipment.locked ? "잠김" : "편집 가능"}>
         <label className={styles.checkField}>
           <input type="checkbox" checked={equipment.visible} onChange={(event) => onChange({ visible: event.target.checked })} />
           <span>장면에 표시</span>
@@ -357,9 +325,7 @@ export default function EquipmentProperties({
               <NumericField key={`rotation${axis}`} label={`Rotation ${axis}`} value={calibration[`rotation${axis}`]} step={1} unit="deg" onChange={(value) => onUpdateAsset({ calibration: { [`rotation${axis}`]: value } })} />
             ))}
           </div>
-        ) : (
-          <p className={styles.description}>3D 스캔을 등록하면 상세 모델의 위치, 회전, 배율을 보정할 수 있습니다.</p>
-        )}
+        ) : null}
       </PropertySection>
     </section>
   );

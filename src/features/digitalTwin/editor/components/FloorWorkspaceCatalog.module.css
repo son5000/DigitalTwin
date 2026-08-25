@@ -1,0 +1,49 @@
+.catalog { min-height: 100%; }
+
+.majorTabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px;
+  margin: 7px var(--catalog-inline-padding) 0;
+  padding: 2px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-input);
+}
+
+.majorTabs button {
+  display: inline-flex;
+  min-height: var(--catalog-control-height);
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 6px;
+  color: var(--color-text-muted);
+  font-size: var(--editor-font-size-sm);
+  font-weight: var(--editor-font-weight-semibold);
+}
+
+.majorTabs button:hover { color: var(--color-heading); background: var(--state-hover); }
+.majorTabs .majorTabActive { color: var(--color-accent-strong); background: var(--state-selected); box-shadow: inset 0 0 0 1px var(--state-selected-border); }
+
+.floorTargets { margin: 0 var(--catalog-inline-padding) var(--catalog-block-gap); padding: 6px; border: 1px solid var(--color-border); border-radius: 7px; }
+.floorTargets legend { padding: 0 4px; color: var(--color-text-muted); font-size: var(--editor-font-size-xs); font-weight: var(--editor-font-weight-semibold); }
+.floorTargets > div { display: flex; max-height: 62px; flex-wrap: wrap; gap: 4px; overflow-y: auto; }
+.floorTargets label { display: inline-flex; min-height: 26px; padding: 0 6px; align-items: center; gap: 4px; border: 1px solid var(--color-border); border-radius: 999px; color: var(--color-text-muted); background: var(--color-input); font-size: var(--editor-font-size-xs); }
+.floorTargets input { accent-color: var(--color-accent); }
+
+.activeTemplate { margin-bottom: var(--catalog-block-gap); }
+.activeTemplate > span:first-child { display: grid; place-items: center; color: var(--color-accent-strong); }
+
+.catalogItem { position: relative; }
+.catalogItem > button:first-child { padding-right: 46px; }
+.favoriteButton { position: absolute; top: 9px; right: 29px; z-index: 1; display: grid; width: 22px; height: 22px; place-items: center; border-radius: 5px; color: var(--color-text-faint); }
+.favoriteButton:hover { color: var(--color-heading); background: var(--state-hover); }
+.favoriteButton.favoriteActive { color: var(--color-accent-strong); }
+
+.floorConfiguration { border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); }
+.floorConfiguration > summary { display: flex; min-height: 38px; padding: 0 var(--catalog-inline-padding); align-items: center; justify-content: space-between; color: var(--color-heading); cursor: pointer; font-size: var(--editor-font-size-sm); font-weight: var(--editor-font-weight-semibold); list-style: none; }
+.floorConfiguration > summary::-webkit-details-marker { display: none; }
+.floorConfiguration > summary svg { color: var(--color-text-faint); transition: transform 140ms ease; }
+.floorConfiguration[open] > summary svg { transform: rotate(180deg); }
+

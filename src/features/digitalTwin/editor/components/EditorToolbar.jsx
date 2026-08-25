@@ -4,16 +4,18 @@ import {
   GRID_CELL_SIZE_OPTIONS,
 } from "@/features/digitalTwin/editor/constants/gridSettings";
 import { SITE_INTERACTION_MODES } from "@/features/digitalTwin/editor/constants/siteEnvironmentTemplates";
+import { WORLD_PANEL_IDS } from "@/features/digitalTwin/editor/constants/worldPanel";
 import { EDITOR_MODES } from "@/features/digitalTwin/editor/constants/worldStructureTemplates";
 import {
   AreaSelectIcon,
-  BuildingIcon,
   DeleteIcon,
   DuplicateIcon,
+  EditIcon,
   EquipmentIcon,
-  FloorIcon,
+  GridViewIcon,
   ImportIcon,
   Layout2DIcon,
+  ListViewIcon,
   LockIcon,
   MoreIcon,
   MoveIcon,
@@ -22,16 +24,46 @@ import {
   RedoIcon,
   RotateIcon,
   SaveIcon,
-  SiteIcon,
+  SelectIcon,
   SnapIcon,
   UndoIcon,
   UnlockIcon,
   View3DIcon,
+  VisibilityIcon,
+  VisibilityOffIcon,
   ViewerIcon,
   WorldIcon,
 } from "@/components/icons";
 
 import styles from "./EditorToolbar.module.css";
+
+const PANEL_TOOL_CONFIG = {
+  SPACE: {
+    leading: [
+      { id: WORLD_PANEL_IDS.OBJECTS, label: "오브젝트", icon: GridViewIcon },
+      { id: WORLD_PANEL_IDS.OBJECT_LIST, label: "오브젝트 목록", icon: ListViewIcon },
+    ],
+    trailing: [
+      { id: WORLD_PANEL_IDS.SETTINGS, label: "부지 설정", icon: EditIcon },
+      { id: WORLD_PANEL_IDS.DETAILS, label: "오브젝트 설정", icon: SelectIcon, requiresSelection: true },
+    ],
+  },
+  INTERIOR: {
+    leading: [{ id: WORLD_PANEL_IDS.OBJECTS, label: "도면 도구", icon: GridViewIcon }],
+    trailing: [{ id: WORLD_PANEL_IDS.DETAILS, label: "구조 상세", icon: SelectIcon, requiresSelection: true }],
+  },
+  EQUIPMENT: {
+    leading: [{ id: WORLD_PANEL_IDS.OBJECTS, label: "설비", icon: GridViewIcon }],
+    trailing: [{ id: WORLD_PANEL_IDS.DETAILS, label: "설비 상세", icon: SelectIcon, requiresSelection: true }],
+  },
+  FLOOR: {
+    leading: [
+      { id: WORLD_PANEL_IDS.OBJECTS, label: "오브젝트", icon: GridViewIcon },
+      { id: WORLD_PANEL_IDS.OBJECT_LIST, label: "오브젝트 목록", icon: ListViewIcon },
+    ],
+    trailing: [{ id: WORLD_PANEL_IDS.DETAILS, label: "선택 항목 설정", icon: SelectIcon, requiresSelection: true }],
+  },
+};
 
 function ToolbarButton({ icon, label, shortcut, active = false, pressed, menuItem = false, ...buttonProps }) {
   return (
@@ -131,7 +163,10 @@ export default function EditorToolbar({
   hierarchyScope = false,
   focusedScope = false,
   hierarchyScopeLabel = "부지 편집",
-  contextIcon = "SITE",
+  panelMode = null,
+  activePanelId = null,
+  viewerTranslucent,
+  viewerTransparencyLabel = "반투명 보기",
   showSelectionActions = false,
   showSiteInteractionTools = false,
   siteInteractionMode = SITE_INTERACTION_MODES.NAVIGATE,
@@ -146,6 +181,8 @@ export default function EditorToolbar({
   canUndo,
   canRedo,
   onEditorModeChange,
+  onPanelChange,
+  onViewerTransparencyChange,
   onSiteInteractionModeChange,
   onViewModeChange,
   onTransformToolToggle,
@@ -163,44 +200,67 @@ export default function EditorToolbar({
   const isViewer = editorMode === EDITOR_MODES.VIEWER;
 
   if (hierarchyScope || focusedScope) {
-    const contextIconElement = contextIcon === "EQUIPMENT"
-      ? <EquipmentIcon />
-      : contextIcon === "BUILDING"
-        ? <BuildingIcon />
-        : contextIcon === "FLOOR"
-          ? <FloorIcon />
-          : <SiteIcon />;
+    const panelTools = PANEL_TOOL_CONFIG[panelMode] ?? { leading: [], trailing: [] };
+    const renderPanelTool = (tool) => {
+      const Icon = tool.icon;
+      const active = activePanelId === tool.id;
+      return (
+        <ToolbarButton
+          key={tool.id}
+          icon={<Icon />}
+          label={tool.label}
+          active={active}
+          pressed={active}
+          disabled={tool.requiresSelection && !hasSelection}
+          onClick={() => onPanelChange?.(active ? null : tool.id)}
+        />
+      );
+    };
+
     return (
       <nav className={styles.toolbar} aria-label={`${hierarchyScopeLabel} 도구`}>
-        <span className={styles.contextBadge} title={hierarchyScopeLabel} data-tooltip={hierarchyScopeLabel} aria-label={hierarchyScopeLabel}>
-          {contextIconElement}
-        </span>
-        <Divider />
-        <ToolbarButton icon={<UndoIcon />} label="되돌리기" shortcut="Ctrl+Z" disabled={!canUndo} onClick={onUndo} />
-        <ToolbarButton icon={<RedoIcon />} label="다시 실행" shortcut="Ctrl+Shift+Z" disabled={!canRedo} onClick={onRedo} />
-        {showSiteInteractionTools ? (
-          <>
-            <Divider />
-            <div className={styles.group} aria-label="월드 조작 방식">
-              <ToolbarButton
-                icon={<NavigateIcon />}
-                label="월드 이동/회전"
-                active={siteInteractionMode === SITE_INTERACTION_MODES.NAVIGATE}
-                onClick={() => onSiteInteractionModeChange(SITE_INTERACTION_MODES.NAVIGATE)}
-              />
-              <ToolbarButton
-                icon={<AreaSelectIcon />}
-                label="영역 선택"
-                active={siteInteractionMode === SITE_INTERACTION_MODES.AREA_SELECT}
-                onClick={() => onSiteInteractionModeChange(SITE_INTERACTION_MODES.AREA_SELECT)}
-              />
-            </div>
-          </>
-        ) : null}
-        <Divider />
+        {panelTools.leading.map(renderPanelTool)}
+        {panelTools.leading.length ? <Divider /> : null}
         <div className={styles.group} aria-label="이동과 회전">
           <ToolbarButton icon={<MoveIcon />} label="이동" shortcut="W" active={transformTools.translate} pressed={transformTools.translate} disabled={!hasSelection} onClick={() => onTransformToolToggle("translate")} />
-          <ToolbarButton icon={<RotateIcon />} label="Y축 회전" shortcut="E" active={transformTools.rotate} pressed={transformTools.rotate} disabled={!hasSelection} onClick={() => onTransformToolToggle("rotate")} />
+          <ToolbarButton icon={<RotateIcon />} label="로테이트" shortcut="E" active={transformTools.rotate} pressed={transformTools.rotate} disabled={!hasSelection} onClick={() => onTransformToolToggle("rotate")} />
+        </div>
+        {showSiteInteractionTools ? (
+          <div className={styles.group} aria-label="월드 조작 방식">
+            <ToolbarButton
+              icon={<NavigateIcon />}
+              label="월드 회전"
+              active={siteInteractionMode === SITE_INTERACTION_MODES.NAVIGATE}
+              pressed={siteInteractionMode === SITE_INTERACTION_MODES.NAVIGATE}
+              onClick={() => onSiteInteractionModeChange(SITE_INTERACTION_MODES.NAVIGATE)}
+            />
+            <ToolbarButton
+              icon={<AreaSelectIcon />}
+              label="영역 선택"
+              active={siteInteractionMode === SITE_INTERACTION_MODES.AREA_SELECT}
+              pressed={siteInteractionMode === SITE_INTERACTION_MODES.AREA_SELECT}
+              onClick={() => onSiteInteractionModeChange(SITE_INTERACTION_MODES.AREA_SELECT)}
+            />
+          </div>
+        ) : null}
+        {typeof viewerTranslucent === "boolean" ? (
+          <>
+            <Divider />
+            <ToolbarButton
+              icon={viewerTranslucent ? <VisibilityOffIcon /> : <VisibilityIcon />}
+              label={viewerTransparencyLabel}
+              active={viewerTranslucent}
+              pressed={viewerTranslucent}
+              onClick={() => onViewerTransparencyChange?.(!viewerTranslucent)}
+            />
+          </>
+        ) : null}
+        {panelTools.trailing.length ? <Divider /> : null}
+        {panelTools.trailing.map(renderPanelTool)}
+        <Divider />
+        <div className={styles.group} aria-label="편집 이력">
+          <ToolbarButton icon={<UndoIcon />} label="되돌리기" shortcut="Ctrl+Z" disabled={!canUndo} onClick={onUndo} />
+          <ToolbarButton icon={<RedoIcon />} label="다시 실행" shortcut="Ctrl+Shift+Z" disabled={!canRedo} onClick={onRedo} />
         </div>
         <Divider />
         <GridSnapControl enabled={gridSnapEnabled} snapSize={snapSize} onToggle={onGridSnapChange} onSnapSizeChange={onSnapSizeChange} />

@@ -22,7 +22,10 @@ const CATEGORY_GENERATORS = {
   CUSTOM: generateBasicShape,
 };
 
-export function getEquipmentGeometrySignature(equipment, { selected, colliding, dimmed, theme }) {
+export function getEquipmentGeometrySignature(
+  equipment,
+  { selected = false, colliding = false, dimmed = false, theme = "dark", viewerTranslucent = true } = {},
+) {
   return [
     equipment.shapeTemplateId,
     equipment.name,
@@ -32,13 +35,14 @@ export function getEquipmentGeometrySignature(equipment, { selected, colliding, 
     selected,
     colliding,
     dimmed,
+    viewerTranslucent,
     theme,
   ].join("|");
 }
 
 export function createEquipmentObject(
   equipment,
-  { selected = false, colliding = false, dimmed = false, theme = "dark" } = {},
+  { selected = false, colliding = false, dimmed = false, theme = "dark", viewerTranslucent = true } = {},
 ) {
   const sceneTheme = SCENE_THEMES[theme];
   const template = EQUIPMENT_SHAPE_TEMPLATE_MAP[equipment.shapeTemplateId];
@@ -48,9 +52,12 @@ export function createEquipmentObject(
       ? sceneTheme.collision
       : sceneTheme.equipmentEdge;
   const generator = CATEGORY_GENERATORS[template?.category] ?? generateBasicShape;
+  const sourceAppearance = viewerTranslucent
+    ? equipment.appearance
+    : { ...equipment.appearance, opacity: 1 };
   const appearance = dimmed
-    ? { ...equipment.appearance, opacity: Math.max(0.08, equipment.appearance.opacity * 0.5) }
-    : equipment.appearance;
+    ? { ...sourceAppearance, opacity: Math.max(0.08, (sourceAppearance.opacity ?? 1) * 0.5) }
+    : sourceAppearance;
   const visual = generator({
     type: equipment.shapeTemplateId,
     dimensions: equipment.dimensions,
@@ -69,7 +76,7 @@ export function createEquipmentObject(
   equipmentGroup.userData.domain = "EQUIPMENT";
   equipmentGroup.userData.geometrySignature = getEquipmentGeometrySignature(
     equipment,
-    { selected, colliding, dimmed, theme },
+    { selected, colliding, dimmed, theme, viewerTranslucent },
   );
   equipmentGroup.add(visual);
   equipmentGroup.position.set(equipment.position.x, equipment.position.y, equipment.position.z);

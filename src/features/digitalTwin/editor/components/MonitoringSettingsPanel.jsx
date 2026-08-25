@@ -21,7 +21,7 @@ export default function MonitoringSettingsPanel({
 
   return (
     <section className={styles.panel}>
-      <header><span>MONITORING CONFIGURATION</span><h2>설비 관측 설정</h2><p>실제 연결 요청 없이 프론트엔드 설정과 샘플 값만 미리 봅니다.</p></header>
+      <header><span>MONITORING CONFIGURATION</span><h2>설비 관측 설정</h2></header>
       <label className={styles.field}><span>관측 설비</span><select value={selectedEquipment?.id ?? ""} onChange={(event) => onEquipmentSelect(event.target.value)}>{equipment.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.floorId}</option>)}</select></label>
       <div className={styles.tabs} role="tablist">
         <button type="button" aria-selected={tab === "TARGET"} onClick={() => setTab("TARGET")}>관측 대상</button>
@@ -31,7 +31,6 @@ export default function MonitoringSettingsPanel({
 
       {tab === "TARGET" ? <div className={styles.content}>
         <div className={styles.actionRow}><button type="button" disabled={!selectedEquipment} onClick={() => onAddPoint(selectedEquipment?.id, { x: 0, y: selectedEquipment?.dimensions.height / 2 || 0.5, z: 0 })}>바운딩 박스 기준 지점 추가</button></div>
-        <p className={styles.help}>3D 화면에서 선택 설비 표면을 클릭하면 해당 위치에도 관측 지점을 생성합니다.</p>
         <div className={styles.itemList}>{equipmentPoints.map((point) => <button type="button" key={point.id} aria-pressed={selectedPoint?.id === point.id} onClick={() => onSelectPoint(point.id)}>{point.name}<small>{point.metric} · {point.unit}</small></button>)}</div>
         {selectedPoint ? <>
           <label className={styles.field}><span>지점 이름</span><input value={selectedPoint.name} onChange={(event) => onUpdatePoint(selectedPoint.id, { name: event.target.value })} /></label>

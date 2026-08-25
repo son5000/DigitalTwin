@@ -1,17 +1,17 @@
 .toolbar {
   position: absolute;
   top: 50%;
-  left: 14px;
+  left: var(--editor-overlay-gap, 12px);
   z-index: 7;
   display: flex;
-  width: 52px;
-  max-height: calc(100% - 32px);
+  width: var(--editor-overlay-toolbar-width, 50px);
+  max-height: calc(100% - (var(--editor-overlay-gap, 12px) * 2));
   flex-direction: column;
   align-items: center;
   gap: 5px;
-  padding: 6px;
+  padding: 5px;
   border: 1px solid var(--color-border-strong);
-  border-radius: 9px;
+  border-radius: var(--editor-overlay-radius, 8px);
   background: var(--color-surface-overlay);
   box-shadow: var(--shadow-panel);
   transform: translateY(-50%);
@@ -28,13 +28,12 @@
 
 .button,
 .snapToggle,
-.contextBadge,
 .overflow > summary {
   position: relative;
   display: grid;
-  width: 42px;
-  height: 42px;
-  flex: 0 0 42px;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
   place-items: center;
   padding: 0;
   border: 1px solid transparent;
@@ -44,11 +43,6 @@
   line-height: 1;
   background: transparent;
   transition: color 130ms ease, border-color 130ms ease, background 130ms ease;
-}
-
-.contextBadge {
-  color: var(--color-accent-strong);
-  background: var(--state-selected);
 }
 
 .button:hover:not(:disabled),
@@ -89,13 +83,12 @@
 
 .icon svg,
 .snapToggle svg,
-.contextBadge svg,
 .overflow > summary svg {
   display: block;
 }
 
 .divider {
-  width: 30px;
+  width: 28px;
   height: 1px;
   flex: 0 0 1px;
   margin: 2px 0;
@@ -108,13 +101,13 @@
 
 .snapSize {
   position: relative;
-  width: 42px;
-  height: 30px;
+  width: 38px;
+  height: 28px;
 }
 
 .snapSize select {
-  width: 42px;
-  height: 30px;
+  width: 38px;
+  height: 28px;
   padding: 0 2px;
   border: 1px solid var(--color-border);
   border-radius: 5px;
@@ -204,7 +197,6 @@
 .button::after,
 .snapToggle::after,
 .snapSize::after,
-.contextBadge::after,
 .overflow > summary::after {
   position: absolute;
   top: 50%;
@@ -236,7 +228,6 @@
 .snapToggle:hover::after,
 .snapToggle:focus-visible::after,
 .snapSize:hover::after,
-.contextBadge:hover::after,
 .overflow:not([open]) > summary:hover::after {
   opacity: 1;
   transform: translate(0, -50%);
@@ -261,11 +252,11 @@
 @media (orientation: portrait), (max-width: 900px), (max-height: 660px) and (orientation: landscape) {
   .toolbar {
     top: auto;
-    bottom: 12px;
+    bottom: var(--editor-overlay-gap, 12px);
     left: 50%;
     width: auto;
     max-width: calc(100% - 24px);
-    height: 54px;
+    height: 50px;
     max-height: none;
     flex-direction: row;
     gap: 4px;
@@ -294,7 +285,6 @@
   .button::after,
   .snapToggle::after,
   .snapSize::after,
-  .contextBadge::after,
   .overflow > summary::after {
     top: auto;
     bottom: calc(100% + 10px);
@@ -307,7 +297,6 @@
   .snapToggle:hover::after,
   .snapToggle:focus-visible::after,
   .snapSize:hover::after,
-  .contextBadge:hover::after,
   .overflow:not([open]) > summary:hover::after {
     transform: translate(-50%, 0);
   }

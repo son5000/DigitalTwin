@@ -25,7 +25,6 @@ export default function ObjectItem({ definition, active, onSelect }) {
       <ObjectPreview definition={definition} />
       <span className={styles.itemText}>
         <strong>{definition.name}</strong>
-        <small>{definition.description}</small>
       </span>
       <span className={styles.itemAction} aria-hidden="true">
         {active ? <CheckIcon size={15} /> : <AddIcon size={15} />}

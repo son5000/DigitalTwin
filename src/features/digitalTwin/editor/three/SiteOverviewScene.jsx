@@ -50,6 +50,7 @@ import {
   updateCameraFocus,
 } from "./cameraFocus";
 import { disposeObject3D } from "./disposeObject3D";
+import { makePlacementPreviewTransparent } from "./placementPreview";
 import {
   attachDualTransformControls,
   configureDualTransformControls,
@@ -213,7 +214,8 @@ function measureCameraSafeInsets(runtime) {
   const sceneArea = runtime.container.closest("[data-scene-area]");
   const insets = { top: 0, right: 0, bottom: 0, left: 0 };
   if (!sceneArea) return insets;
-  const candidates = sceneArea.querySelectorAll([
+  const overlayRoot = sceneArea.parentElement ?? sceneArea;
+  const candidates = overlayRoot.querySelectorAll([
     "[data-camera-safe-ui]",
     "[data-camera-obstacle-ui]",
     "[aria-label$='편집 도구']",
@@ -352,19 +354,6 @@ function updateAreaGuide(guide, area, visible = true) {
   guide.scale.set(area.width, 1, area.depth);
 }
 
-function makePlacementPreviewTransparent(root) {
-  root.traverse((child) => {
-    if (!child.material) return;
-    const materials = Array.isArray(child.material) ? child.material : [child.material];
-    materials.forEach((material) => {
-      material.transparent = true;
-      material.opacity = child.isLine ? 0.8 : 0.42;
-      material.depthWrite = false;
-      if (material.emissive) material.emissiveIntensity = 0.18;
-    });
-  });
-}
-
 function createPlacementPreview(templateId, variants, theme) {
   const template = SITE_CREATION_TEMPLATE_MAP[templateId];
   const area = createSitePlacementArea(templateId, { x: 0, z: 0 });
@@ -453,6 +442,7 @@ export default function SiteOverviewScene({
   interiorBuildingId = null,
   focusRequestKey,
   focusMode = false,
+  buildingsTranslucent = false,
   cameraStateRef,
   interactionMode,
   placementTemplateId,
@@ -473,9 +463,11 @@ export default function SiteOverviewScene({
   onAreaSelectionChange,
   onPlaceTemplate,
   onPlaceTemplateArea,
+  onCancelPlacement,
 }) {
   const containerRef = useRef(null);
   const runtimeRef = useRef(null);
+  const lastFocusedSelectionKeyRef = useRef(null);
   const gridSettingsRef = useRef(gridSettings);
   const gridScopeIdRef = useRef(gridScopeId);
   const interactionModeRef = useRef(interactionMode);
@@ -500,9 +492,9 @@ export default function SiteOverviewScene({
   useEffect(() => {
     handlersRef.current = {
       onSelectBuilding, onSelectSiteObject, onUpdateBuilding, onUpdateSiteObject,
-      onEnterBuilding, onSelectFloor, onEnterFloor, onAreaSelectionChange, onPlaceTemplate, onPlaceTemplateArea,
+      onEnterBuilding, onSelectFloor, onEnterFloor, onAreaSelectionChange, onPlaceTemplate, onPlaceTemplateArea, onCancelPlacement,
     };
-  }, [onAreaSelectionChange, onEnterBuilding, onEnterFloor, onPlaceTemplate, onPlaceTemplateArea, onSelectBuilding, onSelectFloor, onSelectSiteObject, onUpdateBuilding, onUpdateSiteObject]);
+  }, [onAreaSelectionChange, onCancelPlacement, onEnterBuilding, onEnterFloor, onPlaceTemplate, onPlaceTemplateArea, onSelectBuilding, onSelectFloor, onSelectSiteObject, onUpdateBuilding, onUpdateSiteObject]);
 
   useEffect(() => {
     gridSettingsRef.current = gridSettings;
@@ -638,7 +630,10 @@ export default function SiteOverviewScene({
       ) {
         if (areaSelectionRef.current) return;
         const point = hitGround(event);
-        if (!point) return;
+        if (!point) {
+          handlersRef.current.onCancelPlacement?.();
+          return;
+        }
         runtime.placementPointerDown = true;
         runtime.placementAreaStart = snapAreaPoint(point, gridSettingsRef.current, gridScopeIdRef.current, runtime.siteBounds);
         runtime.placementDragArea = null;
@@ -797,15 +792,23 @@ export default function SiteOverviewScene({
       const area = createSitePlacementArea(templateId, snappedPoint, snappedPoint.cellSize);
       handlersRef.current.onPlaceTemplate(templateId, area, placementVariantsRef.current);
     }
-    function handleObjectChange(activeControl) {
+    function previewObjectChange(activeControl) {
       const object = activeControl.object;
       if (!object) return;
       if (activeControl === transformControls.translate) {
         const { position, cellSize } = snapHorizontalPosition(object.position, gridSettingsRef.current, gridScopeIdRef.current);
-        object.position.x = position.x;
-        object.position.z = position.z;
         updateGridSnapMarker(runtime.gridSnapMarker, position, runtime.dragging && cellSize !== null);
         setDragSnapSize((current) => current === cellSize ? current : cellSize);
+      }
+      clampObjectToSiteBounds(object, runtime.siteBounds);
+    }
+    function commitObjectChange(activeControl) {
+      const object = activeControl.object;
+      if (!object) return;
+      if (activeControl === transformControls.translate) {
+        const { position } = snapHorizontalPosition(object.position, gridSettingsRef.current, gridScopeIdRef.current);
+        object.position.x = position.x;
+        object.position.z = position.z;
       }
       clampObjectToSiteBounds(object, runtime.siteBounds);
       const changes = {
@@ -854,12 +857,16 @@ export default function SiteOverviewScene({
     renderer.domElement.addEventListener("dblclick", handleDoubleClick);
     renderer.domElement.addEventListener("dragover", handleDragOver);
     renderer.domElement.addEventListener("drop", handleDrop);
-    const handleTranslateChange = () => handleObjectChange(transformControls.translate);
-    const handleRotateChange = () => handleObjectChange(transformControls.rotate);
+    const handleTranslateChange = () => previewObjectChange(transformControls.translate);
+    const handleRotateChange = () => previewObjectChange(transformControls.rotate);
+    const handleTranslateCommit = () => commitObjectChange(transformControls.translate);
+    const handleRotateCommit = () => commitObjectChange(transformControls.rotate);
     const handleTranslateDragging = (event) => handleDraggingChanged(transformControls.translate, event);
     const handleRotateDragging = (event) => handleDraggingChanged(transformControls.rotate, event);
     transformControls.translate.addEventListener("objectChange", handleTranslateChange);
     transformControls.rotate.addEventListener("objectChange", handleRotateChange);
+    transformControls.translate.addEventListener("mouseUp", handleTranslateCommit);
+    transformControls.rotate.addEventListener("mouseUp", handleRotateCommit);
     transformControls.translate.addEventListener("dragging-changed", handleTranslateDragging);
     transformControls.rotate.addEventListener("dragging-changed", handleRotateDragging);
     const resizeObserver = new ResizeObserver(() => {
@@ -894,6 +901,8 @@ export default function SiteOverviewScene({
       renderer.domElement.removeEventListener("drop", handleDrop);
       transformControls.translate.removeEventListener("objectChange", handleTranslateChange);
       transformControls.rotate.removeEventListener("objectChange", handleRotateChange);
+      transformControls.translate.removeEventListener("mouseUp", handleTranslateCommit);
+      transformControls.rotate.removeEventListener("mouseUp", handleRotateCommit);
       transformControls.translate.removeEventListener("dragging-changed", handleTranslateDragging);
       transformControls.rotate.removeEventListener("dragging-changed", handleRotateDragging);
       disposeDualTransformControls(transformControls);
@@ -1010,7 +1019,7 @@ export default function SiteOverviewScene({
       const floorCount = getBuildingFloorCount(building.id, floors);
       const selected = building.id === selectedBuildingId;
       const expanded = building.id === interiorBuildingId;
-      const signature = getBuildingSignature(building, floorCount, selected, expanded, theme);
+      const signature = getBuildingSignature(building, floorCount, selected, expanded, theme, buildingsTranslucent);
       let object = runtime.buildingObjects.get(building.id);
       if (!object || object.userData.geometrySignature !== signature) {
         if (object) {
@@ -1019,7 +1028,8 @@ export default function SiteOverviewScene({
           disposeObject3D(object);
         }
         object = createBuildingObject(building, floors, {
-          selected, expanded, selectedFloorId, theme, edgeColor: siteTheme.edge, floorColor: siteTheme.floor,
+          selected, expanded, selectedFloorId, theme, viewerTranslucent: buildingsTranslucent,
+          edgeColor: siteTheme.edge, floorColor: siteTheme.floor,
           apronColor: siteTheme.apron, selectionColor: SCENE_THEMES[theme].selection,
         });
         runtime.buildingObjects.set(building.id, object);
@@ -1091,7 +1101,7 @@ export default function SiteOverviewScene({
         allowVerticalTranslation: runtime.activeCamera.isPerspectiveCamera,
       });
     } else detachDualTransformControls(runtime.transformControls);
-  }, [buildings, floors, interactionMode, interiorBuildingId, selectedBuildingId, selectedFloorId, selectedSiteObjectId, siteEnvironment.depth, siteEnvironment.width, siteObjects, theme]);
+  }, [buildings, buildingsTranslucent, floors, interactionMode, interiorBuildingId, selectedBuildingId, selectedFloorId, selectedSiteObjectId, siteEnvironment.depth, siteEnvironment.width, siteObjects, theme]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -1137,9 +1147,15 @@ export default function SiteOverviewScene({
   useEffect(() => {
     const runtime = runtimeRef.current;
     if (!runtime) return;
+    const selectionKey = selectedBuildingId
+      ? `building:${selectedBuildingId}`
+      : selectedSiteObjectId
+        ? `site-object:${selectedSiteObjectId}`
+        : null;
     const selectedObject = runtime.buildingObjects.get(selectedBuildingId)
       ?? runtime.siteEnvironmentObjects.get(selectedSiteObjectId);
     if (!selectedObject) {
+      lastFocusedSelectionKeyRef.current = null;
       runtime.refocusSelected = null;
       cancelCameraFocus(runtime);
       return;
@@ -1163,11 +1179,15 @@ export default function SiteOverviewScene({
         });
       };
       runtime.refocusSelected = refocus;
-      refocus();
+      if (lastFocusedSelectionKeyRef.current !== selectionKey) refocus();
+      lastFocusedSelectionKeyRef.current = selectionKey;
       return;
     }
     runtime.refocusSelected = null;
-    focusCameraOnObject(runtime, selectedObject);
+    if (lastFocusedSelectionKeyRef.current !== selectionKey) {
+      focusCameraOnObject(runtime, selectedObject);
+    }
+    lastFocusedSelectionKeyRef.current = selectionKey;
   }, [buildings, focusMode, focusRequestKey, selectedBuildingId, selectedSiteObjectId, viewMode]);
 
   useEffect(() => {
@@ -1235,7 +1255,7 @@ export default function SiteOverviewScene({
   return (
     <section className={styles.viewport} aria-label={`부지 ${viewMode === VIEW_MODES.LAYOUT_2D ? "2D" : "3D"} 편집 화면`}>
       <div ref={containerRef} className={styles.canvasMount} />
-      <div className={styles.sceneStatus}><span /> {viewMode === VIEW_MODES.LAYOUT_2D ? "2D Top View · 배치/정렬" : "3D View · 공간 확인"}</div>
+      <div className={styles.sceneStatus}><span /> {viewMode === VIEW_MODES.LAYOUT_2D ? "평면 편집" : "공간 편집"}</div>
       <button
         type="button"
         className={styles.cameraResetButton}
@@ -1253,7 +1273,6 @@ export default function SiteOverviewScene({
           {areaPlacementPlan ? <span>{areaPlacementPlan.canPlace ? `예상 배치 ${areaPlacementPlan.count}개` : areaPlacementPlan.message}</span> : null}
         </div>
       )}
-      <div className={styles.axisLegend} aria-hidden="true"><b>X</b><b>Y</b><b>Z</b><span>미터</span></div>
     </section>
   );
 }

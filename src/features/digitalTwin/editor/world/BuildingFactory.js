@@ -1,5 +1,7 @@
 import * as THREE from "three";
 
+import { createPresetMaterial } from "@/features/digitalTwin/editor/three/presetMaterial";
+
 function createEdgeOverlay(geometry, color) {
   return new THREE.LineSegments(
     new THREE.EdgesGeometry(geometry),
@@ -140,7 +142,7 @@ export function getBuildingFloorCount(buildingId, floors) {
   return Math.max(1, floors.filter((floor) => floor.parentId === buildingId).length);
 }
 
-export function getBuildingSignature(building, floorCount, selected, expanded, theme) {
+export function getBuildingSignature(building, floorCount, selected, expanded, theme, viewerTranslucent = false) {
   return JSON.stringify({
     templateId: building.templateId,
     objectDefinitionId: building.objectDefinitionId,
@@ -150,7 +152,27 @@ export function getBuildingSignature(building, floorCount, selected, expanded, t
     floorCount,
     selected,
     expanded,
+    viewerTranslucent,
     theme,
+  });
+}
+
+function applyViewerTransparency(group, enabled) {
+  if (!enabled) return;
+  group.traverse((child) => {
+    if (!child.material) return;
+    const materials = Array.isArray(child.material) ? child.material : [child.material];
+    materials.forEach((material) => {
+      if (material instanceof THREE.LineBasicMaterial) {
+        material.transparent = true;
+        material.opacity = Math.min(material.opacity ?? 1, 0.56);
+      } else {
+        material.transparent = true;
+        material.opacity = Math.min(material.opacity ?? 1, 0.32);
+        material.depthWrite = false;
+      }
+      material.needsUpdate = true;
+    });
   });
 }
 
@@ -184,26 +206,10 @@ export function createBuildingObject(building, floors, visualState) {
   group.name = building.name;
   group.userData.buildingId = building.id;
 
-  const facadeStyle = building.variants?.facadeStyle ?? building.appearance.material;
-  const materialPreset = {
-    CONCRETE: { roughness: 0.9, metalness: 0.02 },
-    METAL: { roughness: 0.48, metalness: 0.58 },
-    PAINTED: { roughness: 0.62, metalness: 0.18 },
-    BRICK: { roughness: 0.96, metalness: 0 },
-    GLASS: { roughness: 0.16, metalness: 0.32 },
-    METAL_PANEL: { roughness: 0.45, metalness: 0.52 },
-    INDUSTRIAL_PANEL: { roughness: 0.58, metalness: 0.42 },
-    SANDWICH_PANEL: { roughness: 0.68, metalness: 0.28 },
-    MIXED: { roughness: 0.54, metalness: 0.22 },
-  }[facadeStyle] ?? { roughness: 0.78, metalness: 0.08 };
-  const bodyMaterial = new THREE.MeshStandardMaterial({
-    color: building.appearance.color,
-    ...materialPreset,
+  const bodyMaterial = createPresetMaterial(building.appearance, {
     emissive: visualState.selected ? visualState.selectionColor : 0x000000,
     emissiveIntensity: visualState.selected ? 0.035 : 0,
-    transparent: visualState.expanded,
     opacity: visualState.expanded ? 0.14 : 1,
-    depthWrite: !visualState.expanded,
   });
   addBuildingMasses(group, building, width, depth, totalHeight, bodyMaterial, visualState.edgeColor);
   if (!visualState.expanded) addFacadeWindows(group, building, width, depth, floorCount, floorHeight);
@@ -281,12 +287,9 @@ export function createBuildingObject(building, floors, visualState) {
       });
   }
 
-  const roofMaterial = new THREE.MeshStandardMaterial({
+  const roofMaterial = createPresetMaterial(building.appearance, {
     color: new THREE.Color(building.appearance.color).multiplyScalar(0.78),
-    roughness: 0.72,
-    transparent: visualState.expanded,
     opacity: visualState.expanded ? 0.24 : 1,
-    depthWrite: !visualState.expanded,
   });
   const roofType = building.parameters.roofType;
   if (roofType === "GABLE") {
@@ -353,7 +356,9 @@ export function createBuildingObject(building, floors, visualState) {
     visualState.selected,
     visualState.expanded,
     visualState.theme,
+    visualState.viewerTranslucent,
   );
   if (visualState.expanded) updateBuildingFloorVisualState(group, building, floors, visualState);
+  else applyViewerTransparency(group, visualState.viewerTranslucent);
   return group;
 }

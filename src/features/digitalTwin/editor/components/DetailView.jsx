@@ -14,13 +14,11 @@ export default function DetailView({ equipment, asset, onClose }) {
         </div>
         <dl>
           <div><dt>파일</dt><dd>{asset.originalFileName}</dd></div>
-          <div><dt>인스턴스</dt><dd>{equipment.id.slice(-12)}</dd></div>
         </dl>
       </header>
       <div className={styles.viewport}>
         <DetailAssetScene asset={asset} />
       </div>
-      <p className={styles.hint}>드래그 회전 · 휠 확대/축소 · 우클릭 이동</p>
     </section>
   );
 }

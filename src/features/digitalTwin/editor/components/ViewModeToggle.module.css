@@ -1,24 +1,38 @@
 .toggle {
   position: absolute;
-  right: 14px;
-  bottom: 14px;
+  right: var(--editor-overlay-gap, 12px);
+  bottom: var(--editor-overlay-gap, 12px);
   z-index: 8;
   display: grid;
+  min-height: var(--editor-overlay-control-height, 40px);
+  box-sizing: border-box;
   grid-template-columns: repeat(2, 1fr);
   gap: 3px;
-  padding: 4px;
+  padding: 3px;
   border: 1px solid var(--color-border-strong);
-  border-radius: 8px;
+  border-radius: var(--editor-overlay-radius, 8px);
   background: var(--color-surface-overlay);
   box-shadow: var(--shadow-panel);
   backdrop-filter: blur(10px);
 }
 
-.toggle button { display: inline-flex; min-width: 58px; min-height: 36px; padding: 0 9px; align-items: center; justify-content: center; gap: 5px; border: 1px solid transparent; border-radius: 5px; color: var(--color-text-muted); background: transparent; font-size: 12px; font-weight: 600; }
+.toggle button { display: inline-flex; min-width: 36px; min-height: var(--editor-overlay-inner-height, 32px); padding: 0 7px; align-items: center; justify-content: center; border: 1px solid transparent; border-radius: 5px; color: var(--color-text-muted); background: transparent; font-size: var(--editor-font-size-xs); font-weight: var(--editor-font-weight-semibold); letter-spacing: .02em; }
 .toggle button:hover { color: var(--color-heading); background: var(--state-hover); }
 .toggle button.active { border-color: var(--state-selected-border); color: var(--color-accent-strong); background: var(--state-selected); }
 .toggle button:disabled { cursor: not-allowed; opacity: .58; }
 .toggle button:disabled:hover { color: var(--color-text-muted); background: transparent; }
 .toggle button.active:disabled { color: var(--color-accent-strong); background: var(--state-selected); }
 
-@media (max-width: 760px), (orientation: portrait) { .toggle { right: 8px; bottom: 8px; } }
+.toggle.topAligned {
+  top: var(--editor-overlay-gap, 12px);
+  right: calc(var(--scene-status-right, var(--editor-overlay-gap, 12px)) + var(--scene-status-inline-size, 92px) + 8px);
+  bottom: auto;
+}
+
+.toggle.sceneMetaAligned {
+  top: var(--editor-overlay-gap, 12px);
+  right: var(--editor-overlay-right-safe, var(--editor-overlay-gap, 12px));
+  bottom: auto;
+}
+
+@media (max-width: 900px), (orientation: portrait) { .toggle { right: var(--editor-overlay-gap, 8px); bottom: var(--editor-overlay-mobile-bottom-safe, 74px); } }

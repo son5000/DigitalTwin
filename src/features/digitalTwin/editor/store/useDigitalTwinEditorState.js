@@ -212,9 +212,7 @@ function mergeBuildingDefinition(building, changes) {
     rotation: changes.rotation ? { ...building.rotation, ...changes.rotation } : building.rotation,
     appearance: changes.appearance ? { ...building.appearance, ...changes.appearance } : building.appearance,
     variants: changes.variants ? { ...building.variants, ...changes.variants } : building.variants,
-    settingStatus: changes.settingStatus
-      ? { ...(building.settingStatus ?? {}), ...changes.settingStatus }
-      : building.settingStatus,
+    settingStatus: changes.settingStatus ?? building.settingStatus,
   };
 }
 
@@ -1487,7 +1485,7 @@ export default function useDigitalTwinEditorState() {
         if (node.id === selectedBuilding.id) {
           clone.name = `${node.name} 복사본`;
           clone.detailSettingStatus = "UNSET";
-          clone.settingStatus = { exterior: "UNSET", interiorBasics: "UNSET" };
+          clone.settingStatus = "UNSET";
           const duplicatedPosition = {
             ...node.position,
             x: node.position.x + Math.max(2, gridSettings.baseSize * 2),

@@ -10,6 +10,7 @@ import { createStairAssemblyObject } from "@/features/digitalTwin/editor/world/S
 import { createWorldStructureObject, getWorldStructureDimensions } from "@/features/digitalTwin/editor/world/WorldStructureFactory";
 
 import { disposeObject3D } from "./disposeObject3D";
+import { createFloorPlacementPreview } from "./floorPlacementPreview";
 import {
   attachDualTransformControls,
   configureDualTransformControls,
@@ -19,6 +20,7 @@ import {
   dualTransformIsActive,
   setDualTransformDragging,
 } from "./dualTransformControls";
+import { createFloorSurfaceMaterial } from "./floorSurfaceMaterial";
 import styles from "./FloorPlanScene.module.css";
 
 function pointer(event, canvas) {
@@ -32,6 +34,14 @@ function findDomainId(object, root) {
     if (current.userData.equipmentId) return { domain: "EQUIPMENT", id: current.userData.equipmentId };
     if (current.userData.worldStructureId) return { domain: "PLAN", id: current.userData.worldStructureId };
     current = current.parent;
+  }
+  return null;
+}
+
+function findSelectableHit(intersections, root) {
+  for (const intersection of intersections) {
+    const domain = findDomainId(intersection.object, root);
+    if (domain) return { intersection, domain };
   }
   return null;
 }
@@ -60,7 +70,7 @@ function addHole(shape, opening) {
   shape.holes.push(path);
 }
 
-function createFloor(building, openings, color) {
+function createFloor(building, openings, floorStyle) {
   const footprint = getBuildingFootprint(building);
   const shape = new THREE.Shape();
   shape.moveTo(footprint.points[0].x, footprint.points[0].z);
@@ -69,7 +79,7 @@ function createFloor(building, openings, color) {
   openings.forEach((opening) => addHole(shape, opening));
   const geometry = new THREE.ShapeGeometry(shape);
   geometry.rotateX(Math.PI / 2);
-  const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color, roughness: 0.86, side: THREE.DoubleSide }));
+  const mesh = new THREE.Mesh(geometry, createFloorSurfaceMaterial(floorStyle, footprint));
   mesh.userData.floorSurface = true;
   mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry), new THREE.LineBasicMaterial({ color: 0x6f909d })));
   return mesh;
@@ -87,15 +97,16 @@ export default function FloorPlan3DScene({
   building, floors, currentFloor, floorPlansById, verticalStructures, equipmentByFloorId,
   viewScope, editMode, activePlanTemplateId, activeEquipmentTemplateId,
   selectedStructureId, selectedEquipmentId, theme,
+  equipmentTranslucent = true,
   observationPoints = [], monitoringDevices = [], monitoringBindings = [], monitoringMode = false,
   transformTools, onPlanAdd, onEquipmentAdd, onPlanSelect, onEquipmentSelect,
-  onPlanTransform, onEquipmentTransform, onObservationPointAdd, externalStatus = "",
+  onPlanTransform, onEquipmentTransform, onObservationPointAdd, onCancelPlacement, externalStatus = "",
 }) {
   const containerRef = useRef(null);
   const runtimeRef = useRef(null);
-  const handlersRef = useRef({ onPlanAdd, onEquipmentAdd, onPlanSelect, onEquipmentSelect, onPlanTransform, onEquipmentTransform, onObservationPointAdd });
+  const handlersRef = useRef({ onPlanAdd, onEquipmentAdd, onPlanSelect, onEquipmentSelect, onPlanTransform, onEquipmentTransform, onObservationPointAdd, onCancelPlacement });
   const stateRef = useRef({ editMode, activePlanTemplateId, activeEquipmentTemplateId, currentFloor, selectedEquipmentId, monitoringMode, verticalStructures, floorPlansById });
-  useEffect(() => { handlersRef.current = { onPlanAdd, onEquipmentAdd, onPlanSelect, onEquipmentSelect, onPlanTransform, onEquipmentTransform, onObservationPointAdd }; }, [onEquipmentAdd, onEquipmentSelect, onEquipmentTransform, onObservationPointAdd, onPlanAdd, onPlanSelect, onPlanTransform]);
+  useEffect(() => { handlersRef.current = { onPlanAdd, onEquipmentAdd, onPlanSelect, onEquipmentSelect, onPlanTransform, onEquipmentTransform, onObservationPointAdd, onCancelPlacement }; }, [onCancelPlacement, onEquipmentAdd, onEquipmentSelect, onEquipmentTransform, onObservationPointAdd, onPlanAdd, onPlanSelect, onPlanTransform]);
   useEffect(() => { stateRef.current = { editMode, activePlanTemplateId, activeEquipmentTemplateId, currentFloor, selectedEquipmentId, monitoringMode, verticalStructures, floorPlansById }; }, [activeEquipmentTemplateId, activePlanTemplateId, currentFloor, editMode, floorPlansById, monitoringMode, selectedEquipmentId, verticalStructures]);
 
   useEffect(() => {
@@ -121,33 +132,71 @@ export default function FloorPlan3DScene({
     const transformControls = createDualTransformControls(camera, renderer.domElement, scene);
     const contentRoot = new THREE.Group();
     const helperRoot = new THREE.Group();
-    scene.add(contentRoot, helperRoot);
+    const placementRoot = new THREE.Group();
+    scene.add(contentRoot, helperRoot, placementRoot);
     scene.add(new THREE.HemisphereLight(sceneTheme.hemisphereSky, sceneTheme.hemisphereGround, 2));
     const light = new THREE.DirectionalLight(sceneTheme.keyLight, 1.8); light.position.set(30, 50, 22); scene.add(light);
-    const runtime = { container, scene, renderer, camera, controls, transformControls, transformTools: { translate: false, rotate: false }, contentRoot, helperRoot, floorPickers: [] };
+    const runtime = { container, scene, renderer, camera, controls, transformControls, transformTools: { translate: false, rotate: false }, contentRoot, helperRoot, placementRoot, placementPreview: null, floorPickers: [] };
     runtimeRef.current = runtime;
     const raycaster = new THREE.Raycaster();
     const start = new THREE.Vector2();
     const onDown = (event) => start.set(event.clientX, event.clientY);
+    const getActivePlacementTemplate = () => stateRef.current.editMode === "EQUIPMENT"
+      ? stateRef.current.activeEquipmentTemplateId
+      : stateRef.current.activePlanTemplateId;
+    const updatePlacementPreview = (event) => {
+      const preview = runtime.placementPreview;
+      const templateId = getActivePlacementTemplate();
+      if (!preview || !templateId || !stateRef.current.currentFloor) {
+        if (preview) preview.visible = false;
+        return null;
+      }
+      raycaster.setFromCamera(pointer(event, renderer.domElement), camera);
+      const activeFloorPicker = runtime.floorPickers.find((picker) => picker.userData.floorId === stateRef.current.currentFloor.id);
+      const [floorHit] = activeFloorPicker ? raycaster.intersectObject(activeFloorPicker, false) : [];
+      if (!floorHit) {
+        preview.visible = false;
+        return null;
+      }
+      const baseY = floorHit.object.position.y;
+      preview.position.set(floorHit.point.x, baseY + 0.04, floorHit.point.z);
+      preview.visible = true;
+      return { x: floorHit.point.x, y: 0, z: floorHit.point.z };
+    };
     const onUp = (event) => {
       if (dualTransformIsActive(transformControls) || start.distanceTo(new THREE.Vector2(event.clientX, event.clientY)) > 5) return;
       raycaster.setFromCamera(pointer(event, renderer.domElement), camera);
-      const [contentHit] = raycaster.intersectObjects(contentRoot.children, true);
-      const domain = contentHit ? findDomainId(contentHit.object, contentRoot) : null;
-      if (stateRef.current.monitoringMode && stateRef.current.selectedEquipmentId && domain?.domain === "EQUIPMENT") {
-        const object = findEquipmentRoot(contentHit.object, contentRoot);
-        const localPosition = object.worldToLocal(contentHit.point.clone());
-        handlersRef.current.onObservationPointAdd?.(domain.id, { x: localPosition.x, y: localPosition.y, z: localPosition.z });
+      const placementTemplateId = getActivePlacementTemplate();
+      const activeContentRoot = runtime.contentRoot;
+      const selectableHit = findSelectableHit(
+        raycaster.intersectObjects(activeContentRoot.children, true),
+        activeContentRoot,
+      );
+      if (selectableHit) {
+        const { intersection, domain } = selectableHit;
+        if (placementTemplateId) handlersRef.current.onCancelPlacement?.();
+        if (stateRef.current.monitoringMode && stateRef.current.selectedEquipmentId && domain.domain === "EQUIPMENT") {
+          const object = findEquipmentRoot(intersection.object, activeContentRoot);
+          const localPosition = object.worldToLocal(intersection.point.clone());
+          handlersRef.current.onObservationPointAdd?.(domain.id, { x: localPosition.x, y: localPosition.y, z: localPosition.z });
+          return;
+        }
+        if (domain.domain === "EQUIPMENT") handlersRef.current.onEquipmentSelect?.(domain.id);
+        else handlersRef.current.onPlanSelect?.(domain.id);
         return;
       }
-      if (domain?.domain === "EQUIPMENT") { handlersRef.current.onEquipmentSelect?.(domain.id); return; }
-      if (domain?.domain === "PLAN") { handlersRef.current.onPlanSelect?.(domain.id); return; }
-      const [floorHit] = raycaster.intersectObjects(runtime.floorPickers, false);
-      if (!floorHit) return;
-      const baseY = floorHit.object.position.y;
-      const position = { x: floorHit.point.x, y: 0, z: floorHit.point.z };
-      if (stateRef.current.editMode === "EQUIPMENT" && stateRef.current.activeEquipmentTemplateId) handlersRef.current.onEquipmentAdd?.(stateRef.current.activeEquipmentTemplateId, position);
-      if (stateRef.current.editMode === "PLAN" && stateRef.current.activePlanTemplateId) handlersRef.current.onPlanAdd?.(stateRef.current.activePlanTemplateId, { ...position, y: baseY });
+      if (placementTemplateId) {
+        const position = updatePlacementPreview(event);
+        if (!position) {
+          handlersRef.current.onCancelPlacement?.();
+          return;
+        }
+        if (stateRef.current.editMode === "EQUIPMENT") handlersRef.current.onEquipmentAdd?.(placementTemplateId, position);
+        else handlersRef.current.onPlanAdd?.(placementTemplateId, position);
+        return;
+      }
+      handlersRef.current.onPlanSelect?.(null);
+      handlersRef.current.onEquipmentSelect?.(null);
     };
     const handleObjectChange = (activeControl) => {
       const object = activeControl.object;
@@ -177,28 +226,62 @@ export default function FloorPlan3DScene({
       controls.enabled = !event.value;
       setDualTransformDragging(transformControls, activeControl, event.value, runtime.transformTools);
     };
-    const handleTranslateChange = () => handleObjectChange(transformControls.translate);
-    const handleRotateChange = () => handleObjectChange(transformControls.rotate);
+    const handleTranslateCommit = () => handleObjectChange(transformControls.translate);
+    const handleRotateCommit = () => handleObjectChange(transformControls.rotate);
     const handleTranslateDragging = (event) => handleDragging(transformControls.translate, event);
     const handleRotateDragging = (event) => handleDragging(transformControls.rotate, event);
     renderer.domElement.addEventListener("pointerdown", onDown);
     renderer.domElement.addEventListener("pointerup", onUp);
-    transformControls.translate.addEventListener("objectChange", handleTranslateChange);
-    transformControls.rotate.addEventListener("objectChange", handleRotateChange);
+    renderer.domElement.addEventListener("pointermove", updatePlacementPreview);
+    const onLeave = () => { if (runtime.placementPreview) runtime.placementPreview.visible = false; };
+    renderer.domElement.addEventListener("pointerleave", onLeave);
+    transformControls.translate.addEventListener("mouseUp", handleTranslateCommit);
+    transformControls.rotate.addEventListener("mouseUp", handleRotateCommit);
     transformControls.translate.addEventListener("dragging-changed", handleTranslateDragging);
     transformControls.rotate.addEventListener("dragging-changed", handleRotateDragging);
     const observer = new ResizeObserver(() => resize(runtime)); observer.observe(container); resize(runtime);
     let frame;
     const render = () => { controls.update(); renderer.render(scene, camera); frame = requestAnimationFrame(render); }; render();
     return () => {
-      cancelAnimationFrame(frame); observer.disconnect(); renderer.domElement.removeEventListener("pointerdown", onDown); renderer.domElement.removeEventListener("pointerup", onUp);
-      transformControls.translate.removeEventListener("objectChange", handleTranslateChange);
-      transformControls.rotate.removeEventListener("objectChange", handleRotateChange);
+      cancelAnimationFrame(frame); observer.disconnect(); renderer.domElement.removeEventListener("pointerdown", onDown); renderer.domElement.removeEventListener("pointerup", onUp); renderer.domElement.removeEventListener("pointermove", updatePlacementPreview); renderer.domElement.removeEventListener("pointerleave", onLeave);
+      transformControls.translate.removeEventListener("mouseUp", handleTranslateCommit);
+      transformControls.rotate.removeEventListener("mouseUp", handleRotateCommit);
       transformControls.translate.removeEventListener("dragging-changed", handleTranslateDragging);
       transformControls.rotate.removeEventListener("dragging-changed", handleRotateDragging);
-      disposeDualTransformControls(transformControls); controls.dispose(); disposeObject3D(contentRoot); disposeObject3D(helperRoot); renderer.dispose(); renderer.domElement.remove(); runtimeRef.current = null;
+      disposeDualTransformControls(transformControls);
+      controls.dispose();
+      disposeObject3D(runtime.contentRoot);
+      disposeObject3D(runtime.helperRoot);
+      disposeObject3D(runtime.placementRoot);
+      renderer.dispose();
+      renderer.domElement.remove();
+      runtimeRef.current = null;
     };
   }, [theme]);
+
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime) return undefined;
+    if (runtime.placementPreview) {
+      runtime.placementRoot.remove(runtime.placementPreview);
+      disposeObject3D(runtime.placementPreview);
+      runtime.placementPreview = null;
+    }
+    const templateId = editMode === "EQUIPMENT" ? activeEquipmentTemplateId : activePlanTemplateId;
+    if (!templateId || monitoringMode) return undefined;
+    const preview = createFloorPlacementPreview(editMode, templateId, theme);
+    if (!preview) return undefined;
+    preview.visible = false;
+    runtime.placementPreview = preview;
+    runtime.placementRoot.add(preview);
+    return () => {
+      const activeRuntime = runtimeRef.current;
+      if (!activeRuntime || activeRuntime.placementPreview !== preview) return;
+      activeRuntime.placementRoot.remove(preview);
+      disposeObject3D(preview);
+      activeRuntime.placementPreview = null;
+    };
+  }, [activeEquipmentTemplateId, activePlanTemplateId, editMode, monitoringMode, theme]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -219,7 +302,7 @@ export default function FloorPlan3DScene({
           getWorldStructureDimensions(structure),
         ))
         .filter(Boolean);
-      const floorMesh = createFloor(building, openings, theme === "dark" ? 0x26363d : 0xcbd5da);
+      const floorMesh = createFloor(building, openings, floorPlansById[floor.id]?.floorStyle);
       floorMesh.position.y = baseY;
       floorMesh.userData.floorId = floor.id;
       runtime.floorPickers.push(floorMesh);
@@ -235,7 +318,11 @@ export default function FloorPlan3DScene({
         runtime.contentRoot.add(object);
       });
       (equipmentByFloorId[floor.id] ?? []).forEach((equipment) => {
-        const object = createEquipmentObject(equipment, { selected: equipment.id === selectedEquipmentId, theme });
+        const object = createEquipmentObject(equipment, {
+          selected: equipment.id === selectedEquipmentId,
+          theme,
+          viewerTranslucent: equipmentTranslucent,
+        });
         object.position.y += baseY;
         object.userData.floorBaseY = baseY;
         runtime.contentRoot.add(object);
@@ -293,7 +380,7 @@ export default function FloorPlan3DScene({
         allowVerticalTranslation: editMode === "EQUIPMENT",
       });
     }
-  }, [building, currentFloor, editMode, equipmentByFloorId, floors, monitoringBindings, monitoringDevices, monitoringMode, observationPoints, selectedEquipmentId, selectedStructureId, floorPlansById, theme, verticalStructures, viewScope]);
+  }, [building, currentFloor, editMode, equipmentByFloorId, equipmentTranslucent, floors, monitoringBindings, monitoringDevices, monitoringMode, observationPoints, selectedEquipmentId, selectedStructureId, floorPlansById, theme, verticalStructures, viewScope]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -305,5 +392,5 @@ export default function FloorPlan3DScene({
     });
   }, [editMode, monitoringMode, transformTools]);
 
-  return <section className={styles.viewport} aria-label="3D 공간 보기"><div ref={containerRef} className={styles.canvasMount} /><div className={styles.context}><strong>{building?.name}</strong><span>{viewScope === "BUILDING" ? "전체 건축물" : currentFloor?.name} · 3D 공간 보기</span></div>{externalStatus ? <div className={styles.status}>{externalStatus}</div> : null}</section>;
+  return <section className={styles.viewport} aria-label="3D 공간 보기"><div ref={containerRef} className={styles.canvasMount} /><div className={styles.sceneMeta} data-camera-safe-ui><div className={styles.context}><strong>{building?.name}</strong><span>{viewScope === "BUILDING" ? "전체 건축물" : currentFloor?.name}</span></div></div>{externalStatus ? <div className={styles.status}>{externalStatus}</div> : null}</section>;
 }

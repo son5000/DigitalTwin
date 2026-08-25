@@ -1,14 +1,18 @@
 .viewport { position: absolute; inset: 0; overflow: hidden; background: var(--surface-canvas); }
 .canvasMount { position: absolute; inset: 0; }
 .canvasMount canvas { display: block; width: 100%; height: 100%; touch-action: none; }
-.context, .mode, .legend, .reference, .status { position: absolute; pointer-events: none; z-index: 2; border: 1px solid var(--line-soft); background: color-mix(in srgb, var(--surface-panel) 88%, transparent); box-shadow: 0 8px 24px rgb(0 0 0 / 16%); backdrop-filter: blur(10px); }
-.context { left: 50%; top: 84px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 8px 13px; border-radius: 10px; }
-.context strong { font-size: 13px; color: var(--text-strong); }
-.context span { font-size: 11px; color: var(--text-muted); }
-.mode { left: 82px; bottom: 58px; padding: 7px 10px; border-radius: 8px; color: var(--accent-strong); font: 700 10px/1.2 var(--font-mono, monospace); letter-spacing: .05em; }
-.legend { left: 82px; bottom: 22px; display: flex; align-items: center; gap: 7px; padding: 6px 9px; border-radius: 8px; color: var(--text-muted); font-size: 10px; }
+.sceneMeta { position: absolute; top: var(--editor-overlay-gap, 12px); right: calc(var(--editor-overlay-right-safe, var(--editor-overlay-gap, 12px)) + var(--floor-view-toggle-offset, 0px)); z-index: 7; display: flex; max-width: calc(100% - var(--editor-overlay-left-safe, 74px) - var(--editor-overlay-right-safe, 12px) - var(--floor-view-toggle-offset, 0px)); min-height: var(--editor-overlay-control-height, 40px); box-sizing: border-box; padding: 3px; align-items: stretch; justify-content: flex-end; gap: 2px; border: 1px solid var(--color-border-strong, var(--line-soft)); border-radius: var(--editor-overlay-radius, 8px); background: var(--color-surface-overlay, color-mix(in srgb, var(--surface-panel) 88%, transparent)); box-shadow: var(--shadow-panel, 0 8px 24px rgb(0 0 0 / 16%)); pointer-events: none; backdrop-filter: blur(12px); }
+.sceneMeta > * { display: flex; min-height: var(--editor-overlay-inner-height, 32px); box-sizing: border-box; padding: 0 9px; align-items: center; border: 1px solid transparent; border-radius: 5px; background: transparent; }
+.sceneMeta > * + * { position: relative; margin-left: 3px; }
+.sceneMeta > * + *::before { position: absolute; top: 6px; bottom: 6px; left: -3px; width: 1px; background: var(--color-border, var(--line-soft)); content: ""; }
+.reference, .status { position: absolute; pointer-events: none; z-index: 2; border: 1px solid var(--line-soft); background: color-mix(in srgb, var(--surface-panel) 88%, transparent); box-shadow: 0 8px 24px rgb(0 0 0 / 16%); backdrop-filter: blur(10px); }
+.context { min-width: 0; gap: 7px; border-color: var(--state-selected-border, transparent); color: var(--color-accent-strong, var(--accent-strong)); background: var(--state-selected, transparent); }
+.context strong { overflow: hidden; max-width: 150px; color: var(--color-heading, var(--text-strong)); font-size: var(--editor-font-size-sm, 13px); font-weight: var(--editor-font-weight-semibold, 600); text-overflow: ellipsis; white-space: nowrap; }
+.context span { color: var(--color-text-subtle, var(--text-muted)); font-size: var(--editor-font-size-xs, 12px); white-space: nowrap; }
+.mode { color: var(--color-accent-strong, var(--accent-strong)); font: var(--editor-font-weight-semibold, 600) var(--editor-font-size-xs, 12px)/1.2 var(--font-mono, monospace); letter-spacing: .02em; white-space: nowrap; }
+.legend { gap: 6px; color: var(--color-text-subtle, var(--text-muted)); font-size: var(--editor-font-size-xs, 12px); white-space: nowrap; }
 .floorKey, .openingKey { width: 12px; height: 12px; border-radius: 3px; background: #516974; }
 .openingKey { margin-left: 6px; background: #071015; border: 1px solid #7896a3; }
-.reference { left: 50%; bottom: 24px; transform: translateX(-50%); padding: 6px 10px; border-radius: 8px; color: var(--text-muted); font-size: 10px; }
-.status { left: 50%; top: 124px; transform: translateX(-50%); padding: 7px 11px; border-radius: 8px; color: var(--text-strong); font-size: 11px; }
-@media (max-width: 900px) { .context { top: 74px; max-width: calc(100% - 32px); } .mode, .legend { left: 16px; } }
+.reference { left: 50%; bottom: var(--editor-overlay-gap, 12px); transform: translateX(-50%); padding: 6px 10px; border-radius: var(--editor-overlay-radius, 8px); color: var(--text-muted); font-size: 10px; }
+.status { top: calc(var(--editor-overlay-gap, 12px) + var(--editor-overlay-control-height, 40px) + 8px); right: var(--editor-overlay-right-safe, var(--editor-overlay-gap, 12px)); max-width: min(360px, calc(100% - 24px)); padding: 7px 11px; border-radius: var(--editor-overlay-radius, 8px); color: var(--text-strong); font-size: 11px; }
+@media (max-width: 900px), (orientation: portrait) { .sceneMeta { right: calc(var(--editor-overlay-gap, 8px) + var(--floor-view-toggle-offset, 0px)); max-width: calc(100% - 16px - var(--floor-view-toggle-offset, 0px)); } .sceneMeta .mode, .sceneMeta .legend { display: none; } .status { top: calc(var(--editor-overlay-gap, 8px) + var(--editor-overlay-control-height, 40px) + 8px); right: var(--editor-overlay-gap, 8px); } .reference { bottom: var(--editor-overlay-mobile-bottom-safe, 74px); } }

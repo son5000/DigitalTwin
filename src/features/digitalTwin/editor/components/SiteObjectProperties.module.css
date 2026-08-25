@@ -5,7 +5,17 @@
 .section h3 { color: var(--color-heading); font-size: 13px; }
 .section label { display: grid; gap: 6px; color: var(--color-text-subtle); font-size: 12px; }
 .section label input, .section label select { min-height: 40px; padding: 0 10px; border: 1px solid var(--color-border); border-radius: var(--radius-small); color: var(--color-heading); background: var(--color-input); }
-.section label.color input { width: 52px; padding: 3px; }
+.color { position: relative; display: grid; gap: 6px; color: var(--color-text-subtle); font-size: 12px; }
+.colorTrigger { display: grid; min-height: 40px; grid-template-columns: 28px minmax(0, 1fr); padding: 5px 9px; align-items: center; gap: 8px; border: 1px solid var(--color-border); border-radius: var(--radius-small); color: var(--color-heading); text-align: left; background: var(--color-input); }
+.colorTrigger:hover, .colorTrigger[aria-expanded="true"] { border-color: var(--color-accent); background: var(--state-hover); }
+.colorTrigger i { width: 28px; height: 28px; border: 1px solid rgb(127 127 127 / 45%); border-radius: 6px; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 18%); }
+.colorTrigger code { font-size: 12px; font-variant-numeric: tabular-nums; }
+.colorPalette { position: absolute; top: calc(100% + 6px); right: 0; left: 0; z-index: 12; display: grid; gap: 10px; padding: 10px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-small); background: var(--color-surface-overlay); box-shadow: var(--shadow-panel); }
+.colorSwatches { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.colorSwatches button { aspect-ratio: 1; min-width: 26px; border: 2px solid transparent; border-radius: 6px; box-shadow: inset 0 0 0 1px rgb(127 127 127 / 42%); }
+.colorSwatches button:hover, .colorSwatches button[aria-pressed="true"] { border-color: var(--color-accent); }
+.colorHex { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px; }
+.colorHex input { min-width: 0; }
 .fields { display: grid; gap: 8px; }
 .section p { color: var(--color-text-faint); font-size: 11px; line-height: 1.5; }
 .deleteButton { display: inline-flex; min-height: 40px; margin: 16px; padding: 0 12px; align-items: center; justify-content: center; gap: 6px; border: 1px solid rgb(var(--color-danger-rgb) / 45%); border-radius: var(--radius-small); color: var(--color-danger); background: rgb(var(--color-danger-rgb) / 7%); }

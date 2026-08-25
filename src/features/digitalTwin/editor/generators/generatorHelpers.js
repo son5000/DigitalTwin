@@ -2,16 +2,10 @@ import * as THREE from "three";
 
 import { colorToCss } from "@/features/digitalTwin/editor/constants/sceneThemes";
 import { createTextSprite } from "@/features/digitalTwin/editor/objects/createTextSprite";
+import { createPresetMaterial } from "@/features/digitalTwin/editor/three/presetMaterial";
 
 export function createSurfaceMaterial(appearance) {
-  return new THREE.MeshStandardMaterial({
-    color: appearance.color,
-    transparent: appearance.opacity < 1,
-    opacity: appearance.opacity,
-    roughness: 0.48,
-    metalness: 0.16,
-    side: THREE.DoubleSide,
-  });
+  return createPresetMaterial(appearance);
 }
 
 export function addGeometry(group, geometry, options) {

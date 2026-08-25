@@ -105,8 +105,6 @@ export default function useFloorEquipmentState({ buildings, floors, currentBuild
       });
       return next;
     });
-    setSelectedFloorEquipmentId(createdIds[0] ?? null);
-    setActiveFloorEquipmentTemplateId(null);
     return createdIds;
   }, [allFloorEquipment, buildings, currentFloor, floors, gridSettings.baseSize]);
 

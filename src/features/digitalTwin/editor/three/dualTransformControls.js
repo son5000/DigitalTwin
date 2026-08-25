@@ -3,14 +3,15 @@ import { TransformControls } from "three/addons/controls/TransformControls.js";
 
 export const DEFAULT_TRANSFORM_TOOLS = Object.freeze({ translate: true, rotate: false });
 
-export function createDualTransformControls(camera, domElement, scene, { rotationSnap = 5 } = {}) {
+export function createDualTransformControls(camera, domElement, scene, { rotationSnap = 5, translationSnap = 0.1 } = {}) {
   const translate = new TransformControls(camera, domElement);
   const rotate = new TransformControls(camera, domElement);
   translate.setMode("translate");
   rotate.setMode("rotate");
   rotate.setSpace("world");
   rotate.setSize(0.82);
-  translate.setTranslationSnap(null);
+  translate.setSize(0.9);
+  translate.setTranslationSnap(translationSnap);
   rotate.setRotationSnap(THREE.MathUtils.degToRad(rotationSnap));
   scene.add(translate.getHelper(), rotate.getHelper());
   return { translate, rotate };

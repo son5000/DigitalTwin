@@ -47,7 +47,6 @@ export default function GridSettingsPanel({
             ))}
           </select>
         </label>
-        <p>X/Z 이동에만 적용됩니다. Y 높이는 계속 자유롭게 이동합니다.</p>
       </div>
 
       <details className={styles.regions}>

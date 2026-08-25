@@ -2,7 +2,7 @@ import {
   BUILDING_OBJECT_DEFINITIONS,
   getDefaultObjectVariants,
 } from "@/features/digitalTwin/editor/constants/objectLibraryCatalog";
-import { DEFAULT_BUILDING_SETTING_STATUS } from "@/features/digitalTwin/editor/constants/buildingDetail";
+import { DEFAULT_BUILDING_SETTING_STATUS, getOverallBuildingSettingStatus } from "@/features/digitalTwin/editor/constants/buildingDetail";
 
 export const HIERARCHY_NODE_TYPES = Object.freeze({
   SITE: "SITE",
@@ -77,7 +77,7 @@ export function normalizeHierarchy(hierarchy) {
           ...DEFAULT_BUILDING_DEFINITION,
           ...node,
           parameters: { ...DEFAULT_BUILDING_DEFINITION.parameters, ...node.parameters },
-          settingStatus: { ...DEFAULT_BUILDING_SETTING_STATUS, ...node.settingStatus },
+          settingStatus: getOverallBuildingSettingStatus(node),
           variants: { ...DEFAULT_BUILDING_DEFINITION.variants, ...node.variants },
           position: { ...DEFAULT_BUILDING_DEFINITION.position, ...node.position },
           rotation: { ...DEFAULT_BUILDING_DEFINITION.rotation, ...node.rotation },

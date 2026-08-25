@@ -1,6 +1,7 @@
 import * as THREE from "three";
 
 import { WORLD_STRUCTURE_TEMPLATE_MAP } from "@/features/digitalTwin/editor/constants/worldStructureTemplates";
+import { createPresetMaterial } from "@/features/digitalTwin/editor/three/presetMaterial";
 
 export function getWorldStructureDimensions(structure) {
   const parameter = structure.parameters;
@@ -54,23 +55,8 @@ export function getWorldStructureDimensions(structure) {
   return { width: parameter.width, height: parameter.height, depth: parameter.depth };
 }
 
-function createMaterial(appearance) {
-  const isGlass = appearance.materialPreset === "GLASS";
-  const isMesh = appearance.materialPreset === "MESH" || appearance.materialPreset === "GRATING";
-  return new THREE.MeshStandardMaterial({
-    color: appearance.color,
-    transparent: appearance.opacity < 1 || isGlass,
-    opacity: isGlass ? Math.min(appearance.opacity, 0.3) : appearance.opacity,
-    roughness: isGlass ? 0.16 : 0.82,
-    metalness: appearance.materialPreset?.includes("STEEL") ? 0.32 : 0.04,
-    wireframe: isMesh,
-    side: THREE.DoubleSide,
-    depthWrite: !isGlass,
-  });
-}
-
 function addSolid(group, geometry, appearance, edgeColor, position = [0, 0, 0], rotation = [0, 0, 0]) {
-  const mesh = new THREE.Mesh(geometry, createMaterial(appearance));
+  const mesh = new THREE.Mesh(geometry, createPresetMaterial(appearance));
   mesh.position.set(...position);
   mesh.rotation.set(...rotation);
   group.add(mesh);
