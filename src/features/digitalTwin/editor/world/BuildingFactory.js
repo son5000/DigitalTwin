@@ -1,5 +1,7 @@
 import * as THREE from "three";
 
+import { createCustomBuildingGroup } from "@/features/customAssets/building/buildingRenderer";
+import { getRuntimeCustomAsset } from "@/features/customAssets/core/customAssetRegistry";
 import { createPresetMaterial } from "@/features/digitalTwin/editor/three/presetMaterial";
 
 function createEdgeOverlay(geometry, color) {
@@ -146,6 +148,12 @@ export function getBuildingSignature(building, floorCount, selected, expanded, t
   return JSON.stringify({
     templateId: building.templateId,
     objectDefinitionId: building.objectDefinitionId,
+    customAssetId: building.customAssetId,
+    customAssetRevision: building.customAssetRevision,
+    customAssetSnapshotUpdatedAt: building.customAssetSnapshot?.updatedAt,
+    customAssetViewGroupId: building.customAssetViewGroupId,
+    customAssetViewMode: building.customAssetViewMode,
+    customAssetExploded: building.customAssetExploded,
     parameters: building.parameters,
     variants: building.variants,
     appearance: building.appearance,
@@ -202,6 +210,38 @@ export function createBuildingObject(building, floors, visualState) {
   const depth = building.parameters.depth;
   const floorHeight = building.parameters.floorHeight;
   const totalHeight = floorCount * floorHeight;
+  const customAsset = building.customAssetId
+    ? building.customAssetAutoUpdate === false
+      ? building.customAssetSnapshot
+      : getRuntimeCustomAsset(building.customAssetId) ?? building.customAssetSnapshot
+    : null;
+  if (customAsset) {
+    const customGroup = createCustomBuildingGroup(customAsset, {
+      buildingId: building.id,
+      selected: visualState.selected,
+      selectionColor: visualState.selectionColor,
+      translucent: visualState.viewerTranslucent || visualState.expanded,
+      viewGroupId: building.customAssetViewGroupId,
+      viewMode: building.customAssetViewMode ?? "ALL",
+      explode: building.customAssetExploded ?? false,
+      scale: {
+        x: width / Math.max(0.01, customAsset.bounds.width),
+        y: 1,
+        z: depth / Math.max(0.01, customAsset.bounds.depth),
+      },
+    });
+    customGroup.name = building.name;
+    customGroup.userData.buildingId = building.id;
+    customGroup.userData.geometrySignature = getBuildingSignature(
+      building,
+      floorCount,
+      visualState.selected,
+      visualState.expanded,
+      visualState.theme,
+      visualState.viewerTranslucent,
+    );
+    return customGroup;
+  }
   const group = new THREE.Group();
   group.name = building.name;
   group.userData.buildingId = building.id;

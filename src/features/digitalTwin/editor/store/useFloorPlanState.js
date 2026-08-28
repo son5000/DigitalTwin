@@ -5,6 +5,7 @@ import {
   WORLD_STRUCTURE_TEMPLATE_MAP,
 } from "@/features/digitalTwin/editor/constants/worldStructureTemplates";
 import { normalizeFloorSurfaceStyle } from "@/features/digitalTwin/editor/constants/floorSurfaceStyles";
+import { resolveObjectModelId } from "@/features/digitalTwin/editor/constants/objectModelRegistry";
 import { clampDimension } from "@/features/digitalTwin/editor/utils/editorMath";
 import { getBuildingFootprint } from "@/features/digitalTwin/editor/utils/buildingFootprint";
 import {
@@ -14,13 +15,39 @@ import {
   validateStairStructure,
 } from "@/features/digitalTwin/editor/utils/stairStructure";
 import { getWorldStructureDimensions } from "@/features/digitalTwin/editor/world/WorldStructureFactory";
+import {
+  addDoorToWall,
+  addElevationZone,
+  addFootprintHole,
+  addFootprintRegion,
+  addFootprintVertex,
+  addRectangularRoom,
+  cloneFloorSpatialPlanForFloor,
+  mergeFootprintRegions,
+  normalizeFloorSpatialPlan,
+  removeDoor,
+  removeFootprintVertex,
+  restoreInheritedFloorFootprint,
+  splitElevationZone,
+  subtractFootprintRegion,
+  updateDoor,
+  updateElevationZone,
+  updateFootprintVertex,
+  updateRoom,
+  updateSharedWall,
+  validateFloorSpatialPlan,
+} from "@/features/digitalTwin/editor/model/floorSpatialModel";
 
 function createId() {
   return `FLOOR_PLAN_STRUCTURE_${crypto.randomUUID()}`;
 }
 
+function buildingForFloor(building, floor) {
+  return building ? { ...building, __floorLevel: floor?.level ?? 1 } : building;
+}
+
 function normalizeStructure(structure) {
-  const definition = WORLD_STRUCTURE_TEMPLATE_MAP[structure.type];
+  const definition = WORLD_STRUCTURE_TEMPLATE_MAP[resolveObjectModelId(structure.type)] ?? WORLD_STRUCTURE_TEMPLATE_MAP[structure.type];
   if (!definition) return null;
   const normalized = {
     ...structure,
@@ -32,13 +59,17 @@ function normalizeStructure(structure) {
     usage: structure.usage ?? (definition.id === "ROOM" ? "일반 공간" : ""),
     variant: structure.variant ?? definition.variants?.[0] ?? null,
     parameters: { ...definition.defaultParameters, ...structure.parameters },
-    position: { x: 0, y: 0, z: 0, ...structure.position },
+    position: { x: 0, y: definition.defaultPositionY ?? 0, z: 0, ...structure.position },
     rotation: { x: 0, y: 0, z: 0, ...structure.rotation },
     appearance: { ...definition.defaultAppearance, ...structure.appearance },
+    appearanceSlots: Object.fromEntries((definition.materialSlots ?? []).map((slot) => [
+      slot.id,
+      { ...slot.defaultAppearance, ...structure.appearanceSlots?.[slot.id] },
+    ])),
     spaceId: structure.spaceId ?? structure.floorId ?? structure.buildingId ?? "",
     visible: structure.visible ?? true,
     locked: structure.locked ?? false,
-    groundSnap: true,
+    groundSnap: structure.groundSnap ?? definition.defaultGroundSnap ?? true,
   };
   if (definition.id !== "STAIR") return normalized;
   const stairValues = getStairValues(normalized);
@@ -89,6 +120,12 @@ function mergeStructure(structure, changes) {
     position: changes.position ? { ...structure.position, ...changes.position } : structure.position,
     rotation: changes.rotation ? { ...structure.rotation, ...changes.rotation } : structure.rotation,
     appearance: changes.appearance ? { ...structure.appearance, ...changes.appearance } : structure.appearance,
+    appearanceSlots: changes.appearanceSlots
+      ? Object.fromEntries([...new Set([...Object.keys(structure.appearanceSlots ?? {}), ...Object.keys(changes.appearanceSlots)])].map((slotId) => [
+          slotId,
+          { ...structure.appearanceSlots?.[slotId], ...changes.appearanceSlots[slotId] },
+        ]))
+      : structure.appearanceSlots,
     applicationScope: changes.applicationScope
       ? { ...structure.applicationScope, ...changes.applicationScope }
       : structure.applicationScope,
@@ -157,6 +194,7 @@ export default function useFloorPlanState({ buildings, floors, currentBuilding, 
   const [activeFloorPlanTemplateId, setActiveFloorPlanTemplateId] = useState(null);
   const [visibilityFilters, setVisibilityFilters] = useState(DEFAULT_VISIBILITY_FILTERS);
   const [floorPlanValidationMessage, setFloorPlanValidationMessage] = useState("");
+  const [selectedSpatialEntity, setSelectedSpatialEntity] = useState(null);
 
   const activeBuildingId = currentFloor?.parentId ?? currentBuilding?.id ?? null;
   const buildingFloors = useMemo(
@@ -167,6 +205,12 @@ export default function useFloorPlanState({ buildings, floors, currentBuilding, 
   const floorStructures = useMemo(
     () => floorPlansById[currentFloor?.id]?.structures ?? [],
     [currentFloor?.id, floorPlansById],
+  );
+  const activeFloorSpatialPlan = useMemo(
+    () => currentFloor
+      ? normalizeFloorSpatialPlan(floorPlansById[currentFloor.id] ?? { floorId: currentFloor.id, structures: [] }, buildingForFloor(currentBuilding, currentFloor))
+      : null,
+    [currentBuilding, currentFloor, floorPlansById],
   );
   const synchronizedVerticalStructuresByBuildingId = useMemo(() => Object.fromEntries(
     Object.entries(verticalStructuresByBuildingId).map(([buildingId, structures]) => {
@@ -202,7 +246,79 @@ export default function useFloorPlanState({ buildings, floors, currentBuilding, 
     setActiveFloorPlanTemplateId((currentId) => currentId === templateId ? null : templateId);
     setSelectedFloorPlanStructureId(null);
     setFloorPlanValidationMessage("");
+    setSelectedSpatialEntity(null);
   }, []);
+
+  const commitSpatialPlan = useCallback((mutator) => {
+    if (!currentFloor || !currentBuilding) return false;
+    const current = normalizeFloorSpatialPlan(
+      floorPlansById[currentFloor.id] ?? { floorId: currentFloor.id, structures: [] },
+      buildingForFloor(currentBuilding, currentFloor),
+    );
+    const next = mutator(current);
+    const nextSelection = next.selectedSpatialEntity;
+    const storedNext = { ...next };
+    delete storedNext.selectedSpatialEntity;
+    const issues = validateFloorSpatialPlan(
+      storedNext,
+      storedNext.structures ?? [],
+      [],
+    );
+    const error = issues.find((issue) => issue.severity === "error");
+    if (error) {
+      setFloorPlanValidationMessage(error.message);
+      return false;
+    }
+    setFloorPlansById((plans) => ({ ...plans, [currentFloor.id]: storedNext }));
+    if (nextSelection !== undefined) setSelectedSpatialEntity(nextSelection);
+    const warning = issues.find((issue) => issue.severity === "warning");
+    setFloorPlanValidationMessage(warning?.message ?? "");
+    return true;
+  }, [currentBuilding, currentFloor, floorPlansById]);
+
+  const setFloorFootprintMode = useCallback((mode) => commitSpatialPlan((plan) => (
+    mode === "INHERIT_BUILDING"
+      ? { ...plan, floorFootprint: restoreInheritedFloorFootprint(buildingForFloor(currentBuilding, currentFloor), plan.floorFootprint) }
+      : { ...plan, floorFootprint: { ...plan.floorFootprint, mode: "CUSTOM", revision: plan.floorFootprint.revision + 1 } }
+  )), [commitSpatialPlan, currentBuilding, currentFloor]);
+
+  const updateFloorFootprintVertex = useCallback((regionId, ringType, ringIndex, vertexIndex, nextPoint) => (
+    commitSpatialPlan((plan) => ({ ...plan, floorFootprint: updateFootprintVertex(plan.floorFootprint, regionId, ringType, ringIndex, vertexIndex, nextPoint) }))
+  ), [commitSpatialPlan]);
+  const appendFloorFootprintVertex = useCallback((regionId) => commitSpatialPlan((plan) => ({ ...plan, floorFootprint: addFootprintVertex(plan.floorFootprint, regionId) })), [commitSpatialPlan]);
+  const deleteFloorFootprintVertex = useCallback((regionId, vertexIndex) => commitSpatialPlan((plan) => ({ ...plan, floorFootprint: removeFootprintVertex(plan.floorFootprint, regionId, vertexIndex) })), [commitSpatialPlan]);
+  const appendFloorFootprintRegion = useCallback(() => commitSpatialPlan((plan) => ({ ...plan, floorFootprint: addFootprintRegion(plan.floorFootprint) })), [commitSpatialPlan]);
+  const appendFloorFootprintHole = useCallback((regionId) => commitSpatialPlan((plan) => ({ ...plan, floorFootprint: addFootprintHole(plan.floorFootprint, regionId) })), [commitSpatialPlan]);
+  const combineFloorFootprintRegions = useCallback((regionIds) => commitSpatialPlan((plan) => ({ ...plan, floorFootprint: mergeFootprintRegions(plan.floorFootprint, regionIds) })), [commitSpatialPlan]);
+  const subtractFloorFootprintRegions = useCallback((targetRegionId, subtractingRegionId) => commitSpatialPlan((plan) => ({ ...plan, floorFootprint: subtractFootprintRegion(plan.floorFootprint, targetRegionId, subtractingRegionId) })), [commitSpatialPlan]);
+
+  const createElevationZone = useCallback((options) => commitSpatialPlan((plan) => addElevationZone(plan, options)), [commitSpatialPlan]);
+  const changeElevationZone = useCallback((zoneId, changes) => commitSpatialPlan((plan) => updateElevationZone(plan, zoneId, changes)), [commitSpatialPlan]);
+  const divideElevationZone = useCallback((zoneId, axis) => commitSpatialPlan((plan) => splitElevationZone(plan, zoneId, axis)), [commitSpatialPlan]);
+  const createRoom = useCallback((options) => commitSpatialPlan((plan) => addRectangularRoom(plan, options)), [commitSpatialPlan]);
+  const changeRoom = useCallback((roomId, changes) => commitSpatialPlan((plan) => updateRoom(plan, roomId, changes)), [commitSpatialPlan]);
+  const changeSharedWall = useCallback((wallId, changes) => commitSpatialPlan((plan) => updateSharedWall(plan, wallId, changes)), [commitSpatialPlan]);
+  const createDoor = useCallback((wallId, options) => {
+    let doorError = "";
+    const applied = commitSpatialPlan((plan) => {
+      const result = addDoorToWall(plan, wallId, options);
+      doorError = result.error;
+      return result.plan;
+    });
+    if (doorError) setFloorPlanValidationMessage(doorError);
+    return applied && !doorError;
+  }, [commitSpatialPlan]);
+  const changeDoor = useCallback((doorId, changes) => {
+    let doorError = "";
+    const applied = commitSpatialPlan((plan) => {
+      const result = updateDoor(plan, doorId, changes);
+      doorError = result.error;
+      return result.plan;
+    });
+    if (doorError) setFloorPlanValidationMessage(doorError);
+    return applied && !doorError;
+  }, [commitSpatialPlan]);
+  const deleteDoor = useCallback((doorId) => commitSpatialPlan((plan) => removeDoor(plan, doorId)), [commitSpatialPlan]);
 
   const addFloorPlanStructure = useCallback((templateId, position, context = {}) => {
     const definition = WORLD_STRUCTURE_TEMPLATE_MAP[templateId];
@@ -211,6 +327,10 @@ export default function useFloorPlanState({ buildings, floors, currentBuilding, 
       ?? buildings.find((building) => building.id === targetFloor?.parentId)
       ?? currentBuilding;
     if (!definition || !targetFloor || !targetBuilding || templateId === "FLOOR_REGION") return null;
+    if (templateId === "DOOR") {
+      setFloorPlanValidationMessage("문은 독립 배치할 수 없습니다. 방·벽 편집에서 호스트 벽을 선택하세요.");
+      return null;
+    }
     const targetBuildingFloors = floors.filter((floor) => floor.parentId === targetBuilding.id)
       .sort((left, right) => (left.level ?? 0) - (right.level ?? 0));
     const sequence = activeStructures.filter((structure) => structure.type === templateId).length + 1;
@@ -381,34 +501,32 @@ export default function useFloorPlanState({ buildings, floors, currentBuilding, 
   const copyFloorPlanFromFloor = useCallback((sourceFloorId) => {
     if (!currentFloor || !sourceFloorId || sourceFloorId === currentFloor.id) return false;
     if (!buildingFloors.some((floor) => floor.id === sourceFloorId)) return false;
-    const source = floorPlansById[sourceFloorId]?.structures ?? [];
+    const sourcePlan = floorPlansById[sourceFloorId] ?? { floorId: sourceFloorId, structures: [] };
     setFloorPlansById((plans) => ({
       ...plans,
       [currentFloor.id]: {
-        ...plans[currentFloor.id],
-        floorId: currentFloor.id,
-        structures: source.map((structure) => normalizeStructure({ ...structure, id: createId(), floorId: currentFloor.id, name: structure.name })),
+        ...cloneFloorSpatialPlanForFloor(sourcePlan, buildingForFloor(currentBuilding, currentFloor), currentFloor.id),
+        structures: (sourcePlan.structures ?? []).map((structure) => normalizeStructure({ ...structure, id: createId(), floorId: currentFloor.id, name: structure.name })),
       },
     }));
     setSelectedFloorPlanStructureId(null);
     return true;
-  }, [buildingFloors, currentFloor, floorPlansById]);
+  }, [buildingFloors, currentBuilding, currentFloor, floorPlansById]);
 
   const applyFloorPlanToFloors = useCallback((targetFloorIds) => {
     if (!currentFloor || !targetFloorIds?.length) return;
-    const source = floorPlansById[currentFloor.id]?.structures ?? [];
+    const sourcePlan = floorPlansById[currentFloor.id] ?? { floorId: currentFloor.id, structures: [] };
     setFloorPlansById((plans) => {
       const next = { ...plans };
       targetFloorIds.filter((floorId) => floorId !== currentFloor.id).forEach((floorId) => {
         next[floorId] = {
-          ...plans[floorId],
-          floorId,
-          structures: source.map((structure) => normalizeStructure({ ...structure, id: createId(), floorId })),
+          ...cloneFloorSpatialPlanForFloor(sourcePlan, buildingForFloor(currentBuilding, floors.find((floor) => floor.id === floorId)), floorId),
+          structures: (sourcePlan.structures ?? []).map((structure) => normalizeStructure({ ...structure, id: createId(), floorId })),
         };
       });
       return next;
     });
-  }, [currentFloor, floorPlansById]);
+  }, [currentBuilding, currentFloor, floorPlansById, floors]);
 
   const applyFloorStyleToFloors = useCallback((targetFloorIds, floorStyle) => {
     const validFloorIds = new Set(buildingFloors.map((floor) => floor.id));
@@ -434,6 +552,36 @@ export default function useFloorPlanState({ buildings, floors, currentBuilding, 
     setVisibilityFilters((filters) => ({ ...filters, [filterId]: !filters[filterId] }));
   }, []);
 
+  const hydrateFloorPlanState = useCallback((snapshot = {}) => {
+    setFloorPlansById(Object.fromEntries(Object.entries(snapshot.floorPlansById ?? {}).map(([floorId, plan]) => [
+      floorId,
+      normalizeFloorSpatialPlan(
+        { ...plan, floorId, structures: (plan.structures ?? []).map(normalizeStructure).filter(Boolean) },
+        buildingForFloor(
+          buildings.find((building) => building.id === floors.find((floor) => floor.id === floorId)?.parentId),
+          floors.find((floor) => floor.id === floorId),
+        ),
+      ),
+    ])));
+    setVerticalStructuresByBuildingId(Object.fromEntries(Object.entries(snapshot.verticalStructuresByBuildingId ?? {}).map(([buildingId, structures]) => [
+      buildingId,
+      (structures ?? []).map(normalizeStructure).filter(Boolean),
+    ])));
+    setSelectedFloorPlanStructureId(null);
+    setActiveFloorPlanTemplateId(null);
+    setFloorPlanValidationMessage("");
+    setSelectedSpatialEntity(null);
+  }, [buildings, floors]);
+
+  const resetFloorPlanState = useCallback(() => {
+    setFloorPlansById({});
+    setVerticalStructuresByBuildingId({});
+    setSelectedFloorPlanStructureId(null);
+    setActiveFloorPlanTemplateId(null);
+    setFloorPlanValidationMessage("");
+    setSelectedSpatialEntity(null);
+  }, []);
+
   const floorPlanSummaryByBuildingId = useMemo(() => Object.fromEntries(buildings.map((building) => {
     const buildingFloorIds = floors.filter((floor) => floor.parentId === building.id).map((floor) => floor.id);
     return [building.id, {
@@ -456,6 +604,8 @@ export default function useFloorPlanState({ buildings, floors, currentBuilding, 
     floorPlanValidationMessage,
     visibilityFilters,
     floorPlanSummaryByBuildingId,
+    activeFloorSpatialPlan,
+    selectedSpatialEntity,
     actions: {
       selectFloorPlanTemplate,
       addFloorPlanStructure,
@@ -467,6 +617,26 @@ export default function useFloorPlanState({ buildings, floors, currentBuilding, 
       applyFloorPlanToFloors,
       applyFloorStyleToFloors,
       toggleFloorPlanVisibilityFilter: toggleVisibilityFilter,
+      selectSpatialEntity: setSelectedSpatialEntity,
+      setFloorFootprintMode,
+      updateFloorFootprintVertex,
+      appendFloorFootprintVertex,
+      deleteFloorFootprintVertex,
+      appendFloorFootprintRegion,
+      appendFloorFootprintHole,
+      combineFloorFootprintRegions,
+      subtractFloorFootprintRegions,
+      createElevationZone,
+      changeElevationZone,
+      divideElevationZone,
+      createRoom,
+      changeRoom,
+      changeSharedWall,
+      createDoor,
+      changeDoor,
+      deleteDoor,
+      hydrateFloorPlanState,
+      resetFloorPlanState,
     },
   };
 }

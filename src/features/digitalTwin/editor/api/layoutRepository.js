@@ -1,3 +1,5 @@
+import { serializeTerrain } from "@/features/digitalTwin/editor/terrain/TerrainPersistence";
+
 const STORAGE_KEY = "digital-twin-editor-layout";
 
 export function saveLayout(layout) {
@@ -19,7 +21,7 @@ export function saveLayout(layout) {
   delete gridSettings.siteSize;
   delete gridSettings.worldGridSize;
   const payload = {
-    version: 11,
+    version: 15,
     savedAt: new Date().toISOString(),
     hierarchy: layout.hierarchy,
     siteEnvironment: {
@@ -27,11 +29,33 @@ export function saveLayout(layout) {
       depth: layout.siteEnvironment.depth,
       groundMaterial: layout.siteEnvironment.groundMaterial,
       backgroundTheme: layout.siteEnvironment.backgroundTheme,
+      terrain: serializeTerrain(
+        layout.siteEnvironment.terrain,
+        layout.siteEnvironment.width,
+        layout.siteEnvironment.depth,
+        layout.siteEnvironment.groundMaterial,
+      ),
     },
     sitePaths: layout.sitePaths ?? [],
     siteObjects: layout.siteObjects ?? [],
     gridSettings,
     roomScenes,
+    floorPlansById: Object.fromEntries(Object.entries(layout.floorPlansById ?? {}).map(([floorId, plan]) => {
+      const floorPlan = { ...plan };
+      delete floorPlan.selectedSpatialEntity;
+      return [floorId, floorPlan];
+    })),
+    verticalStructuresByBuildingId: layout.verticalStructuresByBuildingId ?? {},
+    equipmentByFloorId: layout.equipmentByFloorId ?? {},
+    equipmentAssetBindings: (layout.equipmentAssetBindings ?? []).map((binding) => {
+      const sanitized = { ...binding };
+      delete sanitized.objectUrl;
+      if (sanitized.sourceType === "UPLOAD") sanitized.status = "MISSING_LOCAL_FILE";
+      return sanitized;
+    }),
+    sensorBindings: layout.sensorBindings ?? [],
+    observationPoints: layout.observationPoints ?? [],
+    serverBindings: layout.serverBindings ?? [],
   };
 
   localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));

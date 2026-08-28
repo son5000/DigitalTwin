@@ -11,6 +11,7 @@ import {
   WorldStructureTypeIcon,
 } from "@/components/icons";
 import { ObjectLibrarySearch } from "@/features/digitalTwin/editor/components/ObjectLibrary";
+import ObjectModelThumbnail from "@/features/digitalTwin/editor/components/ObjectModelThumbnail";
 import {
   EQUIPMENT_CATEGORIES,
   EQUIPMENT_SHAPE_TEMPLATE_MAP,
@@ -35,6 +36,16 @@ function matchesQuery(definition, normalizedQuery) {
     .includes(normalizedQuery);
 }
 
+function formatDimensions(definition) {
+  const dimensions = definition.defaultDimensions ?? definition.defaultParameters;
+  const width = dimensions.width ?? dimensions.length;
+  const depth = dimensions.depth ?? dimensions.width;
+  const height = dimensions.height;
+  return [width, depth, height].every(Number.isFinite)
+    ? `${width} × ${depth} × ${height} m`
+    : definition.placement;
+}
+
 function CatalogItem({ definition, domain, active, favorite = false, onSelect, onToggleFavorite }) {
   const isEquipment = domain === CATALOG_MODES.EQUIPMENT;
   return (
@@ -43,15 +54,13 @@ function CatalogItem({ definition, domain, active, favorite = false, onSelect, o
         type="button"
         className={`${objectStyles.item} ${active ? objectStyles.itemActive : ""}`}
         aria-pressed={active}
-        title={`${definition.nameKo} (${definition.name}) 배치`}
+        title={`${definition.nameKo} · ${definition.description ?? definition.name} · 배치`}
         onClick={() => onSelect(definition.id)}
       >
         <span className={objectStyles.preview} aria-hidden="true">
-          {isEquipment
-            ? <EquipmentTemplateIcon template={definition} size={22} />
-            : <WorldStructureTypeIcon definition={definition} size={22} />}
+          <ObjectModelThumbnail familyId={definition.objectType} title={definition.nameKo} />
         </span>
-        <span className={objectStyles.itemText}><strong>{definition.nameKo}</strong></span>
+        <span className={objectStyles.itemText}><strong>{definition.nameKo}</strong><small>{formatDimensions(definition)}</small></span>
         <span className={objectStyles.itemAction} aria-hidden="true">{active ? <CloseIcon size={15} /> : <AddIcon size={15} />}</span>
       </button>
       {isEquipment ? (
@@ -72,6 +81,11 @@ function CatalogItem({ definition, domain, active, favorite = false, onSelect, o
 
 function CatalogCategory({ category, definitions, domain, activeTemplateId, favoriteTemplateIds, open, onToggle, onSelect, onToggleFavorite }) {
   const representative = definitions[0];
+  const families = [...new Map(definitions.map((definition) => [definition.objectType, {
+    id: definition.objectType,
+    label: definition.objectTypeLabel,
+    definitions: definitions.filter((item) => item.objectType === definition.objectType),
+  }])).values()];
   return (
     <section className={`${objectStyles.category} ${open ? objectStyles.categoryOpen : ""}`}>
       <button type="button" className={objectStyles.categoryTrigger} aria-expanded={open} onClick={onToggle}>
@@ -86,21 +100,24 @@ function CatalogCategory({ category, definitions, domain, activeTemplateId, favo
       </button>
       <div className={objectStyles.categoryBody} aria-hidden={!open} inert={!open}>
         <div className={objectStyles.categoryBodyInner}>
-          <section className={objectStyles.subcategory}>
-            <div className={objectStyles.itemList}>
-              {definitions.map((definition) => (
-                <CatalogItem
-                  key={definition.id}
-                  definition={definition}
-                  domain={domain}
-                  active={definition.id === activeTemplateId}
-                  favorite={favoriteTemplateIds.includes(definition.id)}
-                  onSelect={onSelect}
-                  onToggleFavorite={onToggleFavorite}
-                />
-              ))}
-            </div>
-          </section>
+          {families.map((family) => (
+            <section key={family.id} className={objectStyles.subcategory}>
+              <header><span>{family.label}</span><small>{family.definitions.length}</small></header>
+              <div className={objectStyles.itemList}>
+                {family.definitions.map((definition) => (
+                  <CatalogItem
+                    key={definition.id}
+                    definition={definition}
+                    domain={domain}
+                    active={definition.id === activeTemplateId}
+                    favorite={favoriteTemplateIds.includes(definition.id)}
+                    onSelect={onSelect}
+                    onToggleFavorite={onToggleFavorite}
+                  />
+                ))}
+              </div>
+            </section>
+          ))}
         </div>
       </div>
     </section>
@@ -125,11 +142,12 @@ export default function FloorWorkspaceCatalog({
 }) {
   const [query, setQuery] = useState("");
   const [openCategoryIds, setOpenCategoryIds] = useState(["PLAN:SPACE", "EQUIPMENT:CABINET"]);
+  const [recentTemplateIds, setRecentTemplateIds] = useState([]);
   const normalizedQuery = query.trim().toLocaleLowerCase("ko-KR");
   const isEquipment = mode === CATALOG_MODES.EQUIPMENT;
   const templates = useMemo(() => (
     isEquipment
-      ? EQUIPMENT_SHAPE_TEMPLATES
+      ? EQUIPMENT_SHAPE_TEMPLATES.filter((template) => !template.legacyOnly)
       : WORLD_STRUCTURE_TEMPLATES.filter((template) => allowedStructureTemplateIds.includes(template.id))
   ).filter((template) => matchesQuery(template, normalizedQuery)), [allowedStructureTemplateIds, isEquipment, normalizedQuery]);
   const categories = useMemo(() => (isEquipment
@@ -140,6 +158,15 @@ export default function FloorWorkspaceCatalog({
     definitions: templates.filter((template) => (isEquipment ? template.category : template.group) === category.id),
   })).filter((category) => category.definitions.length), [isEquipment, templates]);
   const activeTemplateId = isEquipment ? activeEquipmentTemplateId : activeStructureTemplateId;
+  const recentTemplates = recentTemplateIds.map((id) => (
+    isEquipment ? EQUIPMENT_SHAPE_TEMPLATE_MAP[id] : WORLD_STRUCTURE_TEMPLATE_MAP[id]
+  )).filter((template) => template && templates.some((item) => item.id === template.id)).slice(0, 5);
+
+  function selectTemplate(templateId) {
+    setRecentTemplateIds((ids) => [templateId, ...ids.filter((id) => id !== templateId)].slice(0, 8));
+    if (isEquipment) onSelectEquipmentTemplate(templateId);
+    else onSelectStructureTemplate(templateId);
+  }
 
   function toggleCategory(categoryId) {
     const scopedId = `${mode}:${categoryId}`;
@@ -198,6 +225,18 @@ export default function FloorWorkspaceCatalog({
         </div>
       ) : null}
 
+      {recentTemplates.length ? (
+        <section className={styles.recent} aria-label="최근 사용 오브젝트">
+          <header><strong>최근 사용</strong></header>
+          <div>{recentTemplates.map((template) => (
+            <button key={template.id} type="button" title={`${template.nameKo} 다시 배치`} onClick={() => selectTemplate(template.id)}>
+              <ObjectModelThumbnail familyId={template.objectType} title={template.nameKo} />
+              <span>{template.nameKo}</span>
+            </button>
+          ))}</div>
+        </section>
+      ) : null}
+
       <div className={objectStyles.categories}>
         {categories.map((category) => {
           const scopedId = `${mode}:${category.id}`;
@@ -211,7 +250,7 @@ export default function FloorWorkspaceCatalog({
               favoriteTemplateIds={favoriteTemplateIds}
               open={Boolean(normalizedQuery) || openCategoryIds.includes(scopedId)}
               onToggle={() => toggleCategory(category.id)}
-              onSelect={isEquipment ? onSelectEquipmentTemplate : onSelectStructureTemplate}
+              onSelect={selectTemplate}
               onToggleFavorite={onToggleFavorite}
             />
           );

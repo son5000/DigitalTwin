@@ -4,6 +4,8 @@ import SiteObjectProperties from "./SiteObjectProperties";
 export default function ObjectDetailPanel({
   building,
   siteObject,
+  siteEnvironment,
+  siteObjects,
   floorCount,
   floorPlanSummary,
   onBuildingChange,
@@ -23,7 +25,7 @@ export default function ObjectDetailPanel({
     );
   }
   if (siteObject) {
-    return <SiteObjectProperties object={siteObject} onChange={onSiteObjectChange} onDelete={onDeleteSiteObject} />;
+    return <SiteObjectProperties object={siteObject} siteEnvironment={siteEnvironment} siteObjects={siteObjects} onChange={onSiteObjectChange} onDelete={onDeleteSiteObject} />;
   }
   return null;
 }

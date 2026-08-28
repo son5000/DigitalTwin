@@ -44,6 +44,7 @@ const PANEL_TOOL_CONFIG = {
       { id: WORLD_PANEL_IDS.OBJECT_LIST, label: "오브젝트 목록", icon: ListViewIcon },
     ],
     trailing: [
+      { id: WORLD_PANEL_IDS.TERRAIN, label: "지형 고도", icon: AreaSelectIcon },
       { id: WORLD_PANEL_IDS.SETTINGS, label: "부지 설정", icon: EditIcon },
       { id: WORLD_PANEL_IDS.DETAILS, label: "오브젝트 설정", icon: SelectIcon, requiresSelection: true },
     ],
@@ -62,6 +63,16 @@ const PANEL_TOOL_CONFIG = {
       { id: WORLD_PANEL_IDS.OBJECT_LIST, label: "오브젝트 목록", icon: ListViewIcon },
     ],
     trailing: [{ id: WORLD_PANEL_IDS.DETAILS, label: "선택 항목 설정", icon: SelectIcon, requiresSelection: true }],
+  },
+  CUSTOM_BUILDING: {
+    leading: [
+      { id: WORLD_PANEL_IDS.OBJECTS, label: "형상 도구", icon: GridViewIcon },
+      { id: WORLD_PANEL_IDS.OBJECT_LIST, label: "물리 요소", icon: ListViewIcon },
+    ],
+    trailing: [
+      { id: WORLD_PANEL_IDS.SETTINGS, label: "건축물 설정", icon: EditIcon },
+      { id: WORLD_PANEL_IDS.DETAILS, label: "선택 요소 설정", icon: SelectIcon, requiresSelection: true },
+    ],
   },
 };
 
@@ -176,6 +187,7 @@ export default function EditorToolbar({
   snapSize,
   gridSnapEnabled,
   hasSelection,
+  hasTransformSelection = hasSelection,
   worldLocked,
   saveStatus,
   canUndo,
@@ -222,8 +234,8 @@ export default function EditorToolbar({
         {panelTools.leading.map(renderPanelTool)}
         {panelTools.leading.length ? <Divider /> : null}
         <div className={styles.group} aria-label="이동과 회전">
-          <ToolbarButton icon={<MoveIcon />} label="이동" shortcut="W" active={transformTools.translate} pressed={transformTools.translate} disabled={!hasSelection} onClick={() => onTransformToolToggle("translate")} />
-          <ToolbarButton icon={<RotateIcon />} label="로테이트" shortcut="E" active={transformTools.rotate} pressed={transformTools.rotate} disabled={!hasSelection} onClick={() => onTransformToolToggle("rotate")} />
+          <ToolbarButton icon={<MoveIcon />} label="이동" shortcut="W" active={transformTools.translate} pressed={transformTools.translate} disabled={!hasTransformSelection} onClick={() => onTransformToolToggle("translate")} />
+          <ToolbarButton icon={<RotateIcon />} label="로테이트" shortcut="E" active={transformTools.rotate} pressed={transformTools.rotate} disabled={!hasTransformSelection} onClick={() => onTransformToolToggle("rotate")} />
         </div>
         {showSiteInteractionTools ? (
           <div className={styles.group} aria-label="월드 조작 방식">
@@ -295,8 +307,8 @@ export default function EditorToolbar({
         <>
           <Divider />
           <div className={styles.group} aria-label="이동과 회전">
-            <ToolbarButton icon={<MoveIcon />} label="이동" shortcut="W" active={transformTools.translate} pressed={transformTools.translate} disabled={!hasSelection} onClick={() => onTransformToolToggle("translate")} />
-            <ToolbarButton icon={<RotateIcon />} label="Y축 회전" shortcut="E" active={transformTools.rotate} pressed={transformTools.rotate} disabled={!hasSelection} onClick={() => onTransformToolToggle("rotate")} />
+            <ToolbarButton icon={<MoveIcon />} label="이동" shortcut="W" active={transformTools.translate} pressed={transformTools.translate} disabled={!hasTransformSelection} onClick={() => onTransformToolToggle("translate")} />
+            <ToolbarButton icon={<RotateIcon />} label="Y축 회전" shortcut="E" active={transformTools.rotate} pressed={transformTools.rotate} disabled={!hasTransformSelection} onClick={() => onTransformToolToggle("rotate")} />
           </div>
           <Divider />
           <GridSnapControl enabled={gridSnapEnabled} snapSize={snapSize} onToggle={onGridSnapChange} onSnapSizeChange={onSnapSizeChange} />

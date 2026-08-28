@@ -4,6 +4,7 @@ import { EQUIPMENT_SHAPE_TEMPLATE_MAP } from "@/features/digitalTwin/editor/cons
 import { getBuildingFootprint } from "@/features/digitalTwin/editor/utils/buildingFootprint";
 import { clampDimension } from "@/features/digitalTwin/editor/utils/editorMath";
 import { normalizeEquipmentInstance } from "@/features/digitalTwin/editor/utils/templateParameters";
+import { getFloorHeightAtPoint } from "@/features/digitalTwin/editor/model/floorSpatialModel";
 
 function createId(prefix) { return `${prefix}_${crypto.randomUUID()}`; }
 
@@ -17,11 +18,17 @@ function mergeEquipment(equipment, changes) {
     position: changes.position ? { ...equipment.position, ...changes.position } : equipment.position,
     rotation: changes.rotation ? { ...equipment.rotation, ...changes.rotation } : equipment.rotation,
     appearance: changes.appearance ? { ...equipment.appearance, ...changes.appearance } : equipment.appearance,
+    appearanceSlots: changes.appearanceSlots
+      ? Object.fromEntries([...new Set([...Object.keys(equipment.appearanceSlots ?? {}), ...Object.keys(changes.appearanceSlots)])].map((slotId) => [
+          slotId,
+          { ...equipment.appearanceSlots?.[slotId], ...changes.appearanceSlots[slotId] },
+        ]))
+      : equipment.appearanceSlots,
     metadata: changes.metadata ? { ...equipment.metadata, ...changes.metadata } : equipment.metadata,
   };
 }
 
-function constrainEquipment(equipment, building, gridSize) {
+function constrainEquipment(equipment, building, gridSize, floorPlan) {
   if (!building) return equipment;
   const footprint = getBuildingFootprint(building);
   const rotation = equipment.rotation?.y ?? 0;
@@ -30,12 +37,16 @@ function constrainEquipment(equipment, building, gridSize) {
   const xLimit = Math.max(0, footprint.width / 2 - halfWidth);
   const zLimit = Math.max(0, footprint.depth / 2 - halfDepth);
   const spacing = Math.max(0.1, Number(gridSize) || 1);
+  const snappedPosition = {
+    x: Math.min(xLimit, Math.max(-xLimit, Math.round(equipment.position.x / spacing) * spacing)),
+    z: Math.min(zLimit, Math.max(-zLimit, Math.round(equipment.position.z / spacing) * spacing)),
+  };
+  const floorHeight = getFloorHeightAtPoint(floorPlan?.elevationZones, snappedPosition);
   return {
     ...equipment,
     position: {
-      x: Math.min(xLimit, Math.max(-xLimit, Math.round(equipment.position.x / spacing) * spacing)),
-      y: Math.max(0, Number(equipment.position.y) || 0),
-      z: Math.min(zLimit, Math.max(-zLimit, Math.round(equipment.position.z / spacing) * spacing)),
+      ...snappedPosition,
+      y: equipment.groundSnap === false ? Math.max(floorHeight, Number(equipment.position.y) || 0) : floorHeight,
     },
   };
 }
@@ -48,7 +59,7 @@ function toPlacementEquipment(equipment) {
   return placementEquipment;
 }
 
-export default function useFloorEquipmentState({ buildings, floors, currentBuilding, currentFloor, gridSettings }) {
+export default function useFloorEquipmentState({ buildings, floors, currentBuilding, currentFloor, gridSettings, floorPlansById = {} }) {
   const [equipmentByFloorId, setEquipmentByFloorId] = useState({});
   const [selectedFloorEquipmentId, setSelectedFloorEquipmentId] = useState(null);
   const [activeFloorEquipmentTemplateId, setActiveFloorEquipmentTemplateId] = useState(null);
@@ -57,15 +68,24 @@ export default function useFloorEquipmentState({ buildings, floors, currentBuild
     () => new Set(floors.filter((floor) => floor.parentId === activeBuildingId).map((floor) => floor.id)),
     [activeBuildingId, floors],
   );
+  const resolvedEquipmentByFloorId = useMemo(() => Object.fromEntries(Object.entries(equipmentByFloorId).map(([floorId, items]) => [
+    floorId,
+    items.map((equipment) => {
+      if (equipment.groundSnap === false) return equipment;
+      const floorHeight = getFloorHeightAtPoint(floorPlansById[floorId]?.elevationZones, equipment.position);
+      if (Math.abs((Number(equipment.position?.y) || 0) - floorHeight) < 0.0001) return equipment;
+      return { ...equipment, position: { ...equipment.position, y: floorHeight } };
+    }),
+  ])), [equipmentByFloorId, floorPlansById]);
   const activeFloorEquipment = useMemo(
-    () => equipmentByFloorId[currentFloor?.id] ?? [],
-    [currentFloor?.id, equipmentByFloorId],
+    () => resolvedEquipmentByFloorId[currentFloor?.id] ?? [],
+    [currentFloor?.id, resolvedEquipmentByFloorId],
   );
   const buildingEquipment = useMemo(
-    () => Object.entries(equipmentByFloorId).filter(([floorId]) => buildingFloorIds.has(floorId)).flatMap(([, items]) => items),
-    [buildingFloorIds, equipmentByFloorId],
+    () => Object.entries(resolvedEquipmentByFloorId).filter(([floorId]) => buildingFloorIds.has(floorId)).flatMap(([, items]) => items),
+    [buildingFloorIds, resolvedEquipmentByFloorId],
   );
-  const allFloorEquipment = useMemo(() => Object.values(equipmentByFloorId).flat(), [equipmentByFloorId]);
+  const allFloorEquipment = useMemo(() => Object.values(resolvedEquipmentByFloorId).flat(), [resolvedEquipmentByFloorId]);
   const selectedFloorEquipment = allFloorEquipment.find((item) => item.id === selectedFloorEquipmentId) ?? null;
 
   const selectFloorEquipmentTemplate = useCallback((templateId) => {
@@ -100,13 +120,13 @@ export default function useFloorEquipmentState({ buildings, floors, currentBuild
           metadata: { assetTag: "", manufacturer: "", model: "", serialNumber: "" },
           visible: true,
           locked: false,
-        }, template), building, gridSettings.baseSize));
+        }, template), building, gridSettings.baseSize, floorPlansById[floorId]));
         next[floorId] = [...(next[floorId] ?? []), equipment];
       });
       return next;
     });
     return createdIds;
-  }, [allFloorEquipment, buildings, currentFloor, floors, gridSettings.baseSize]);
+  }, [allFloorEquipment, buildings, currentFloor, floorPlansById, floors, gridSettings.baseSize]);
 
   const updateFloorEquipment = useCallback((equipmentId, changes) => {
     setEquipmentByFloorId((collections) => {
@@ -118,7 +138,7 @@ export default function useFloorEquipmentState({ buildings, floors, currentBuild
         sourceFloorId = floorId;
         const targetFloor = floors.find((item) => item.id === (changes.floorId ?? floorId));
         const building = buildings.find((item) => item.id === targetFloor?.parentId);
-        updated = constrainEquipment(mergeEquipment(equipment, changes), building, gridSettings.baseSize);
+        updated = constrainEquipment(mergeEquipment(equipment, changes), building, gridSettings.baseSize, floorPlansById[targetFloor?.id]);
         return true;
       });
       if (!updated || !sourceFloorId) return collections;
@@ -132,7 +152,7 @@ export default function useFloorEquipmentState({ buildings, floors, currentBuild
         [targetFloorId]: [...(collections[targetFloorId] ?? []), updated],
       };
     });
-  }, [buildings, floors, gridSettings.baseSize]);
+  }, [buildings, floorPlansById, floors, gridSettings.baseSize]);
 
   const removeSelectedFloorEquipment = useCallback(() => {
     if (!selectedFloorEquipmentId) return;
@@ -157,6 +177,24 @@ export default function useFloorEquipmentState({ buildings, floors, currentBuild
     return id;
   }, [gridSettings.baseSize, selectedFloorEquipment]);
 
+  const hydrateFloorEquipmentState = useCallback((snapshot = {}) => {
+    setEquipmentByFloorId(Object.fromEntries(Object.entries(snapshot.equipmentByFloorId ?? {}).map(([floorId, items]) => [
+      floorId,
+      (items ?? []).map((equipment) => {
+        const template = EQUIPMENT_SHAPE_TEMPLATE_MAP[equipment.shapeTemplateId];
+        return template ? normalizeEquipmentInstance({ ...equipment, floorId: equipment.floorId ?? floorId }, template) : null;
+      }).filter(Boolean),
+    ])));
+    setSelectedFloorEquipmentId(null);
+    setActiveFloorEquipmentTemplateId(null);
+  }, []);
+
+  const resetFloorEquipmentState = useCallback(() => {
+    setEquipmentByFloorId({});
+    setSelectedFloorEquipmentId(null);
+    setActiveFloorEquipmentTemplateId(null);
+  }, []);
+
   return {
     equipmentByFloorId,
     activeFloorEquipment,
@@ -172,6 +210,8 @@ export default function useFloorEquipmentState({ buildings, floors, currentBuild
       selectFloorEquipment: setSelectedFloorEquipmentId,
       removeSelectedFloorEquipment,
       duplicateSelectedFloorEquipment,
+      hydrateFloorEquipmentState,
+      resetFloorEquipmentState,
     },
   };
 }

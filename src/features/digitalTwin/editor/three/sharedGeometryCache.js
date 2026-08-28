@@ -1,5 +1,6 @@
 const MAX_IDLE_GEOMETRIES = 160;
 const geometryCache = new Map();
+const now = () => globalThis.performance?.now?.() ?? Date.now();
 
 function pruneIdleGeometry() {
   if (geometryCache.size <= MAX_IDLE_GEOMETRIES) return;
@@ -18,11 +19,11 @@ export function acquireSharedGeometry(key, factory) {
   if (!entry) {
     const geometry = factory();
     geometry.userData.sharedGeometryKey = key;
-    entry = { geometry, references: 0, lastUsed: performance.now() };
+    entry = { geometry, references: 0, lastUsed: now() };
     geometryCache.set(key, entry);
   }
   entry.references += 1;
-  entry.lastUsed = performance.now();
+  entry.lastUsed = now();
   pruneIdleGeometry();
   return entry.geometry;
 }
@@ -33,7 +34,7 @@ export function releaseSharedGeometry(geometry) {
   const entry = geometryCache.get(key);
   if (entry) {
     entry.references = Math.max(0, entry.references - 1);
-    entry.lastUsed = performance.now();
+    entry.lastUsed = now();
   }
   return true;
 }

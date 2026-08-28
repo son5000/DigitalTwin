@@ -8,6 +8,7 @@ import {
 } from "@/features/digitalTwin/editor/constants/floorSurfaceStyles";
 
 import MaterialAppearanceEditor from "./MaterialAppearanceEditor";
+import FloorSpatialEditor from "./FloorSpatialEditor";
 import styles from "./FloorPlanNavigator.module.css";
 
 function CompactDropdown({ ariaLabel, valueLabel, valueId, options, onSelect, placeholder = "선택" }) {
@@ -155,6 +156,11 @@ export default function FloorPlanNavigator({
   onApplyFloorStyle,
   onReferenceFloorChange,
   onShowFloorReferenceChange,
+  spatialPlan,
+  structures = [],
+  equipment = [],
+  selectedSpatialEntity,
+  spatialActions,
 }) {
   const [selectedFloorIds, setSelectedFloorIds] = useState([]);
   const [copySourceFloorId, setCopySourceFloorId] = useState(null);
@@ -236,6 +242,8 @@ export default function FloorPlanNavigator({
         allFloorIds={orderedFloors.map((floor) => floor.id)}
         onApply={onApplyFloorStyle}
       />
+
+      {spatialPlan && spatialActions ? <FloorSpatialEditor plan={spatialPlan} building={building} structures={structures} equipment={equipment} selectedSpatialEntity={selectedSpatialEntity} actions={spatialActions} /> : null}
 
       <section className={styles.reuseSection}>
         <div className={styles.sectionHeading}><strong>도면 재사용</strong></div>

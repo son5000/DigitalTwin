@@ -47,3 +47,10 @@
 .floorConfiguration > summary svg { color: var(--color-text-faint); transition: transform 140ms ease; }
 .floorConfiguration[open] > summary svg { transform: rotate(180deg); }
 
+.recent { padding: 6px var(--catalog-inline-padding); border-top: 1px solid var(--color-border); }
+.recent > header { margin-bottom: 4px; color: var(--color-text-faint); font-size: 10px; }
+.recent > div { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: thin; }
+.recent button { display: grid; width: 52px; flex: 0 0 52px; gap: 2px; padding: 4px; place-items: center; border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-accent-strong); background: var(--color-input); }
+.recent button:hover { border-color: var(--state-selected-border); background: var(--state-hover); }
+.recent svg { width: 22px; height: 22px; }
+.recent span { width: 100%; overflow: hidden; color: var(--color-text-muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }

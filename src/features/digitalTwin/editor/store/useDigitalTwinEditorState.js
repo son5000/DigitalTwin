@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { getRuntimeCustomAsset } from "@/features/customAssets/core/customAssetRegistry";
+import { getFloorBaseElevation, getFloorHeight } from "@/features/customAssets/building/buildingMetrics";
+
 import {
   DEFAULT_WORLD,
   EQUIPMENT_SHAPE_TEMPLATE_MAP,
@@ -184,6 +187,13 @@ function createHistorySnapshot(layoutDocument) {
     siteEnvironment: layoutDocument.siteEnvironment,
     siteObjects: layoutDocument.siteObjects,
     roomScenes,
+    floorPlansById: layoutDocument.floorPlansById,
+    verticalStructuresByBuildingId: layoutDocument.verticalStructuresByBuildingId,
+    equipmentByFloorId: layoutDocument.equipmentByFloorId,
+    equipmentAssetBindings: layoutDocument.equipmentAssetBindings,
+    sensorBindings: layoutDocument.sensorBindings,
+    observationPoints: layoutDocument.observationPoints,
+    serverBindings: layoutDocument.serverBindings,
   });
 }
 
@@ -247,14 +257,23 @@ function getSiteBoundaryNotice(movedCount, oversizedCount) {
 function createBuildingFloors(building, existingFloors = []) {
   const floorCount = Math.min(100, Math.max(1, Math.round(building.parameters.floorCount ?? 1)));
   const floorHeight = Math.max(2, building.parameters.floorHeight ?? 4);
+  const customAsset = building.customAssetId
+    ? building.customAssetAutoUpdate === false
+      ? building.customAssetSnapshot
+      : getRuntimeCustomAsset(building.customAssetId) ?? building.customAssetSnapshot
+    : null;
   return Array.from({ length: floorCount }, (_, index) => {
     const existing = existingFloors[index];
+    const level = index + 1;
+    const resolvedFloorHeight = customAsset ? getFloorHeight(customAsset, level) : floorHeight;
+    const elevation = customAsset ? getFloorBaseElevation(customAsset, level) : index * floorHeight;
     return createHierarchyNode(HIERARCHY_NODE_TYPES.FLOOR, building.id, index, {
       ...existing,
       parentId: building.id,
-      level: index + 1,
-      elevation: index * floorHeight,
-      name: existing?.name ?? `${index + 1}층`,
+      level,
+      elevation,
+      floorHeight: resolvedFloorHeight,
+      name: existing?.name ?? `${level}층`,
     });
   });
 }
@@ -296,6 +315,14 @@ function createBuildingDefinitionFromArea({
         ?? "FLAT",
     },
     appearance: { color: definition.color, material: definition.material },
+    customAssetId: definition.customAssetId ?? null,
+    customAssetRevision: definition.customAssetRevision ?? null,
+    customAssetAutoUpdate: Boolean(definition.customAssetId),
+    customAssetSnapshot: definition.customAsset ? structuredClone(definition.customAsset) : null,
+    customAssetScale: definition.customAssetId ? { x: scaleX, y: scaleY, z: scaleZ } : null,
+    customAssetViewGroupId: definition.customAsset?.defaultViewGroupId ?? null,
+    customAssetViewMode: "ALL",
+    customAssetExploded: false,
   });
   return { building, floors: createBuildingFloors(building) };
 }
@@ -456,7 +483,7 @@ export default function useDigitalTwinEditorState() {
     [hierarchyNavigationPath],
   );
   const floorPlanEditor = useFloorPlanState({ buildings, floors, currentBuilding, currentFloor, gridSettings });
-  const floorEquipmentEditor = useFloorEquipmentState({ buildings, floors, currentBuilding, currentFloor, gridSettings });
+  const floorEquipmentEditor = useFloorEquipmentState({ buildings, floors, currentBuilding, currentFloor, gridSettings, floorPlansById: floorPlanEditor.floorPlansById });
   const monitoringEditor = useMonitoringState({ equipment: floorEquipmentEditor.allFloorEquipment });
   const currentRoomScene = useMemo(() => ({
     version: 4,
@@ -708,7 +735,10 @@ export default function useDigitalTwinEditorState() {
   }, []);
 
   const updateSiteEnvironment = useCallback((changes) => {
-    const nextSiteEnvironment = normalizeSiteEnvironment({ ...siteEnvironment, ...changes });
+    const mergedChanges = changes.groundMaterial && !changes.terrain
+      ? { ...changes, terrain: { ...siteEnvironment.terrain, material: changes.groundMaterial } }
+      : changes;
+    const nextSiteEnvironment = normalizeSiteEnvironment({ ...siteEnvironment, ...mergedChanges });
     const sizeChanged = nextSiteEnvironment.width !== siteEnvironment.width
       || nextSiteEnvironment.depth !== siteEnvironment.depth;
     setSiteEnvironment(nextSiteEnvironment);
@@ -927,7 +957,10 @@ export default function useDigitalTwinEditorState() {
     setGridSettings(createDefaultGridSettings());
     setNavigationContext(createInitialNavigationContext());
     resetWorldStructures();
-  }, [clearHistory, resetWorldStructures]);
+    floorPlanEditor.actions.resetFloorPlanState();
+    floorEquipmentEditor.actions.resetFloorEquipmentState();
+    monitoringEditor.actions.resetMonitoringState();
+  }, [clearHistory, floorEquipmentEditor.actions, floorPlanEditor.actions, monitoringEditor.actions, resetWorldStructures]);
 
   const hydrateLayout = useCallback((layout) => {
     const nextSiteEnvironment = resolveSiteEnvironmentFromLayout(layout);
@@ -967,9 +1000,12 @@ export default function useDigitalTwinEditorState() {
     );
     setSelectedSiteObjectId(null);
     setGridSettings(normalizeGridSettings(layout.gridSettings));
+    floorPlanEditor.actions.hydrateFloorPlanState(layout);
+    floorEquipmentEditor.actions.hydrateFloorEquipmentState(layout);
+    monitoringEditor.actions.hydrateMonitoringState(layout);
     setNavigationContext(createInitialNavigationContext());
     return true;
-  }, [applyRoomScene, clearHistory]);
+  }, [applyRoomScene, clearHistory, floorEquipmentEditor.actions, floorPlanEditor.actions, monitoringEditor.actions]);
 
   const selectRoom = useCallback((roomId) => {
     const targetRoom = hierarchy.nodes.find(
@@ -1257,6 +1293,18 @@ export default function useDigitalTwinEditorState() {
     if (!building) return;
     const clampResult = clampBuildingToSite(mergeBuildingDefinition(building, changes), siteEnvironment);
     const nextBuilding = clampResult.entity;
+    if (nextBuilding.customAssetId && changes.parameters) {
+      const customAsset = getRuntimeCustomAsset(nextBuilding.customAssetId) ?? nextBuilding.customAssetSnapshot;
+      nextBuilding.customAssetScale = {
+        x: Object.hasOwn(changes.parameters, "width")
+          ? nextBuilding.parameters.width / Math.max(0.01, customAsset?.bounds?.width ?? nextBuilding.parameters.width)
+          : nextBuilding.customAssetScale?.x ?? 1,
+        y: nextBuilding.customAssetScale?.y ?? 1,
+        z: Object.hasOwn(changes.parameters, "depth")
+          ? nextBuilding.parameters.depth / Math.max(0.01, customAsset?.bounds?.depth ?? nextBuilding.parameters.depth)
+          : nextBuilding.customAssetScale?.z ?? 1,
+      };
+    }
     if (clampResult.wasClamped || !clampResult.fits) {
       setSiteBoundaryNotice(getSiteBoundaryNotice(clampResult.wasClamped ? 1 : 0, clampResult.fits ? 0 : 1));
     }
@@ -1660,7 +1708,14 @@ export default function useDigitalTwinEditorState() {
     roomScenes: hierarchy.activeRoomId
       ? { ...roomScenes, [hierarchy.activeRoomId]: currentRoomScene }
       : roomScenes,
-  }), [currentRoomScene, gridSettings, hierarchy, roomScenes, siteEnvironment, siteObjects]);
+    floorPlansById: floorPlanEditor.floorPlansById,
+    verticalStructuresByBuildingId: floorPlanEditor.verticalStructuresByBuildingId,
+    equipmentByFloorId: floorEquipmentEditor.equipmentByFloorId,
+    equipmentAssetBindings: monitoringEditor.equipmentAssetBindings,
+    sensorBindings: monitoringEditor.sensorBindings,
+    observationPoints: monitoringEditor.observationPoints,
+    serverBindings: monitoringEditor.serverBindings,
+  }), [currentRoomScene, floorEquipmentEditor.equipmentByFloorId, floorPlanEditor.floorPlansById, floorPlanEditor.verticalStructuresByBuildingId, gridSettings, hierarchy, monitoringEditor.equipmentAssetBindings, monitoringEditor.observationPoints, monitoringEditor.sensorBindings, monitoringEditor.serverBindings, roomScenes, siteEnvironment, siteObjects]);
 
   const commitHistorySnapshot = useCallback((snapshot) => {
     const currentSnapshot = historyCurrentRef.current;
@@ -1733,6 +1788,9 @@ export default function useDigitalTwinEditorState() {
         .map((object) => clampSiteObjectToSite(object, nextSiteEnvironment).entity),
     );
     setSelectedSiteObjectId(null);
+    floorPlanEditor.actions.hydrateFloorPlanState(snapshot);
+    floorEquipmentEditor.actions.hydrateFloorEquipmentState(snapshot);
+    monitoringEditor.actions.hydrateMonitoringState(snapshot);
     setNavigationContext((current) => {
       const hasBuilding = !current.currentBuildingId || nodeIds.has(current.currentBuildingId);
       const hasFloor = !current.currentFloorId || nodeIds.has(current.currentFloorId);
@@ -1746,7 +1804,7 @@ export default function useDigitalTwinEditorState() {
         transitionId: current.transitionId + 1,
       };
     });
-  }, [applyRoomScene, hierarchy.activeRoomId, hierarchy.selectedNodeId, navigationContext.currentRoomId, navigationNodeId]);
+  }, [applyRoomScene, floorEquipmentEditor.actions, floorPlanEditor.actions, hierarchy.activeRoomId, hierarchy.selectedNodeId, monitoringEditor.actions, navigationContext.currentRoomId, navigationNodeId]);
 
   const undo = useCallback(() => {
     flushPendingHistory();
@@ -1858,6 +1916,8 @@ export default function useDigitalTwinEditorState() {
     floorPlanValidationMessage: floorPlanEditor.floorPlanValidationMessage,
     floorPlanVisibilityFilters: floorPlanEditor.visibilityFilters,
     floorPlanSummaryByBuildingId: floorPlanEditor.floorPlanSummaryByBuildingId,
+    activeFloorSpatialPlan: floorPlanEditor.activeFloorSpatialPlan,
+    selectedSpatialEntity: floorPlanEditor.selectedSpatialEntity,
     equipmentByFloorId: floorEquipmentEditor.equipmentByFloorId,
     activeFloorEquipment: floorEquipmentEditor.activeFloorEquipment,
     buildingFloorEquipment: floorEquipmentEditor.buildingEquipment,
@@ -1866,11 +1926,17 @@ export default function useDigitalTwinEditorState() {
     selectedFloorEquipmentId: floorEquipmentEditor.selectedFloorEquipmentId,
     activeFloorEquipmentTemplateId: floorEquipmentEditor.activeFloorEquipmentTemplateId,
     observationPoints: monitoringEditor.observationPoints,
+    equipmentAssetBindings: monitoringEditor.equipmentAssetBindings,
+    sensorBindings: monitoringEditor.sensorBindings,
+    serverBindings: monitoringEditor.serverBindings,
     monitoringDevices: monitoringEditor.monitoringDevices,
     monitoringBindings: monitoringEditor.monitoringBindings,
     selectedObservationPoint: monitoringEditor.selectedObservationPoint,
     selectedMonitoringDevice: monitoringEditor.selectedMonitoringDevice,
     selectedMonitoringBinding: monitoringEditor.selectedMonitoringBinding,
+    selectedAssetBinding: monitoringEditor.selectedAssetBinding,
+    selectedSensorBinding: monitoringEditor.selectedSensorBinding,
+    selectedServerBinding: monitoringEditor.selectedServerBinding,
     actions: {
       addEquipment,
       updateEquipment,

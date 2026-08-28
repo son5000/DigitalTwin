@@ -23,7 +23,9 @@ function createStructurePreview(templateId, theme) {
     visible: true,
     locked: false,
   };
-  return createWorldStructureObject(structure, { selected: true, theme, sceneTheme: SCENE_THEMES[theme] });
+  const preview = createWorldStructureObject(structure, { selected: true, theme, sceneTheme: SCENE_THEMES[theme] });
+  preview.userData.placementElevation = definition.defaultPositionY ?? 0;
+  return preview;
 }
 
 function createEquipmentPreview(templateId, theme) {
@@ -38,7 +40,9 @@ function createEquipmentPreview(templateId, theme) {
     visible: true,
     locked: true,
   }, template);
-  return createEquipmentObject(equipment, { selected: true, theme, viewerTranslucent: false });
+  const preview = createEquipmentObject(equipment, { selected: true, theme, viewerTranslucent: false });
+  preview.userData.placementElevation = template.defaultPositionY ?? 0;
+  return preview;
 }
 
 export function createFloorPlacementPreview(editMode, templateId, theme) {

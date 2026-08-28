@@ -4,6 +4,9 @@ import { normalizeMaterialAppearance } from "@/features/digitalTwin/editor/const
 
 const TEXTURE_SIZE = 128;
 const textureCache = new Map();
+const materialCache = new Map();
+const MAX_IDLE_MATERIALS = 128;
+const now = () => globalThis.performance?.now?.() ?? Date.now();
 
 function noise(x, y, seed = 0) {
   const value = Math.sin(x * 12.9898 + y * 78.233 + seed * 37.719) * 43758.5453;
@@ -89,15 +92,58 @@ function configuredTexture(source, appearance) {
   return texture;
 }
 
+function materialKey(appearance) {
+  return JSON.stringify([
+    appearance.materialPresetId,
+    appearance.color,
+    appearance.pattern,
+    appearance.textureScale,
+    appearance.textureRotation,
+    appearance.bumpStrength,
+    appearance.roughness,
+    appearance.metalness,
+    appearance.reflectivity,
+    appearance.transmission,
+    appearance.opacity,
+    appearance.aging,
+    appearance.emissive ?? null,
+    appearance.emissiveIntensity ?? 0,
+  ]);
+}
+
+function disposeCachedMaterial(material) {
+  ["map", "bumpMap", "normalMap", "roughnessMap", "metalnessMap", "alphaMap"].forEach((key) => material[key]?.dispose());
+  material.dispose();
+}
+
+function pruneIdleMaterials() {
+  if (materialCache.size <= MAX_IDLE_MATERIALS) return;
+  const idle = [...materialCache.entries()]
+    .filter(([, entry]) => entry.references === 0)
+    .sort((left, right) => left[1].lastUsed - right[1].lastUsed);
+  while (materialCache.size > MAX_IDLE_MATERIALS && idle.length) {
+    const [key, entry] = idle.shift();
+    disposeCachedMaterial(entry.material);
+    materialCache.delete(key);
+  }
+}
+
 export function createPresetMaterial(sourceAppearance, overrides = {}) {
   const appearance = normalizeMaterialAppearance({ ...sourceAppearance, ...overrides });
+  const key = materialKey(appearance);
+  const cached = materialCache.get(key);
+  if (cached) {
+    cached.references += 1;
+    cached.lastUsed = now();
+    return cached.material;
+  }
   const { map, bumpMap } = createBaseTextures(
     appearance.pattern ?? normalizeMaterialAppearance({ materialPresetId: appearance.materialPresetId }).pattern,
     Math.max(0, Math.min(1, appearance.aging ?? 0)),
   );
   const opacity = Math.max(0.05, Math.min(1, appearance.opacity ?? 1));
   const transmission = Math.max(0, Math.min(1, appearance.transmission ?? 0));
-  return new THREE.MeshPhysicalMaterial({
+  const material = new THREE.MeshPhysicalMaterial({
     color: appearance.color,
     map: configuredTexture(map, appearance),
     bumpMap: configuredTexture(bumpMap, appearance),
@@ -115,4 +161,47 @@ export function createPresetMaterial(sourceAppearance, overrides = {}) {
     depthWrite: opacity >= 0.96 && transmission <= 0.05,
     side: THREE.DoubleSide,
   });
+  material.userData.sharedMaterialKey = key;
+  materialCache.set(key, { material, references: 1, lastUsed: now() });
+  pruneIdleMaterials();
+  return material;
+}
+
+export function releaseSharedMaterial(material) {
+  const key = material?.userData?.sharedMaterialKey;
+  if (!key) return false;
+  const entry = materialCache.get(key);
+  if (entry) {
+    entry.references = Math.max(0, entry.references - 1);
+    entry.lastUsed = now();
+  }
+  return true;
+}
+
+export function cloneMaterialForMutation(material) {
+  if (!material?.userData?.sharedMaterialKey) return material;
+  const key = material.userData.sharedMaterialKey;
+  const clone = material.clone();
+  delete clone.userData.sharedMaterialKey;
+  clone.userData.borrowedSharedMaterialKey = key;
+  clone.userData.borrowedTextures = true;
+  return clone;
+}
+
+export function releaseBorrowedSharedMaterial(material) {
+  const key = material?.userData?.borrowedSharedMaterialKey;
+  if (!key) return false;
+  const entry = materialCache.get(key);
+  if (entry) {
+    entry.references = Math.max(0, entry.references - 1);
+    entry.lastUsed = now();
+  }
+  return true;
+}
+
+export function getPresetMaterialCacheStats() {
+  return {
+    entries: materialCache.size,
+    activeReferences: [...materialCache.values()].reduce((total, entry) => total + entry.references, 0),
+  };
 }

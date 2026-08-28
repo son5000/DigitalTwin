@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { SCENE_THEMES } from "@/features/digitalTwin/editor/constants/sceneThemes";
 import { getBuildingFootprint } from "@/features/digitalTwin/editor/utils/buildingFootprint";
+import { getFloorFootprintBounds, getFloorHeightAtPoint, pointInsideFootprint } from "@/features/digitalTwin/editor/model/floorSpatialModel";
 import { getVerticalStructureOpeningForFloor } from "@/features/digitalTwin/editor/utils/stairStructure";
 import { createEquipmentObject, getEquipmentGeometrySignature } from "@/features/digitalTwin/editor/objects/EquipmentFactory";
 import { createStairPlanObject } from "@/features/digitalTwin/editor/world/StairFactory";
@@ -14,6 +15,7 @@ import {
 
 import { disposeObject3D } from "./disposeObject3D";
 import { createFloorPlacementPreview } from "./floorPlacementPreview";
+import { cloneMaterialForMutation } from "./presetMaterial";
 import {
   attachDualTransformControls,
   configureDualTransformControls,
@@ -24,6 +26,7 @@ import {
   setDualTransformDragging,
 } from "./dualTransformControls";
 import { createFloorSurfaceMaterial } from "./floorSurfaceMaterial";
+import { createFloorSpatialObject, findSpatialDomain } from "./floorSpatialScene";
 import styles from "./FloorPlanScene.module.css";
 
 const PLAN_COLORS = {
@@ -86,6 +89,7 @@ function createFloorSurface(footprint, openings, colors, floorStyle) {
   const geometry = new THREE.ShapeGeometry(shape);
   geometry.rotateX(Math.PI / 2);
   const mesh = new THREE.Mesh(geometry, createFloorSurfaceMaterial(floorStyle, footprint));
+  mesh.receiveShadow = true;
   mesh.name = "DERIVED_LOCKED_FLOOR";
   mesh.userData.isDerivedFloor = true;
   mesh.userData.locked = true;
@@ -187,6 +191,8 @@ export default function FloorPlanScene({
   referenceFloorName = "",
   buildingVerticalStructureCount = 0,
   floorStyle,
+  spatialPlan = null,
+  selectedSpatialEntity = null,
   onAdd,
   onSelect,
   onTransform,
@@ -198,19 +204,25 @@ export default function FloorPlanScene({
   onEquipmentAdd,
   onEquipmentSelect,
   onEquipmentTransform,
+  onSpatialSelect,
   onCancelPlacement,
   externalStatus = "",
 }) {
   const containerRef = useRef(null);
   const runtimeRef = useRef(null);
-  const handlersRef = useRef({ onAdd, onSelect, onTransform, onEquipmentAdd, onEquipmentSelect, onEquipmentTransform, onCancelPlacement });
+  const handlersRef = useRef({ onAdd, onSelect, onTransform, onEquipmentAdd, onEquipmentSelect, onEquipmentTransform, onSpatialSelect, onCancelPlacement });
   const activeTemplateRef = useRef(activeTemplateId);
   const structuresRef = useRef(structures);
   const equipmentRef = useRef(equipmentInstances);
   const editModeRef = useRef(editMode);
   const activeEquipmentTemplateRef = useRef(activeEquipmentTemplateId);
-  const footprint = useMemo(() => getBuildingFootprint(building), [building]);
+  const footprint = useMemo(() => {
+    if (!spatialPlan?.floorFootprint?.regions?.length) return getBuildingFootprint(building);
+    const bounds = getFloorFootprintBounds(spatialPlan.floorFootprint);
+    return { ...bounds, points: spatialPlan.floorFootprint.regions[0].outer };
+  }, [building, spatialPlan]);
   const footprintRef = useRef(footprint);
+  const spatialPlanRef = useRef(spatialPlan);
   const gridSizeRef = useRef(gridSettings.baseSize);
   const openings = useMemo(() => verticalStructures
     .map((structure) => getVerticalStructureOpeningForFloor(
@@ -222,12 +234,12 @@ export default function FloorPlanScene({
     .filter(Boolean), [floor?.id, floors, verticalStructures]);
   const [status, setStatus] = useState("");
 
-  useEffect(() => { handlersRef.current = { onAdd, onSelect, onTransform, onEquipmentAdd, onEquipmentSelect, onEquipmentTransform, onCancelPlacement }; }, [onAdd, onCancelPlacement, onEquipmentAdd, onEquipmentSelect, onEquipmentTransform, onSelect, onTransform]);
+  useEffect(() => { handlersRef.current = { onAdd, onSelect, onTransform, onEquipmentAdd, onEquipmentSelect, onEquipmentTransform, onSpatialSelect, onCancelPlacement }; }, [onAdd, onCancelPlacement, onEquipmentAdd, onEquipmentSelect, onEquipmentTransform, onSelect, onSpatialSelect, onTransform]);
   useEffect(() => { activeTemplateRef.current = activeTemplateId; }, [activeTemplateId]);
   useEffect(() => { structuresRef.current = structures; }, [structures]);
   useEffect(() => { equipmentRef.current = equipmentInstances; }, [equipmentInstances]);
   useEffect(() => { editModeRef.current = editMode; activeEquipmentTemplateRef.current = activeEquipmentTemplateId; }, [activeEquipmentTemplateId, editMode]);
-  useEffect(() => { footprintRef.current = footprint; gridSizeRef.current = gridSettings.baseSize; }, [footprint, gridSettings.baseSize]);
+  useEffect(() => { footprintRef.current = footprint; spatialPlanRef.current = spatialPlan; gridSizeRef.current = gridSettings.baseSize; }, [footprint, gridSettings.baseSize, spatialPlan]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -239,6 +251,8 @@ export default function FloorPlanScene({
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.domElement.setAttribute("aria-label", "현재 층 footprint 안에서 평면 도면을 편집하는 화면");
     renderer.domElement.setAttribute("role", "application");
     container.appendChild(renderer.domElement);
@@ -267,6 +281,8 @@ export default function FloorPlanScene({
     scene.add(new THREE.HemisphereLight(sceneTheme.hemisphereSky, sceneTheme.hemisphereGround, 2.2));
     const keyLight = new THREE.DirectionalLight(sceneTheme.keyLight, 1.6);
     keyLight.position.set(18, 50, 12);
+    keyLight.castShadow = true;
+    keyLight.shadow.mapSize.set(512, 512);
     scene.add(keyLight);
 
     const runtime = {
@@ -290,17 +306,24 @@ export default function FloorPlanScene({
         return null;
       }
       raycaster.setFromCamera(getPointer(event, renderer.domElement), camera);
-      const [floorHit] = raycaster.intersectObject(runtime.floorSurface, false);
+      const [floorHit] = raycaster.intersectObject(runtime.floorSurface, true);
       if (!floorHit) {
         preview.visible = false;
         return null;
       }
       const spacing = Math.max(0.1, Number(gridSizeRef.current) || 1);
+      const placementElevation = preview.userData.placementElevation ?? 0;
+      const activeSpatialPlan = spatialPlanRef.current;
+      const floorElevation = activeSpatialPlan ? getFloorHeightAtPoint(activeSpatialPlan.elevationZones, floorHit.point) : 0;
       preview.position.set(
         Math.round(floorHit.point.x / spacing) * spacing,
-        0.04,
+        floorElevation + placementElevation + 0.04,
         Math.round(floorHit.point.z / spacing) * spacing,
       );
+      if (activeSpatialPlan && !pointInsideFootprint(preview.position, activeSpatialPlan.floorFootprint)) {
+        preview.visible = false;
+        return null;
+      }
       const bounds = new THREE.Box3().setFromObject(preview);
       const size = bounds.getSize(new THREE.Vector3());
       const xLimit = Math.max(0, footprintRef.current.width / 2 - size.x / 2);
@@ -308,7 +331,7 @@ export default function FloorPlanScene({
       preview.position.x = THREE.MathUtils.clamp(preview.position.x, -xLimit, xLimit);
       preview.position.z = THREE.MathUtils.clamp(preview.position.z, -zLimit, zLimit);
       preview.visible = true;
-      return { x: preview.position.x, y: 0, z: preview.position.z };
+      return { x: preview.position.x, y: floorElevation + placementElevation, z: preview.position.z };
     }
     function handlePointerUp(event) {
       if (event.button !== 0 || dualTransformIsActive(transformControls) || pointerStart.distanceTo(new THREE.Vector2(event.clientX, event.clientY)) > 5) return;
@@ -340,7 +363,15 @@ export default function FloorPlanScene({
         handlersRef.current.onSelect(getStructureId(structureHit.object, structureRoot));
         return;
       }
+      const spatialHit = raycaster.intersectObjects(floorRoot.children, true)
+        .map((hit) => findSpatialDomain(hit.object, floorRoot))
+        .find(Boolean);
+      if (spatialHit && editModeRef.current === "PLAN") {
+        handlersRef.current.onSpatialSelect?.(spatialHit);
+        return;
+      }
       handlersRef.current.onSelect(null);
+      handlersRef.current.onSpatialSelect?.(null);
       handlersRef.current.onEquipmentSelect?.(null);
     }
     function previewObjectChange(activeControl) {
@@ -355,7 +386,7 @@ export default function FloorPlanScene({
       const structure = structuresRef.current.find((item) => item.id === object?.userData.worldStructureId);
       if (!structure) return;
       const position = clampToFootprint(object.position, structure, footprintRef.current, gridSizeRef.current, false);
-      object.position.set(position.x, 0, position.z);
+      object.position.set(position.x, structure.position.y, position.z);
     }
     function commitObjectChange(activeControl) {
       const object = activeControl.object;
@@ -370,13 +401,14 @@ export default function FloorPlanScene({
       const structure = structuresRef.current.find((item) => item.id === object?.userData.worldStructureId);
       if (!structure) return;
       const position = clampToFootprint(object.position, structure, footprintRef.current, gridSizeRef.current);
-      object.position.set(position.x, 0, position.z);
+      object.position.set(position.x, structure.position.y, position.z);
+      position.y = structure.position.y;
       const applied = handlersRef.current.onTransform(structure.id, {
         position,
         rotation: { x: 0, y: object.rotation.y, z: 0 },
       });
       if (applied === false) {
-        object.position.set(structure.position.x, 0, structure.position.z);
+        object.position.set(structure.position.x, structure.position.y, structure.position.z);
         object.rotation.set(0, structure.rotation?.y ?? 0, 0);
       }
     }
@@ -470,11 +502,13 @@ export default function FloorPlanScene({
     runtime.floorRoot = new THREE.Group();
     runtime.scene.add(runtime.floorRoot);
     const colors = PLAN_COLORS[theme];
-    const surface = createFloorSurface(footprint, openings, colors, floorStyle);
+    const surface = spatialPlan
+      ? createFloorSpatialObject(spatialPlan, { mode2D: true, selected: selectedSpatialEntity, floorStyle, openings })
+      : createFloorSurface(footprint, openings, colors, floorStyle);
     runtime.floorSurface = surface;
     runtime.floorRoot.add(surface, createBoundedGrid(footprint, openings, gridSettings.baseSize, colors.grid));
     resizeRuntime(runtime, footprint);
-  }, [floorStyle, footprint, gridSettings.baseSize, openings, theme]);
+  }, [floorStyle, footprint, gridSettings.baseSize, openings, selectedSpatialEntity, spatialPlan, theme]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -493,9 +527,15 @@ export default function FloorPlanScene({
       }, { selected: false, theme, sceneTheme: SCENE_THEMES[theme] });
       reference.traverse((child) => {
         if (child.material) {
-          child.material.transparent = true;
-          child.material.opacity = Math.min(0.16, child.material.opacity ?? 0.16);
-          child.material.depthWrite = false;
+          child.material = Array.isArray(child.material)
+            ? child.material.map(cloneMaterialForMutation)
+            : cloneMaterialForMutation(child.material);
+          const materials = Array.isArray(child.material) ? child.material : [child.material];
+          materials.forEach((material) => {
+            material.transparent = true;
+            material.opacity = Math.min(0.16, material.opacity ?? 0.16);
+            material.depthWrite = false;
+          });
         }
       });
       runtime.referenceRoot.add(reference);
@@ -533,9 +573,15 @@ export default function FloorPlanScene({
         if (structure.type !== "STAIR" && verticalStructures.some((item) => item.id === structure.id)) {
           object.traverse((child) => {
             if (!child.material) return;
-            child.material.transparent = true;
-            child.material.opacity = Math.min(0.22, child.material.opacity ?? 0.22);
-            child.material.depthWrite = false;
+            child.material = Array.isArray(child.material)
+              ? child.material.map(cloneMaterialForMutation)
+              : cloneMaterialForMutation(child.material);
+            const materials = Array.isArray(child.material) ? child.material : [child.material];
+            materials.forEach((material) => {
+              material.transparent = true;
+              material.opacity = Math.min(0.22, material.opacity ?? 0.22);
+              material.depthWrite = false;
+            });
           });
         }
         runtime.structureObjects.set(structure.id, object);

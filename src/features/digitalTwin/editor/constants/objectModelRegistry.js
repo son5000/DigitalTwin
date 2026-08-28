@@ -73,6 +73,11 @@ export function createObjectModelMetadata({
   lod = { mediumDistance: 28, lowDistance: 70 },
 }) {
   const family = OBJECT_MODEL_FAMILIES[familyId];
+  const defaultPositionY = placement === OBJECT_PLACEMENT_TYPES.CEILING
+    ? 2.7
+    : placement === OBJECT_PLACEMENT_TYPES.WALL
+      ? 1.1
+      : 0;
   return {
     modelId: id,
     objectType: family?.id ?? familyId,
@@ -80,6 +85,7 @@ export function createObjectModelMetadata({
     subtype: subtype ?? id,
     description: description ?? family?.label ?? id,
     placement,
+    defaultPositionY,
     materialSlots,
     thumbnail: thumbnail ?? `procedural:${family?.id ?? familyId}`,
     legacyOnly,

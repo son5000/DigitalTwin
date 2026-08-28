@@ -33,8 +33,8 @@ function template({
   appearance,
   variants,
   isVertical = false,
-  defaultPositionY = 0,
-  defaultGroundSnap = true,
+  defaultPositionY = null,
+  defaultGroundSnap = null,
   familyId,
   subtype,
   description,
@@ -51,6 +51,10 @@ function template({
               : group === "VERTICAL" ? "VERTICAL"
                 : group === "ENVIRONMENT" ? "PLANT"
                   : group);
+  const resolvedPlacement = placement ?? OBJECT_PLACEMENT_TYPES.FLOOR;
+  const resolvedDefaultPositionY = defaultPositionY
+    ?? (resolvedPlacement === OBJECT_PLACEMENT_TYPES.CEILING ? 2.7 : resolvedPlacement === OBJECT_PLACEMENT_TYPES.WALL ? 0.9 : 0);
+  const resolvedGroundSnap = defaultGroundSnap ?? resolvedPlacement === OBJECT_PLACEMENT_TYPES.FLOOR;
   return {
     id,
     domain: "WORLD",
@@ -69,14 +73,14 @@ function template({
     },
     variants,
     isVertical,
-    defaultPositionY,
-    defaultGroundSnap,
+    defaultPositionY: resolvedDefaultPositionY,
+    defaultGroundSnap: resolvedGroundSnap,
     ...createObjectModelMetadata({
       id,
       familyId: inferredFamilyId,
       subtype,
       description,
-      placement,
+      placement: resolvedPlacement,
       materialSlots,
       legacyOnly,
     }),
@@ -133,7 +137,7 @@ export const WORLD_STRUCTURE_TEMPLATES = [
   template({ id: "EXIT", group: "OPENING", name: "Exit", nameKo: "출구", parameters: [meter("width", "Width", 1.8), meter("height", "Height", 2.2), meter("depth", "Depth", 0.08)], appearance: { color: "#B48332", opacity: 0.72, materialPreset: "GENERIC" } }),
   template({ id: "DOOR", group: "OPENING", name: "Door", nameKo: "도어", parameters: [meter("width", "Width", 1), meter("height", "Height", 2.1), meter("depth", "Depth", 0.08)], appearance: { color: "#8C969B", opacity: 0.95, materialPreset: "PAINTED_STEEL" } }),
   template({ id: "GATE", group: "OPENING", name: "Gate", nameKo: "게이트", parameters: [meter("width", "Width", 2.5), meter("height", "Height", 2), meter("depth", "Depth", 0.1)], appearance: { color: "#858F94", opacity: 0.95, materialPreset: "PAINTED_STEEL" } }),
-  template({ id: "PASSAGE", group: "OPENING", name: "Passage", nameKo: "통로", parameters: [meter("width", "Width", 2), meter("depth", "Depth", 1)], appearance: { color: "#71878F", opacity: 0.45 } }),
+  template({ id: "PASSAGE", group: "OPENING", familyId: "SPACE", name: "Passage", nameKo: "통로", parameters: [meter("width", "Width", 2), meter("depth", "Depth", 1)], appearance: { color: "#71878F", opacity: 0.45 } }),
   template({ id: "FIXED_WINDOW", group: "OPENING", familyId: "WINDOW", subtype: "FIXED", placement: OBJECT_PLACEMENT_TYPES.WALL, name: "Fixed Window", nameKo: "고정창", description: "알루미늄 프레임과 단일 유리면의 고정창", parameters: [meter("width", "너비", 1.2), meter("height", "높이", 1.2), meter("depth", "프레임 두께", 0.12)], appearance: { color: "#A9D4DD", opacity: 0.48, materialPreset: "GLASS" }, materialSlots: GLASS_FRAME_SLOTS }),
   template({ id: "SLIDING_WINDOW", group: "OPENING", familyId: "WINDOW", subtype: "SLIDING", placement: OBJECT_PLACEMENT_TYPES.WALL, name: "Sliding Window", nameKo: "미닫이창", description: "두 개의 겹치는 창짝과 중앙 레일을 갖춘 미닫이창", parameters: [meter("width", "너비", 1.8), meter("height", "높이", 1.2), meter("depth", "프레임 두께", 0.14)], appearance: { color: "#A9D4DD", opacity: 0.48, materialPreset: "GLASS" }, materialSlots: GLASS_FRAME_SLOTS }),
   template({ id: "CASEMENT_WINDOW", group: "OPENING", familyId: "WINDOW", subtype: "CASEMENT", placement: OBJECT_PLACEMENT_TYPES.WALL, name: "Casement Window", nameKo: "여닫이창", description: "두 개의 개폐 창짝과 손잡이가 있는 여닫이창", parameters: [meter("width", "너비", 1.5), meter("height", "높이", 1.3), meter("depth", "프레임 두께", 0.14)], appearance: { color: "#A9D4DD", opacity: 0.48, materialPreset: "GLASS" }, materialSlots: GLASS_FRAME_SLOTS }),

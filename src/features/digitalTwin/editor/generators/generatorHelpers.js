@@ -18,6 +18,8 @@ export function addGeometry(group, geometry, options) {
     showEdges = appearance.showEdges,
   } = options;
   const mesh = new THREE.Mesh(geometry, createSurfaceMaterial(appearance));
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
   mesh.position.set(...position);
   mesh.rotation.set(...rotation);
   mesh.scale.set(...scale);

@@ -17,6 +17,8 @@ export const SITE_GROUND_MATERIAL_OPTIONS = Object.freeze([
   { id: "ASPHALT", label: "아스팔트", color: 0x4e565d, roughness: 0.98 },
   { id: "GRASS", label: "잔디", color: 0x627c63, roughness: 1 },
   { id: "SOIL", label: "토양", color: 0x786b58, roughness: 1 },
+  { id: "ROCK", label: "암석", color: 0x6f716d, roughness: 0.94 },
+  { id: "GRAVEL", label: "자갈", color: 0x88847a, roughness: 1 },
 ]);
 
 export const DEFAULT_SITE_ENVIRONMENT = Object.freeze({
@@ -24,6 +26,7 @@ export const DEFAULT_SITE_ENVIRONMENT = Object.freeze({
   depth: 90,
   groundMaterial: "CONCRETE",
   backgroundTheme: "DAY",
+  terrain: createFlatTerrainModel(120, 90, 3),
 });
 
 function finite(value, fallback) {
@@ -48,11 +51,14 @@ export function normalizeSiteEnvironment(environment) {
   const backgroundTheme = SITE_BACKGROUND_THEME_OPTIONS.some((option) => option.id === environment?.backgroundTheme)
     ? environment.backgroundTheme
     : DEFAULT_SITE_ENVIRONMENT.backgroundTheme;
+  const width = Math.min(400, Math.max(20, finite(environment?.width, DEFAULT_SITE_ENVIRONMENT.width)));
+  const depth = Math.min(400, Math.max(20, finite(environment?.depth, DEFAULT_SITE_ENVIRONMENT.depth)));
   return {
-    width: Math.min(400, Math.max(20, finite(environment?.width, DEFAULT_SITE_ENVIRONMENT.width))),
-    depth: Math.min(400, Math.max(20, finite(environment?.depth, DEFAULT_SITE_ENVIRONMENT.depth))),
+    width,
+    depth,
     groundMaterial,
     backgroundTheme,
+    terrain: normalizeTerrainModel(environment?.terrain, width, depth, groundMaterial),
   };
 }
 
@@ -128,3 +134,4 @@ export function intersectAreaWithSite(area, environment) {
     depth: maxZ - minZ,
   };
 }
+import { createFlatTerrainModel, normalizeTerrainModel } from "@/features/digitalTwin/editor/terrain/TerrainModel";

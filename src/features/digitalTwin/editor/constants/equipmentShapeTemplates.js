@@ -1,4 +1,4 @@
-import { createMaterialAppearance } from "@/features/digitalTwin/editor/constants/materialPresets";
+import { createMaterialAppearance } from "./materialPresets.js";
 import {
   createObjectModelMetadata,
   getEquipmentModelFamily,

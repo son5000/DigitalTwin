@@ -1,5 +1,4 @@
-import { SITE_CREATION_TEMPLATES } from "@/features/digitalTwin/editor/constants/siteEnvironmentTemplates";
-import { getObjectLibraryDefinitions } from "@/features/digitalTwin/editor/constants/objectLibraryCatalog";
+import { getObjectLibraryDefinitions, OBJECT_LIBRARY_DEFINITION_MAP } from "@/features/digitalTwin/editor/constants/objectLibraryCatalog";
 import { ObjectLibrary } from "@/features/digitalTwin/editor/components/ObjectLibrary";
 
 import styles from "./SiteAuthoringPanel.module.css";
@@ -16,7 +15,7 @@ export default function SiteAuthoringPanel({
   onSelectTemplate,
   onVariantsChange,
 }) {
-  const activeTemplate = SITE_CREATION_TEMPLATES.find((template) => template.id === activeTemplateId);
+  const activeTemplate = OBJECT_LIBRARY_DEFINITION_MAP[activeTemplateId];
   const templates = getObjectLibraryDefinitions(allowedTemplateIds);
 
   return (

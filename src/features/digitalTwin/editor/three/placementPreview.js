@@ -1,6 +1,11 @@
+import { cloneMaterialForMutation } from "./presetMaterial";
+
 export function makePlacementPreviewTransparent(root, opacity = 0.42) {
   root.traverse((child) => {
     if (!child.material) return;
+    child.material = Array.isArray(child.material)
+      ? child.material.map(cloneMaterialForMutation)
+      : cloneMaterialForMutation(child.material);
     const materials = Array.isArray(child.material) ? child.material : [child.material];
     materials.forEach((material) => {
       material.transparent = true;

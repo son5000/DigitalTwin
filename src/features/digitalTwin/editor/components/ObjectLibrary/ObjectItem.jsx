@@ -6,6 +6,10 @@ import styles from "./ObjectLibrary.module.css";
 
 export default function ObjectItem({ definition, active, onSelect }) {
   function handleDragStart(event) {
+    if (definition.type === "CUSTOM_ACTION") {
+      event.preventDefault();
+      return;
+    }
     event.dataTransfer.effectAllowed = "copy";
     event.dataTransfer.setData(OBJECT_LIBRARY_DRAG_TYPE, definition.id);
     event.dataTransfer.setData("text/plain", definition.id);
@@ -17,8 +21,8 @@ export default function ObjectItem({ definition, active, onSelect }) {
       type="button"
       className={`${styles.item} ${active ? styles.itemActive : ""}`}
       aria-pressed={active}
-      draggable
-      title={`${definition.name} 배치 · 드래그 또는 클릭`}
+      draggable={definition.type !== "CUSTOM_ACTION"}
+      title={definition.type === "CUSTOM_ACTION" ? definition.name : `${definition.name} 배치 · 드래그 또는 클릭`}
       onClick={() => onSelect(definition.id)}
       onDragStart={handleDragStart}
     >

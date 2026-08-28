@@ -1,4 +1,5 @@
 import { releaseSharedGeometry } from "./sharedGeometryCache";
+import { releaseBorrowedSharedMaterial, releaseSharedMaterial } from "./presetMaterial";
 
 export function disposeObject3D(object) {
   object.traverse((child) => {
@@ -9,7 +10,14 @@ export function disposeObject3D(object) {
       : [child.material];
 
     materials.filter(Boolean).forEach((material) => {
-      ["map", "bumpMap", "normalMap", "roughnessMap", "metalnessMap", "alphaMap"].forEach((key) => material[key]?.dispose());
+      if (releaseSharedMaterial(material)) return;
+      if (releaseBorrowedSharedMaterial(material)) {
+        material.dispose();
+        return;
+      }
+      if (!material.userData?.borrowedTextures) {
+        ["map", "bumpMap", "normalMap", "roughnessMap", "metalnessMap", "alphaMap"].forEach((key) => material[key]?.dispose());
+      }
       material.dispose();
     });
   });

@@ -1,4 +1,9 @@
 import { SITE_OBJECT_GEOMETRY_MODES } from "./siteEnvironmentTemplates.types.js";
+import {
+  CUSTOM_BUILDING_CREATE_DEFINITION,
+  getRuntimeCustomBuildingDefinition,
+  listRuntimeCustomBuildingDefinitions,
+} from "@/features/customAssets/core/customAssetRegistry";
 
 export const OBJECT_LIBRARY_DRAG_TYPE = "application/x-digital-twin-object";
 
@@ -19,11 +24,11 @@ export const OBJECT_LIBRARY_CATEGORY_IDS = Object.freeze({
 });
 
 const CATEGORY_SOURCE = [
-  ["BUILDING", "건축물", "Building", "일반·주거·업무 건축물", "building", [["OFFICE", "업무시설"], ["RESIDENTIAL", "주거시설"], ["COMMERCIAL", "상업시설"], ["BACKGROUND", "주변 표현"]]],
+  ["BUILDING", "건축물", "Building", "일반·주거·업무 건축물", "building", [["CUSTOM", "내 커스텀"], ["OFFICE", "업무시설"], ["RESIDENTIAL", "주거시설"], ["COMMERCIAL", "상업시설"], ["BACKGROUND", "주변 표현"]]],
   ["INDUSTRIAL_BUILDING", "산업용 건축물", "Industrial Building", "생산·물류·유틸리티 건축물", "factory", [["FACTORY", "생산 공장"], ["PROCESS", "공정 시설"], ["WAREHOUSE", "창고·물류동"], ["UTILITY", "유틸리티동"]]],
   ["VEHICLE", "차량", "Vehicle", "승용·상용·산업 차량", "vehicle", [["PASSENGER", "승용 차량"], ["COMMERCIAL", "상용 차량"], ["INDUSTRIAL", "산업 차량"]]],
   ["TRAFFIC_FACILITY", "교통 시설", "Traffic Facility", "교통 흐름과 접근 제어", "traffic", [["SIGNAL", "신호·표지"], ["ACCESS", "접근 제어"]]],
-  ["ROAD_FACILITY", "도로 시설", "Road Facility", "도로·보행·경계 시설", "road", [["SURFACE", "노면"], ["BOUNDARY", "경계·보호"]]],
+  ["ROAD_FACILITY", "도로 시설", "Road Facility", "도로·보행·경계 시설", "road", [["SURFACE", "노면"], ["ACCESS", "보행 접근"], ["BOUNDARY", "경계·보호"]]],
   ["ENVIRONMENT", "환경", "Environment", "부지의 자연·배경 요소", "environment", [["GROUND", "지면"], ["NATURAL", "자연물"], ["AMENITY", "편의시설"]]],
   ["LANDSCAPING", "조경", "Landscaping", "산업 단지 조경과 식재", "landscape", [["TREE", "교목"], ["PLANTING", "식재"], ["FURNITURE", "조경 시설"]]],
   ["INDUSTRIAL_EQUIPMENT", "산업 설비", "Industrial Equipment", "생산·기계 설비 프록시", "mechanical", [["ROTATING", "회전 기계"], ["PROCESS", "공정 설비"], ["HANDLING", "이송 설비"]]],
@@ -183,9 +188,11 @@ const SITE_OBJECTS = [
   ["SECURITY_GATE", "TRAFFIC_FACILITY", "ACCESS", "보안 게이트", "Twin Post와 Sliding Gate", "TRAFFIC", "SECURITY_GATE", 5, 1, 2.4, "#66757d", "METAL"],
   ["CROSSWALK_SIGNAL", "TRAFFIC_FACILITY", "SIGNAL", "보행 신호기", "보행자 Signal과 Button Box", "TRAFFIC", "PEDESTRIAN_SIGNAL", 0.7, 0.7, 3.1, "#536169", "METAL"],
 
-  ["ROAD", "ROAD_FACILITY", "SURFACE", "도로", "차선 Marking이 포함된 아스팔트 도로", "SURFACE", "ROAD", 18, 6, 0.08, "#4e565b", "ASPHALT", "LINEAR", { laneCount: 2 }],
-  ["WALKWAY", "ROAD_FACILITY", "SURFACE", "보행로", "경계석이 있는 보행 동선", "SURFACE", "WALKWAY", 12, 2.2, 0.08, "#9aa1a3", "CONCRETE", "LINEAR"],
+  ["ROAD", "ROAD_FACILITY", "SURFACE", "도로", "경로 방향과 실제 차선 체계를 표현하는 편집형 아스팔트 도로", "SURFACE", "ROAD", 18, 7, 0.08, "#4e565b", "ASPHALT", "LINEAR", { laneCount: 2, trafficDirection: "TWO_WAY", laneMarkingStyle: "DASHED", centerLineStyle: "DOUBLE_SOLID", laneColor: "#f4f4ee", centerLineColor: "#f1c94a", edgeLineColor: "#f4f4ee", showDirectionArrows: true, connectionRadius: 4, verticalPathMode: "FOLLOW_TERRAIN", startElevation: 0, endElevation: 0, verticalCurveLength: 4, terrainClearance: 0.03, understructure: "SLOPE" }],
+  ["WALKWAY", "ROAD_FACILITY", "SURFACE", "인도", "경계석·포장 줄눈·점자 유도선을 갖춘 보행 동선", "SURFACE", "WALKWAY", 12, 2.4, 0.12, "#9aa1a3", "CONCRETE", "LINEAR", { curbWidth: 0.18, curbHeight: 0.14, curbColor: "#c8c5bd", jointColor: "#747b7d", tactileEnabled: true, tactileColor: "#d7ad35", connectionRadius: 1.4, verticalPathMode: "FOLLOW_TERRAIN", startElevation: 0, endElevation: 0, verticalCurveLength: 3, terrainClearance: 0.025, understructure: "SLOPE" }],
   ["CROSSWALK", "ROAD_FACILITY", "SURFACE", "횡단보도", "고대비 반복 Stripe 노면", "SURFACE", "CROSSWALK", 8, 4, 0.04, "#d6d8d7", "PAINTED", "AREA"],
+  ["OUTDOOR_STAIRS", "ROAD_FACILITY", "ACCESS", "옥외 계단", "단차·참·안전 난간을 조절할 수 있는 공간 연결 계단", "ACCESS", "OUTDOOR_STAIRS", 3, 5, 2.4, "#9a9d99", "CONCRETE", "AREA", { stepCount: 12, railingEnabled: true, railingColor: "#5f696d" }],
+  ["OUTDOOR_RAMP", "ROAD_FACILITY", "ACCESS", "옥외 경사로", "시작·도착 참과 양측 턱·안전 난간을 갖춘 높이 연결 경사로", "ACCESS", "OUTDOOR_RAMP", 3, 14, 0.9, "#999d99", "CONCRETE", "AREA", { landingLength: 1.5, surfaceThickness: 0.16, curbHeight: 0.12, curbColor: "#c8c5bd", railingEnabled: true, railingColor: "#5f696d", tactileEnabled: true, tactileColor: "#d7ad35" }],
   ["STREETLIGHT", "ROAD_FACILITY", "BOUNDARY", "가로등", "곡선 Arm과 LED Head", "TRAFFIC", "STREETLIGHT", 8, 3, 6, "#69757a", "METAL", "CLUSTER", { count: 2 }],
   ["BOLLARD", "ROAD_FACILITY", "BOUNDARY", "볼라드", "반사 Band가 있는 안전 Bollard", "TRAFFIC", "BOLLARD", 0.25, 0.25, 1, "#68747a", "METAL"],
   ["ROAD_BARRIER", "ROAD_FACILITY", "BOUNDARY", "방호벽", "분절형 Concrete Barrier", "TRAFFIC", "ROAD_BARRIER", 4, 0.7, 0.9, "#a5a9a8", "CONCRETE", "LINEAR"],
@@ -193,6 +200,18 @@ const SITE_OBJECTS = [
 
   ["GRASS", "ENVIRONMENT", "GROUND", "잔디", "낮은 잔디 Area", "SURFACE", "GRASS", 8, 8, 0.04, "#607b5a", "GRASS", "AREA"],
   ["EXTERIOR_FLOOR", "ENVIRONMENT", "GROUND", "외부 바닥", "콘크리트 광장과 Joint", "SURFACE", "PLAZA", 10, 10, 0.08, "#9aa1a3", "CONCRETE", "AREA"],
+  ["HILL_GENTLE", "ENVIRONMENT", "GROUND", "완만한 언덕", "넓게 퍼지는 완만한 자연 지형", "TERRAIN", "HILL_GENTLE", 18, 18, 3, "#6d775d", "GRASS", "AREA", { slopeRatio: 0.32, edgeMode: "SLOPE", surfaceMaterial: "GRASS" }],
+  ["HILL_STEEP", "ENVIRONMENT", "GROUND", "급경사 언덕", "중심부가 높고 경사가 뚜렷한 자연 지형", "TERRAIN", "HILL_STEEP", 14, 14, 5, "#6d715d", "GRASS", "AREA", { slopeRatio: 0.18, edgeMode: "SLOPE", surfaceMaterial: "GRASS" }],
+  ["HIGH_GROUND", "ENVIRONMENT", "GROUND", "평탄한 고지대", "상부 작업면이 평평하고 사면으로 연결되는 지형", "TERRAIN", "HIGH_GROUND", 12, 12, 2.5, "#6d775d", "GRASS", "AREA", { slopeRatio: 0.24, edgeMode: "SLOPE", surfaceMaterial: "GRASS", rampCount: 0 }],
+  ["LOW_GROUND", "ENVIRONMENT", "GROUND", "저지대", "주변 지면에서 안쪽으로 내려가는 저지형", "TERRAIN", "LOW_GROUND", 12, 12, 2, "#617063", "SOIL", "AREA", { slopeRatio: 0.24, edgeMode: "SLOPE", surfaceMaterial: "SOIL" }],
+  ["EMBANKMENT", "ENVIRONMENT", "GROUND", "둑·제방", "길이 방향으로 이어지는 성토 제방", "TERRAIN", "EMBANKMENT", 22, 8, 3, "#736b57", "SOIL", "AREA", { slopeRatio: 0.34, edgeMode: "SLOPE", surfaceMaterial: "SOIL" }],
+  ["CUT_SLOPE", "ENVIRONMENT", "GROUND", "절토 사면", "기준 지형을 절삭해 만든 경사면", "TERRAIN", "CUT_SLOPE", 18, 10, 3, "#71685a", "ROCK", "AREA", { slopeRatio: 0.36, edgeMode: "SLOPE", surfaceMaterial: "ROCK" }],
+  ["FILL_SLOPE", "ENVIRONMENT", "GROUND", "성토 사면", "기준 지형 위에 흙을 쌓아 만든 경사면", "TERRAIN", "FILL_SLOPE", 18, 10, 3, "#796d59", "SOIL", "AREA", { slopeRatio: 0.36, edgeMode: "SLOPE", surfaceMaterial: "SOIL" }],
+  ["ASPHALT_PLATEAU", "ENVIRONMENT", "GROUND", "아스팔트 고지대", "평탄한 상부와 진입 사면을 가진 아스팔트 작업장", "TERRAIN", "ASPHALT_PLATEAU", 20, 16, 2, "#4e565d", "ASPHALT", "AREA", { slopeRatio: 0.2, edgeMode: "SLOPE", surfaceMaterial: "ASPHALT", rampCount: 1, rampWidth: 4 }],
+  ["CONCRETE_PLATFORM", "ENVIRONMENT", "GROUND", "콘크리트 플랫폼", "평탄한 콘크리트 상부와 선택 가능한 측면 마감", "TERRAIN", "CONCRETE_PLATFORM", 16, 14, 1.5, "#9ca7ad", "CONCRETE", "AREA", { slopeRatio: 0.16, edgeMode: "RETAINING_WALL", surfaceMaterial: "CONCRETE", rampCount: 1, rampWidth: 3 }],
+  ["TRANSITION_SLOPE", "ENVIRONMENT", "GROUND", "경사 연결 지형", "낮은 면과 높은 면을 일정한 경사로 연결", "TERRAIN", "TRANSITION_SLOPE", 10, 18, 2.5, "#756c5b", "SOIL", "AREA", { slopeRatio: 0.18, edgeMode: "SLOPE", surfaceMaterial: "SOIL" }],
+  ["RETAINING_WALL", "ENVIRONMENT", "GROUND", "옹벽", "고도 차이를 수직 경계로 지지하는 지형 요소", "TERRAIN", "RETAINING_WALL", 16, 2, 2.5, "#8d969a", "CONCRETE", "AREA", { slopeRatio: 0.04, edgeMode: "RETAINING_WALL", surfaceMaterial: "CONCRETE" }],
+  ["DRAINAGE_CHANNEL", "ENVIRONMENT", "GROUND", "배수로", "지면에 연속된 낮은 배수 경로", "TERRAIN", "DRAINAGE_CHANNEL", 18, 1.5, 0.6, "#777c7b", "CONCRETE", "AREA", { slopeRatio: 0.42, edgeMode: "SLOPE", surfaceMaterial: "CONCRETE" }],
   ["ROCK", "ENVIRONMENT", "NATURAL", "바위", "불규칙 Facet 조경석", "LANDSCAPE", "ROCK", 2.4, 1.8, 1.4, "#747873", "CONCRETE"],
   ["BENCH", "ENVIRONMENT", "AMENITY", "벤치", "목재 Slat와 금속 Frame 벤치", "LANDSCAPE", "BENCH", 2, 0.65, 0.85, "#876d50", "PAINTED"],
   ["SHELTER", "ENVIRONMENT", "AMENITY", "휴게 쉘터", "얇은 Roof와 좌석이 있는 Shelter", "LANDSCAPE", "SHELTER", 4, 2.5, 2.8, "#70848b", "METAL"],
@@ -265,18 +284,32 @@ export const OBJECT_LIBRARY_DEFINITIONS = Object.freeze([
   ...SITE_OBJECTS,
 ]);
 
-export const OBJECT_LIBRARY_DEFINITION_MAP = Object.freeze(Object.fromEntries(
+const STATIC_OBJECT_LIBRARY_DEFINITION_MAP = Object.freeze(Object.fromEntries(
   OBJECT_LIBRARY_DEFINITIONS.map((definition) => [definition.id, definition]),
 ));
+
+export const OBJECT_LIBRARY_DEFINITION_MAP = new Proxy(STATIC_OBJECT_LIBRARY_DEFINITION_MAP, {
+  get(target, property, receiver) {
+    return Reflect.get(target, property, receiver)
+      ?? (typeof property === "string" ? getRuntimeCustomBuildingDefinition(property) : undefined);
+  },
+  has(target, property) {
+    return Reflect.has(target, property)
+      || (typeof property === "string" && Boolean(getRuntimeCustomBuildingDefinition(property)));
+  },
+});
 
 export const BUILDING_OBJECT_DEFINITIONS = Object.freeze(
   OBJECT_LIBRARY_DEFINITIONS.filter((definition) => definition.createsBuilding),
 );
 
 export function getObjectLibraryDefinitions(allowedIds) {
-  if (!allowedIds?.length) return OBJECT_LIBRARY_DEFINITIONS;
+  const customDefinitions = [CUSTOM_BUILDING_CREATE_DEFINITION, ...listRuntimeCustomBuildingDefinitions()];
+  if (!allowedIds?.length) return [...customDefinitions, ...OBJECT_LIBRARY_DEFINITIONS];
   const allowed = new Set(allowedIds);
-  return OBJECT_LIBRARY_DEFINITIONS.filter((definition) => allowed.has(definition.id));
+  const staticDefinitions = OBJECT_LIBRARY_DEFINITIONS.filter((definition) => allowed.has(definition.id));
+  const allowsBuilding = staticDefinitions.some((definition) => definition.createsBuilding);
+  return allowsBuilding ? [...customDefinitions, ...staticDefinitions] : staticDefinitions;
 }
 
 export function getDefaultObjectVariants(definition) {

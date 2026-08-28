@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
-import { ResetIcon } from "@/components/icons";
+import { ResetIcon, SnapIcon } from "@/components/icons";
 import { VIEW_MODES } from "@/features/digitalTwin/editor/constants/equipmentShapeTemplates";
 import {
   DEFAULT_GRID_SETTINGS,
@@ -17,7 +17,6 @@ import {
   DEFAULT_SITE_ENVIRONMENT,
   getSiteBounds,
   SITE_BACKGROUND_PRESETS,
-  SITE_GROUND_MATERIAL_OPTIONS,
 } from "@/features/digitalTwin/editor/constants/siteEnvironmentSettings";
 import {
   createSiteObjectFromArea,
@@ -37,10 +36,36 @@ import {
   updateGridSnapMarker,
 } from "@/features/digitalTwin/editor/world/GridGuideFactory";
 import {
+  createSitePathConnectionObject,
   createSiteEnvironmentObject,
   getSiteObjectSignature,
 } from "@/features/digitalTwin/editor/world/SiteEnvironmentFactory";
 import { placeObjectsInArea } from "@/features/digitalTwin/editor/utils/siteAreaPlacement";
+import {
+  findSitePathMagneticSnap,
+  resolveSitePathNetwork,
+} from "@/features/digitalTwin/editor/utils/sitePathConnections";
+import {
+  applyTerrainBrush,
+  applyTerrainSlope,
+  DEFAULT_TERRAIN_BRUSH,
+  TERRAIN_EDIT_TOOLS,
+} from "@/features/digitalTwin/editor/terrain/TerrainEditor";
+import {
+  collectTerrainFeatures,
+  normalizeTerrainModel,
+  sampleBaseTerrainElevation,
+  sampleTerrainElevation,
+} from "@/features/digitalTwin/editor/terrain/TerrainModel";
+import {
+  createTerrainBrushCursor,
+  createTerrainGrid,
+  createTerrainMesh,
+  syncTerrainPicker,
+  updateTerrainBrushCursor,
+  updateTerrainMesh,
+} from "@/features/digitalTwin/editor/terrain/TerrainMeshFactory";
+import { resolveVerticalPath } from "@/features/digitalTwin/editor/terrain/VerticalPathModel";
 
 import {
   bindCameraFocusCancellation,
@@ -64,11 +89,31 @@ import styles from "./SiteOverviewScene.module.css";
 
 const OVERVIEW_CAMERA = new THREE.Vector3(72, 58, 78);
 const OVERVIEW_TARGET = new THREE.Vector3(12, 5, 0);
-const MAX_SITE_GRID_LINES_PER_AXIS = 800;
 const SITE_VISUAL_THEMES = {
   light: { grid: 0x9babb6, gridCenter: 0x708691, edge: 0x607987, floor: 0xb8c8d0, apron: 0xcbd5da },
   dark: { grid: 0x2b4652, gridCenter: 0x4f7180, edge: 0x7696a3, floor: 0x42606c, apron: 0x263a43 },
 };
+
+function rebuildSitePathConnections(root, network, { previewObjectId = null } = {}) {
+  const junctions = network?.junctions ?? [];
+  const nextIds = new Set(junctions.map((junction) => junction.id));
+  [...root.children].forEach((connection) => {
+    if (nextIds.has(connection.userData.sitePathConnectionId)) return;
+    root.remove(connection);
+    disposeObject3D(connection);
+  });
+  junctions.forEach((junction) => {
+    const preview = Boolean(previewObjectId && junction.objectIds.includes(previewObjectId));
+    const signature = JSON.stringify({ junction, preview });
+    const current = root.children.find((child) => child.userData.sitePathConnectionId === junction.id);
+    if (current?.userData.geometrySignature === signature) return;
+    if (current) {
+      root.remove(current);
+      disposeObject3D(current);
+    }
+    root.add(createSitePathConnectionObject(junction, { preview }));
+  });
+}
 
 function findUserData(object, key, root) {
   let current = object;
@@ -100,30 +145,6 @@ function resizeRuntime(runtime) {
   runtime.orthographicCamera.top = halfHeight;
   runtime.orthographicCamera.bottom = -halfHeight;
   runtime.orthographicCamera.updateProjectionMatrix();
-}
-
-function createSiteGridLines(width, depth, cellSize, color) {
-  const points = [];
-  const halfWidth = width / 2;
-  const halfDepth = depth / 2;
-  const longestCellCount = Math.max(width, depth) / Math.max(cellSize, 0.001);
-  const displayStep = cellSize * Math.max(1, Math.ceil(longestCellCount / MAX_SITE_GRID_LINES_PER_AXIS));
-  const firstX = Math.ceil((-halfWidth + 1e-8) / displayStep) * displayStep;
-  const firstZ = Math.ceil((-halfDepth + 1e-8) / displayStep) * displayStep;
-
-  for (let x = firstX; x < halfWidth - 1e-8; x += displayStep) {
-    if (Math.abs(x) < 1e-8) continue;
-    points.push(new THREE.Vector3(x, 0, -halfDepth), new THREE.Vector3(x, 0, halfDepth));
-  }
-  for (let z = firstZ; z < halfDepth - 1e-8; z += displayStep) {
-    if (Math.abs(z) < 1e-8) continue;
-    points.push(new THREE.Vector3(-halfWidth, 0, z), new THREE.Vector3(halfWidth, 0, z));
-  }
-
-  return new THREE.LineSegments(
-    new THREE.BufferGeometry().setFromPoints(points),
-    new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.72 }),
-  );
 }
 
 function captureCameraState(runtime) {
@@ -180,6 +201,7 @@ function beginBuildingFocusMode(runtime, cameraStateRef) {
     cameraSnapshot,
     buildingVisibility: new Map([...runtime.buildingObjects].map(([id, object]) => [id, object.visible])),
     siteObjectVisibility: new Map([...runtime.siteEnvironmentObjects].map(([id, object]) => [id, object.visible])),
+    siteConnectionVisible: runtime.siteConnectionRoot.visible,
   };
   if (cameraStateRef) cameraStateRef.current = cameraSnapshot;
 }
@@ -195,6 +217,7 @@ function applyBuildingFocusVisibility(runtime, selectedBuildingId) {
     if (!state.siteObjectVisibility.has(id)) state.siteObjectVisibility.set(id, object.visible);
     object.visible = false;
   });
+  runtime.siteConnectionRoot.visible = false;
 }
 
 function restoreBuildingFocusVisibility(runtime) {
@@ -206,6 +229,7 @@ function restoreBuildingFocusVisibility(runtime) {
   runtime.siteEnvironmentObjects.forEach((object, id) => {
     object.visible = state.siteObjectVisibility.get(id) ?? object.visible;
   });
+  runtime.siteConnectionRoot.visible = state.siteConnectionVisible;
   runtime.buildingFocusMode = null;
 }
 
@@ -244,37 +268,10 @@ function measureCameraSafeInsets(runtime) {
   return insets;
 }
 
-function createSiteGrid(width, depth, cellSize, siteTheme) {
-  const group = new THREE.Group();
-  group.name = "SiteGrid";
-  const halfWidth = width / 2;
-  const halfDepth = depth / 2;
-  const centerLines = new THREE.LineSegments(
-    new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(-halfWidth, 0, 0), new THREE.Vector3(halfWidth, 0, 0),
-      new THREE.Vector3(0, 0, -halfDepth), new THREE.Vector3(0, 0, halfDepth),
-    ]),
-    new THREE.LineBasicMaterial({ color: siteTheme.gridCenter, transparent: true, opacity: 0.92 }),
-  );
-  const boundary = new THREE.Line(
-    new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(-halfWidth, 0, -halfDepth),
-      new THREE.Vector3(halfWidth, 0, -halfDepth),
-      new THREE.Vector3(halfWidth, 0, halfDepth),
-      new THREE.Vector3(-halfWidth, 0, halfDepth),
-      new THREE.Vector3(-halfWidth, 0, -halfDepth),
-    ]),
-    new THREE.LineBasicMaterial({ color: siteTheme.edge, transparent: true, opacity: 0.98 }),
-  );
-  group.add(createSiteGridLines(width, depth, cellSize, siteTheme.grid), centerLines, boundary);
-  group.position.y = -0.01;
-  return group;
-}
-
-function replaceSiteGrid(runtime, siteTheme, cellSize, width, depth) {
+function replaceSiteGrid(runtime, siteTheme, cellSize, environment, terrainFeatures) {
   runtime.scene.remove(runtime.grid);
   disposeObject3D(runtime.grid);
-  runtime.grid = createSiteGrid(width, depth, cellSize, siteTheme);
+  runtime.grid = createTerrainGrid(environment, terrainFeatures, cellSize, siteTheme);
   runtime.scene.add(runtime.grid);
 }
 
@@ -366,6 +363,8 @@ function createPlacementPreview(templateId, variants, theme) {
       name: template.name,
       templateId: template.id,
       objectDefinitionId: template.id,
+      customAssetId: template.customAssetId ?? null,
+      customAssetRevision: template.customAssetRevision ?? null,
       variants: { ...template.defaultVariants, ...variants },
       parameters: {
         ...template.parameters,
@@ -464,6 +463,8 @@ export default function SiteOverviewScene({
   onPlaceTemplate,
   onPlaceTemplateArea,
   onCancelPlacement,
+  terrainBrush = DEFAULT_TERRAIN_BRUSH,
+  onTerrainChange,
 }) {
   const containerRef = useRef(null);
   const runtimeRef = useRef(null);
@@ -474,8 +475,15 @@ export default function SiteOverviewScene({
   const placementTemplateIdRef = useRef(placementTemplateId);
   const placementVariantsRef = useRef(placementVariants);
   const areaSelectionRef = useRef(areaSelection);
+  const siteObjectsRef = useRef(siteObjects);
+  const siteEnvironmentRef = useRef(siteEnvironment);
+  const terrainBrushRef = useRef(terrainBrush);
+  const autoConnectEnabledRef = useRef(true);
   const [dragSnapSize, setDragSnapSize] = useState(null);
+  const [pathSnapInfo, setPathSnapInfo] = useState(null);
+  const [autoConnectEnabled, setAutoConnectEnabled] = useState(true);
   const [liveArea, setLiveArea] = useState(null);
+  const terrainFeatures = useMemo(() => collectTerrainFeatures(siteObjects), [siteObjects]);
   const areaPlacementPlan = useMemo(() => {
     const area = liveArea ?? areaSelection;
     const definition = SITE_CREATION_TEMPLATE_MAP[placementTemplateId];
@@ -493,8 +501,22 @@ export default function SiteOverviewScene({
     handlersRef.current = {
       onSelectBuilding, onSelectSiteObject, onUpdateBuilding, onUpdateSiteObject,
       onEnterBuilding, onSelectFloor, onEnterFloor, onAreaSelectionChange, onPlaceTemplate, onPlaceTemplateArea, onCancelPlacement,
+      onTerrainChange,
     };
-  }, [onAreaSelectionChange, onCancelPlacement, onEnterBuilding, onEnterFloor, onPlaceTemplate, onPlaceTemplateArea, onSelectBuilding, onSelectFloor, onSelectSiteObject, onUpdateBuilding, onUpdateSiteObject]);
+  }, [onAreaSelectionChange, onCancelPlacement, onEnterBuilding, onEnterFloor, onPlaceTemplate, onPlaceTemplateArea, onSelectBuilding, onSelectFloor, onSelectSiteObject, onTerrainChange, onUpdateBuilding, onUpdateSiteObject]);
+
+  useEffect(() => {
+    siteObjectsRef.current = siteObjects;
+  }, [siteObjects]);
+
+  useEffect(() => {
+    siteEnvironmentRef.current = siteEnvironment;
+    terrainBrushRef.current = terrainBrush;
+  }, [siteEnvironment, terrainBrush]);
+
+  useEffect(() => {
+    autoConnectEnabledRef.current = autoConnectEnabled;
+  }, [autoConnectEnabled]);
 
   useEffect(() => {
     gridSettingsRef.current = gridSettings;
@@ -506,12 +528,18 @@ export default function SiteOverviewScene({
     const runtime = runtimeRef.current;
     if (!runtime) return;
     runtime.renderer.domElement.style.cursor = interactionMode === SITE_INTERACTION_MODES.NAVIGATE ? "grab" : "crosshair";
+    if (runtime.terrainEdit && interactionMode !== SITE_INTERACTION_MODES.EDIT_TERRAIN) {
+      updateTerrainMesh(runtime.ground, siteEnvironmentRef.current, collectTerrainFeatures(siteObjectsRef.current));
+      syncTerrainPicker(runtime.groundPicker, runtime.ground);
+      runtime.terrainEdit = null;
+      updateTerrainBrushCursor(runtime.terrainBrushCursor, null, terrainBrushRef.current, false);
+    }
     runtime.areaStart = null;
     runtime.areaEnd = null;
     runtime.placementPointerDown = false;
     runtime.placementAreaStart = null;
     runtime.placementDragArea = null;
-    runtime.orbitControls.enabled = !runtime.dragging;
+    runtime.orbitControls.enabled = !runtime.dragging && interactionMode !== SITE_INTERACTION_MODES.EDIT_TERRAIN;
     if (runtime.placementPreview && interactionMode !== SITE_INTERACTION_MODES.PLACE_OBJECT) {
       runtime.placementPreview.visible = false;
     }
@@ -553,17 +581,14 @@ export default function SiteOverviewScene({
     const objectRoot = new THREE.Group();
     objectRoot.name = "부지 오브젝트";
     scene.add(objectRoot);
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(1, 1),
-      new THREE.MeshStandardMaterial({ color: 0x9ca7ad, roughness: 0.92, metalness: 0 }),
-    );
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.y = -0.045;
-    ground.receiveShadow = true;
+    const siteConnectionRoot = new THREE.Group();
+    siteConnectionRoot.name = "도로·인도 자동 연결부";
+    objectRoot.add(siteConnectionRoot);
+    const ground = createTerrainMesh(DEFAULT_SITE_ENVIRONMENT, []);
     scene.add(ground);
-    const grid = createSiteGrid(
-      DEFAULT_SITE_ENVIRONMENT.width,
-      DEFAULT_SITE_ENVIRONMENT.depth,
+    const grid = createTerrainGrid(
+      DEFAULT_SITE_ENVIRONMENT,
+      [],
       DEFAULT_GRID_SETTINGS.baseSize,
       SITE_VISUAL_THEMES.dark,
     );
@@ -574,12 +599,13 @@ export default function SiteOverviewScene({
     scene.add(gridSnapMarker);
 
     const groundPicker = new THREE.Mesh(
-      new THREE.PlaneGeometry(1, 1),
+      ground.geometry,
       new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }),
     );
-    groundPicker.rotation.x = -Math.PI / 2;
-    groundPicker.position.y = 0.001;
+    syncTerrainPicker(groundPicker, ground);
     scene.add(groundPicker);
+    const terrainBrushCursor = createTerrainBrushCursor(sceneTheme.selection);
+    scene.add(terrainBrushCursor);
     const areaGuide = new THREE.Mesh(
       new THREE.BoxGeometry(1, 0.035, 1),
       new THREE.MeshBasicMaterial({ color: sceneTheme.selection, transparent: true, opacity: 0.28, depthWrite: false }),
@@ -604,10 +630,11 @@ export default function SiteOverviewScene({
     const runtime = {
       container, scene, renderer, perspectiveCamera, orthographicCamera,
       activeCamera: perspectiveCamera, orthographicSize: 120, orbitControls, transformControls, transformTools: { translate: false, rotate: false }, objectRoot,
-      buildingObjects: new Map(), siteEnvironmentObjects: new Map(), grid, gridRegionRoot,
-      gridSnapMarker, ground, groundPicker, areaGuide, placementGhostRoot, hemisphereLight, keyLight, fillLight,
+      buildingObjects: new Map(), siteEnvironmentObjects: new Map(), siteConnectionRoot, grid, gridRegionRoot,
+      gridSnapMarker, ground, groundPicker, terrainBrushCursor, areaGuide, placementGhostRoot, hemisphereLight, keyLight, fillLight,
       dragging: false, areaStart: null, areaEnd: null, placementPointerDown: false, placementAreaStart: null,
       placementDragArea: null, placementPreview: null,
+      terrainEdit: null,
       cameraFocus: null,
       buildingFocusMode: null,
       siteBounds: getSiteBounds(DEFAULT_SITE_ENVIRONMENT),
@@ -621,9 +648,40 @@ export default function SiteOverviewScene({
       raycaster.setFromCamera(getPointer(event, renderer.domElement), runtime.activeCamera);
       return raycaster.intersectObject(groundPicker, false)[0]?.point ?? null;
     };
+    const previewTerrainDraft = (terrain, point = null) => {
+      const environment = { ...siteEnvironmentRef.current, terrain };
+      updateTerrainMesh(runtime.ground, environment, collectTerrainFeatures(siteObjectsRef.current));
+      syncTerrainPicker(runtime.groundPicker, runtime.ground);
+      if (point) updateTerrainBrushCursor(runtime.terrainBrushCursor, point, terrainBrushRef.current, true);
+    };
+    const cancelTerrainEdit = () => {
+      if (!runtime.terrainEdit) return false;
+      updateTerrainMesh(runtime.ground, siteEnvironmentRef.current, collectTerrainFeatures(siteObjectsRef.current));
+      syncTerrainPicker(runtime.groundPicker, runtime.ground);
+      runtime.terrainEdit = null;
+      runtime.orbitControls.enabled = false;
+      updateTerrainBrushCursor(runtime.terrainBrushCursor, null, terrainBrushRef.current, false);
+      return true;
+    };
     function handlePointerDown(event) {
       pointerStart.set(event.clientX, event.clientY);
       if (event.button !== 0 || dualTransformIsActive(transformControls)) return;
+      if (interactionModeRef.current === SITE_INTERACTION_MODES.EDIT_TERRAIN) {
+        const point = hitGround(event);
+        if (!point) return;
+        const environment = siteEnvironmentRef.current;
+        const original = normalizeTerrainModel(environment.terrain, environment.width, environment.depth, environment.groundMaterial);
+        const brush = { ...DEFAULT_TERRAIN_BRUSH, ...terrainBrushRef.current };
+        if (brush.tool === TERRAIN_EDIT_TOOLS.FLATTEN) brush.flattenHeight = sampleBaseTerrainElevation(original, point.x, point.z);
+        runtime.terrainEdit = { original, draft: original, start: point.clone(), last: point.clone(), brush };
+        if (brush.tool !== TERRAIN_EDIT_TOOLS.SLOPE) {
+          runtime.terrainEdit.draft = applyTerrainBrush(original, point, brush, environment.width, environment.depth);
+          previewTerrainDraft(runtime.terrainEdit.draft, point);
+        }
+        runtime.orbitControls.enabled = false;
+        renderer.domElement.setPointerCapture?.(event.pointerId);
+        return;
+      }
       if (
         interactionModeRef.current === SITE_INTERACTION_MODES.PLACE_OBJECT
         && placementTemplateIdRef.current
@@ -653,6 +711,21 @@ export default function SiteOverviewScene({
       renderer.domElement.setPointerCapture?.(event.pointerId);
     }
     function handlePointerMove(event) {
+      if (interactionModeRef.current === SITE_INTERACTION_MODES.EDIT_TERRAIN) {
+        const point = hitGround(event);
+        if (!point) return;
+        updateTerrainBrushCursor(runtime.terrainBrushCursor, point, terrainBrushRef.current, true);
+        if (!runtime.terrainEdit) return;
+        const minimumStrokeDistance = Math.max(0.15, runtime.terrainEdit.draft.resolution * 0.22);
+        if (runtime.terrainEdit.last.distanceTo(point) < minimumStrokeDistance) return;
+        const environment = siteEnvironmentRef.current;
+        runtime.terrainEdit.draft = runtime.terrainEdit.brush.tool === TERRAIN_EDIT_TOOLS.SLOPE
+          ? applyTerrainSlope(runtime.terrainEdit.original, runtime.terrainEdit.start, point, runtime.terrainEdit.brush, environment.width, environment.depth)
+          : applyTerrainBrush(runtime.terrainEdit.draft, point, runtime.terrainEdit.brush, environment.width, environment.depth);
+        runtime.terrainEdit.last.copy(point);
+        previewTerrainDraft(runtime.terrainEdit.draft, point);
+        return;
+      }
       if (runtime.areaStart) {
         const point = hitGround(event);
         if (!point) return;
@@ -690,7 +763,7 @@ export default function SiteOverviewScene({
         return;
       }
       const snappedPoint = snapAreaPoint(point, gridSettingsRef.current, gridScopeIdRef.current, runtime.siteBounds);
-      runtime.placementPreview.position.set(snappedPoint.x, 0.04, snappedPoint.z);
+      runtime.placementPreview.position.set(snappedPoint.x, point.y + 0.04, snappedPoint.z);
       clampObjectToSiteBounds(runtime.placementPreview, runtime.siteBounds);
       runtime.placementPreview.visible = true;
       updateGridSnapMarker(runtime.gridSnapMarker, runtime.placementPreview.position, true);
@@ -698,6 +771,14 @@ export default function SiteOverviewScene({
     }
     function handlePointerUp(event) {
       if (event.button !== 0) return;
+      if (runtime.terrainEdit) {
+        const draft = runtime.terrainEdit.draft;
+        runtime.terrainEdit = null;
+        runtime.orbitControls.enabled = false;
+        handlersRef.current.onTerrainChange?.(draft);
+        if (renderer.domElement.hasPointerCapture?.(event.pointerId)) renderer.domElement.releasePointerCapture(event.pointerId);
+        return;
+      }
       if (runtime.areaStart) {
         const point = hitGround(event);
         const end = point
@@ -734,7 +815,7 @@ export default function SiteOverviewScene({
         if (!point || !placementTemplateIdRef.current) return;
         const snappedPoint = snapAreaPoint(point, gridSettingsRef.current, gridScopeIdRef.current, runtime.siteBounds);
         if (runtime.placementPreview) {
-          runtime.placementPreview.position.set(snappedPoint.x, 0.04, snappedPoint.z);
+          runtime.placementPreview.position.set(snappedPoint.x, point.y + 0.04, snappedPoint.z);
           clampObjectToSiteBounds(runtime.placementPreview, runtime.siteBounds);
           snappedPoint.x = runtime.placementPreview.position.x;
           snappedPoint.z = runtime.placementPreview.position.z;
@@ -795,12 +876,64 @@ export default function SiteOverviewScene({
     function previewObjectChange(activeControl) {
       const object = activeControl.object;
       if (!object) return;
+      let gridSnapPosition = null;
       if (activeControl === transformControls.translate) {
         const { position, cellSize } = snapHorizontalPosition(object.position, gridSettingsRef.current, gridScopeIdRef.current);
-        updateGridSnapMarker(runtime.gridSnapMarker, position, runtime.dragging && cellSize !== null);
+        gridSnapPosition = cellSize !== null ? position : null;
         setDragSnapSize((current) => current === cellSize ? current : cellSize);
       }
       clampObjectToSiteBounds(object, runtime.siteBounds);
+      const siteObjectId = object.userData.siteObjectId;
+      const source = siteObjectId
+        ? siteObjectsRef.current.find((item) => item.id === siteObjectId)
+        : null;
+      if (!source) {
+        setPathSnapInfo(null);
+        updateGridSnapMarker(
+          runtime.gridSnapMarker,
+          gridSnapPosition ?? { x: 0, z: 0 },
+          runtime.dragging && Boolean(gridSnapPosition),
+        );
+        return;
+      }
+      const transformed = {
+        ...source,
+        position: { x: object.position.x, y: object.position.y - (object.userData.terrainBaseElevation ?? 0), z: object.position.z },
+        rotation: { x: object.rotation.x, y: object.rotation.y, z: object.rotation.z },
+      };
+      const pathSnap = autoConnectEnabledRef.current
+        ? findSitePathMagneticSnap(transformed, siteObjectsRef.current)
+        : null;
+      updateGridSnapMarker(
+        runtime.gridSnapMarker,
+        pathSnap?.targetEndpoint.position ?? gridSnapPosition ?? { x: 0, z: 0 },
+        runtime.dragging && Boolean(pathSnap || gridSnapPosition),
+      );
+      const previewObject = pathSnap ? {
+        ...transformed,
+        position: {
+          ...transformed.position,
+          x: transformed.position.x + pathSnap.offset.x,
+          z: transformed.position.z + pathSnap.offset.z,
+        },
+      } : transformed;
+      if (autoConnectEnabledRef.current) {
+        const previewNetwork = resolveSitePathNetwork(
+          siteObjectsRef.current.map((item) => item.id === siteObjectId ? previewObject : item),
+        );
+        rebuildSitePathConnections(runtime.siteConnectionRoot, previewNetwork, { previewObjectId: siteObjectId });
+        const previewJunction = previewNetwork.junctions.find((junction) => junction.objectIds.includes(siteObjectId));
+        const nextInfo = pathSnap
+          ? { profile: pathSnap.profile, label: pathSnap.label }
+          : previewJunction
+            ? { profile: previewJunction.profile, label: previewJunction.label }
+            : null;
+        setPathSnapInfo((current) => (
+          current?.profile === nextInfo?.profile && current?.label === nextInfo?.label ? current : nextInfo
+        ));
+      } else {
+        setPathSnapInfo(null);
+      }
     }
     function commitObjectChange(activeControl) {
       const object = activeControl.object;
@@ -810,13 +943,44 @@ export default function SiteOverviewScene({
         object.position.x = position.x;
         object.position.z = position.z;
       }
+      const siteObjectId = object.userData.siteObjectId;
+      const source = siteObjectId
+        ? siteObjectsRef.current.find((item) => item.id === siteObjectId)
+        : null;
+      const transformed = source ? {
+        ...source,
+        position: { x: object.position.x, y: object.position.y - (object.userData.terrainBaseElevation ?? 0), z: object.position.z },
+        rotation: { x: object.rotation.x, y: object.rotation.y, z: object.rotation.z },
+      } : null;
+      const pathSnap = transformed && autoConnectEnabledRef.current
+        ? findSitePathMagneticSnap(transformed, siteObjectsRef.current)
+        : null;
+      if (pathSnap) {
+        object.position.x += pathSnap.offset.x;
+        object.position.z += pathSnap.offset.z;
+      }
       clampObjectToSiteBounds(object, runtime.siteBounds);
       const changes = {
-        position: { x: object.position.x, y: object.position.y, z: object.position.z },
+        position: { x: object.position.x, y: object.position.y - (object.userData.terrainBaseElevation ?? 0), z: object.position.z },
         rotation: { x: object.rotation.x, y: object.rotation.y, z: object.rotation.z },
       };
       if (object.userData.buildingId) handlersRef.current.onUpdateBuilding(object.userData.buildingId, changes);
-      if (object.userData.siteObjectId) handlersRef.current.onUpdateSiteObject(object.userData.siteObjectId, changes);
+      if (siteObjectId) {
+        handlersRef.current.onUpdateSiteObject(siteObjectId, changes);
+        if (source) {
+          rebuildSitePathConnections(
+            runtime.siteConnectionRoot,
+            autoConnectEnabledRef.current
+              ? resolveSitePathNetwork(siteObjectsRef.current.map((item) => item.id === siteObjectId ? {
+                  ...source,
+                  position: changes.position,
+                  rotation: changes.rotation,
+                } : item))
+              : { junctions: [] },
+          );
+        }
+      }
+      setPathSnapInfo(null);
     }
     function handleDraggingChanged(activeControl, event) {
       orbitControls.enabled = !event.value;
@@ -825,9 +989,14 @@ export default function SiteOverviewScene({
       if (!event.value) {
         updateGridSnapMarker(runtime.gridSnapMarker, { x: 0, z: 0 }, false);
         setDragSnapSize(null);
+        setPathSnapInfo(null);
       }
     }
     function handlePointerCancel(event) {
+      if (cancelTerrainEdit()) {
+        if (renderer.domElement.hasPointerCapture?.(event.pointerId)) renderer.domElement.releasePointerCapture(event.pointerId);
+        return;
+      }
       if (runtime.areaStart) {
         const area = createArea(runtime.areaStart, runtime.areaEnd ?? runtime.areaStart, runtime.siteBounds);
         runtime.areaStart = null;
@@ -849,6 +1018,10 @@ export default function SiteOverviewScene({
       if (renderer.domElement.hasPointerCapture?.(event.pointerId)) renderer.domElement.releasePointerCapture(event.pointerId);
     }
 
+    function handleKeyDown(event) {
+      if (event.key === "Escape" && cancelTerrainEdit()) event.stopPropagation();
+    }
+
     renderer.domElement.addEventListener("pointerdown", handlePointerDown);
     renderer.domElement.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp);
@@ -857,6 +1030,7 @@ export default function SiteOverviewScene({
     renderer.domElement.addEventListener("dblclick", handleDoubleClick);
     renderer.domElement.addEventListener("dragover", handleDragOver);
     renderer.domElement.addEventListener("drop", handleDrop);
+    window.addEventListener("keydown", handleKeyDown, true);
     const handleTranslateChange = () => previewObjectChange(transformControls.translate);
     const handleRotateChange = () => previewObjectChange(transformControls.rotate);
     const handleTranslateCommit = () => commitObjectChange(transformControls.translate);
@@ -899,6 +1073,7 @@ export default function SiteOverviewScene({
       renderer.domElement.removeEventListener("dblclick", handleDoubleClick);
       renderer.domElement.removeEventListener("dragover", handleDragOver);
       renderer.domElement.removeEventListener("drop", handleDrop);
+      window.removeEventListener("keydown", handleKeyDown, true);
       transformControls.translate.removeEventListener("objectChange", handleTranslateChange);
       transformControls.rotate.removeEventListener("objectChange", handleRotateChange);
       transformControls.translate.removeEventListener("mouseUp", handleTranslateCommit);
@@ -909,14 +1084,14 @@ export default function SiteOverviewScene({
       orbitControls.dispose();
       runtime.buildingObjects.forEach(disposeObject3D);
       runtime.siteEnvironmentObjects.forEach(disposeObject3D);
+      disposeObject3D(runtime.siteConnectionRoot);
       if (runtime.placementPreview) disposeObject3D(runtime.placementPreview);
       clearPlacementGhosts(runtime.placementGhostRoot);
       disposeObject3D(runtime.gridRegionRoot);
       disposeObject3D(runtime.gridSnapMarker);
       disposeObject3D(runtime.areaGuide);
-      ground.geometry.dispose();
-      ground.material.dispose();
-      groundPicker.geometry.dispose();
+      disposeObject3D(runtime.terrainBrushCursor);
+      disposeObject3D(ground);
       groundPicker.material.dispose();
       disposeObject3D(runtime.grid);
       renderer.dispose();
@@ -931,8 +1106,6 @@ export default function SiteOverviewScene({
     const siteTheme = SITE_VISUAL_THEMES[theme];
     const backgroundPreset = SITE_BACKGROUND_PRESETS[siteEnvironment.backgroundTheme]
       ?? SITE_BACKGROUND_PRESETS.DAY;
-    const groundPreset = SITE_GROUND_MATERIAL_OPTIONS.find((option) => option.id === siteEnvironment.groundMaterial)
-      ?? SITE_GROUND_MATERIAL_OPTIONS[0];
     const width = Math.max(20, siteEnvironment.width);
     const depth = Math.max(20, siteEnvironment.depth);
     const span = Math.max(width, depth);
@@ -946,10 +1119,8 @@ export default function SiteOverviewScene({
     runtime.hemisphereLight.groundColor.set(backgroundPreset.ground);
     runtime.keyLight.color.set(backgroundPreset.key);
     runtime.fillLight.color.set(backgroundPreset.fill);
-    runtime.ground.scale.set(width, depth, 1);
-    runtime.ground.material.color.set(groundPreset.color);
-    runtime.ground.material.roughness = groundPreset.roughness;
-    runtime.groundPicker.scale.set(width, depth, 1);
+    updateTerrainMesh(runtime.ground, siteEnvironment, terrainFeatures);
+    syncTerrainPicker(runtime.groundPicker, runtime.ground);
     runtime.orbitControls.maxDistance = Math.max(80, diagonal * 4);
     runtime.perspectiveCamera.far = Math.max(500, diagonal * 6);
     runtime.orthographicCamera.far = Math.max(500, diagonal * 6);
@@ -957,8 +1128,8 @@ export default function SiteOverviewScene({
     runtime.orthographicCamera.updateProjectionMatrix();
     runtime.areaGuide.material.color.set(sceneTheme.selection);
     runtime.areaGuide.children[0].material.color.set(sceneTheme.selection);
-    replaceSiteGrid(runtime, siteTheme, gridSettings.baseSize, width, depth);
-  }, [gridSettings.baseSize, siteEnvironment, theme]);
+    replaceSiteGrid(runtime, siteTheme, gridSettings.baseSize, siteEnvironment, terrainFeatures);
+  }, [gridSettings.baseSize, siteEnvironment, terrainFeatures, theme]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -1006,6 +1177,26 @@ export default function SiteOverviewScene({
     const runtime = runtimeRef.current;
     if (!runtime) return;
     const siteTheme = SITE_VISUAL_THEMES[theme];
+    const terrainModel = normalizeTerrainModel(siteEnvironment.terrain, siteEnvironment.width, siteEnvironment.depth, siteEnvironment.groundMaterial);
+    const terrainFeatureObjects = collectTerrainFeatures(siteObjects);
+    const verticalPathsByObjectId = new Map(siteObjects
+      .filter((object) => ["ROAD", "WALKWAY"].includes(object.profile))
+      .map((object) => [object.id, resolveVerticalPath(object, terrainModel, terrainFeatureObjects)]));
+    const networkObjects = siteObjects.map((object) => {
+      const verticalPath = verticalPathsByObjectId.get(object.id);
+      if (!verticalPath?.segments?.length) return object;
+      const points = verticalPath.segments.flatMap((segment, index) => {
+        const start = segment.samples[0];
+        const end = segment.samples.at(-1);
+        return index === 0
+          ? [{ x: start.x, z: start.z, elevation: start.y }, { x: end.x, z: end.z, elevation: end.y }]
+          : [{ x: end.x, z: end.z, elevation: end.y }];
+      });
+      return { ...object, path: { ...object.path, points } };
+    });
+    const pathNetwork = autoConnectEnabled
+      ? resolveSitePathNetwork(networkObjects)
+      : { junctions: [], renderContextsByObjectId: {} };
     const buildingIds = new Set(buildings.map((building) => building.id));
     runtime.buildingObjects.forEach((object, id) => {
       if (!buildingIds.has(id)) {
@@ -1035,7 +1226,9 @@ export default function SiteOverviewScene({
         runtime.buildingObjects.set(building.id, object);
         runtime.objectRoot.add(object);
       }
-      object.position.set(building.position.x, building.position.y, building.position.z);
+      const terrainBaseElevation = sampleTerrainElevation(terrainModel, building.position.x, building.position.z, terrainFeatureObjects);
+      object.userData.terrainBaseElevation = terrainBaseElevation;
+      object.position.set(building.position.x, building.position.y + terrainBaseElevation, building.position.z);
       object.rotation.set(building.rotation.x, building.rotation.y, building.rotation.z);
       clampObjectToSiteBounds(object, runtime.siteBounds);
       if (
@@ -1066,7 +1259,11 @@ export default function SiteOverviewScene({
     });
     siteObjects.forEach((siteObject) => {
       const selected = siteObject.id === selectedSiteObjectId;
-      const signature = getSiteObjectSignature(siteObject, selected, theme);
+      const pathRenderContext = {
+        ...(pathNetwork.renderContextsByObjectId[siteObject.id] ?? {}),
+        verticalPath: verticalPathsByObjectId.get(siteObject.id) ?? null,
+      };
+      const signature = getSiteObjectSignature(siteObject, selected, theme, pathRenderContext);
       let object = runtime.siteEnvironmentObjects.get(siteObject.id);
       if (!object || object.userData.geometrySignature !== signature) {
         if (object) {
@@ -1076,11 +1273,18 @@ export default function SiteOverviewScene({
         }
         object = createSiteEnvironmentObject(siteObject, {
           selected, theme, selectionColor: SCENE_THEMES[theme].selection, edgeColor: siteTheme.edge,
+          pathRenderContext,
         });
         runtime.siteEnvironmentObjects.set(siteObject.id, object);
         runtime.objectRoot.add(object);
       }
-      object.position.set(siteObject.position.x, siteObject.position.y, siteObject.position.z);
+      const isVerticalPath = verticalPathsByObjectId.has(siteObject.id);
+      const featureBaseElevation = siteObject.assetKind === "TERRAIN"
+        ? sampleBaseTerrainElevation(terrainModel, siteObject.position.x, siteObject.position.z)
+        : sampleTerrainElevation(terrainModel, siteObject.position.x, siteObject.position.z, terrainFeatureObjects);
+      const terrainBaseElevation = isVerticalPath ? 0 : featureBaseElevation;
+      object.userData.terrainBaseElevation = terrainBaseElevation;
+      object.position.set(siteObject.position.x, siteObject.position.y + terrainBaseElevation, siteObject.position.z);
       object.rotation.set(siteObject.rotation.x, siteObject.rotation.y, siteObject.rotation.z);
       clampObjectToSiteBounds(object, runtime.siteBounds);
       if (
@@ -1093,6 +1297,9 @@ export default function SiteOverviewScene({
       }
     });
 
+    rebuildSitePathConnections(runtime.siteConnectionRoot, pathNetwork);
+    runtime.siteConnectionRoot.visible = !runtime.buildingFocusMode;
+
     const selectedObject = runtime.buildingObjects.get(selectedBuildingId)
       ?? runtime.siteEnvironmentObjects.get(selectedSiteObjectId);
     if (selectedObject && interactionMode === SITE_INTERACTION_MODES.NAVIGATE) {
@@ -1101,7 +1308,7 @@ export default function SiteOverviewScene({
         allowVerticalTranslation: runtime.activeCamera.isPerspectiveCamera,
       });
     } else detachDualTransformControls(runtime.transformControls);
-  }, [buildings, buildingsTranslucent, floors, interactionMode, interiorBuildingId, selectedBuildingId, selectedFloorId, selectedSiteObjectId, siteEnvironment.depth, siteEnvironment.width, siteObjects, theme]);
+  }, [autoConnectEnabled, buildings, buildingsTranslucent, floors, interactionMode, interiorBuildingId, selectedBuildingId, selectedFloorId, selectedSiteObjectId, siteEnvironment, siteObjects, theme]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -1239,6 +1446,19 @@ export default function SiteOverviewScene({
     }
     runtime.orbitControls.update();
   }, []);
+  const handleAutoConnectToggle = useCallback(() => {
+    const nextEnabled = !autoConnectEnabled;
+    setAutoConnectEnabled(nextEnabled);
+    autoConnectEnabledRef.current = nextEnabled;
+    if (!nextEnabled) {
+      setPathSnapInfo(null);
+      const runtime = runtimeRef.current;
+      if (runtime) {
+        rebuildSitePathConnections(runtime.siteConnectionRoot, { junctions: [] });
+        updateGridSnapMarker(runtime.gridSnapMarker, { x: 0, z: 0 }, false);
+      }
+    }
+  }, [autoConnectEnabled]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -1266,7 +1486,22 @@ export default function SiteOverviewScene({
         <ResetIcon size={15} />
         <span>카메라 초기화</span>
       </button>
-      {effectiveSnapSize !== null && <div className={styles.gridSnapStatus}>그리드 스냅 · {formatGridResolution(effectiveSnapSize)}</div>}
+      <button
+        type="button"
+        className={`${styles.autoConnectButton} ${autoConnectEnabled ? styles.active : ""}`}
+        onClick={handleAutoConnectToggle}
+        title={`도로·인도 자동 연결 ${autoConnectEnabled ? "켜짐" : "꺼짐"}`}
+        aria-label={`도로·인도 자동 연결 ${autoConnectEnabled ? "끄기" : "켜기"}`}
+        aria-pressed={autoConnectEnabled}
+      >
+        <SnapIcon size={15} />
+        <span>자동 연결</span>
+      </button>
+      {pathSnapInfo ? (
+        <div className={styles.gridSnapStatus}>{pathSnapInfo.profile === "ROAD" ? "도로" : "인도"} · {pathSnapInfo.label} · 놓으면 연결</div>
+      ) : effectiveSnapSize !== null ? (
+        <div className={styles.gridSnapStatus}>그리드 스냅 · {formatGridResolution(effectiveSnapSize)}</div>
+      ) : null}
       {displayedArea && (
         <div className={styles.areaStatus}>
           <strong>{displayedArea.width.toFixed(1)} × {displayedArea.depth.toFixed(1)} m</strong>

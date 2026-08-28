@@ -219,7 +219,25 @@ export function createWorldStructureObject(structure, { selected, theme, sceneTh
             ? "OPENING"
             : "OTHER";
   object.userData.geometrySignature = getWorldStructureSignature(structure, { selected, theme });
-  object.add(visual);
+  if (definition.lod && !selected && ["FURNITURE", "ENVIRONMENT"].includes(definition.group)) {
+    const lod = new THREE.LOD();
+    const lowProxy = new THREE.Mesh(
+      new THREE.BoxGeometry(dimensions.width, dimensions.height, dimensions.depth),
+      new THREE.MeshStandardMaterial({
+        color: structure.appearance.color,
+        roughness: structure.appearance.roughness ?? 0.72,
+        metalness: structure.appearance.metalness ?? 0,
+      }),
+    );
+    lowProxy.position.y = dimensions.height / 2;
+    lowProxy.castShadow = true;
+    lowProxy.receiveShadow = true;
+    lod.addLevel(visual, 0);
+    lod.addLevel(lowProxy, definition.lod.mediumDistance);
+    object.add(lod);
+  } else {
+    object.add(visual);
+  }
   object.position.set(structure.position.x, structure.position.y, structure.position.z);
   object.rotation.set(structure.rotation.x, structure.rotation.y, structure.rotation.z);
   return object;

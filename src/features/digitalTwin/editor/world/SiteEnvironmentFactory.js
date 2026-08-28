@@ -4,6 +4,12 @@ import {
   MAX_TREE_COUNT,
   TREE_DEFAULT_SPACING,
 } from "@/features/digitalTwin/editor/constants/siteEnvironmentTemplates";
+import {
+  addElevatedSupports,
+  createGradedStripGeometry,
+  sliceGradedSamples,
+} from "@/features/digitalTwin/editor/terrain/GradedRoadFactory";
+import { VERTICAL_PATH_MODES } from "@/features/digitalTwin/editor/terrain/VerticalPathModel";
 
 function materialFor(object, selected) {
   const presets = {
@@ -550,6 +556,607 @@ function addStreetlights(group, object, material) {
   }
 }
 
+function pathSegments(object) {
+  const points = object.path?.points ?? [];
+  return points.slice(1).map((end, index) => {
+    const start = points[index];
+    const dx = end.x - start.x;
+    const dz = end.z - start.z;
+    const length = Math.hypot(dx, dz);
+    return {
+      segmentIndex: index,
+      start,
+      end,
+      length,
+      angle: Math.atan2(dz, dx),
+      center: { x: (start.x + end.x) / 2, z: (start.z + end.z) / 2 },
+    };
+  }).filter((segment) => segment.length >= 0.01);
+}
+
+function visiblePathRanges(length, trims = []) {
+  const ranges = [];
+  let cursor = 0;
+  [...trims].sort((left, right) => left.start - right.start).forEach((trim) => {
+    const start = THREE.MathUtils.clamp(Number(trim.start) || 0, 0, length);
+    const end = THREE.MathUtils.clamp(Number(trim.end) || 0, start, length);
+    if (start > cursor + 0.01) ranges.push({ start: cursor, end: start });
+    cursor = Math.max(cursor, end);
+  });
+  if (cursor < length - 0.01) ranges.push({ start: cursor, end: length });
+  return ranges;
+}
+
+function addMarking(group, length, width, x, z, material, y) {
+  return box(group, { x: length, y: 0.012, z: width }, { x, y, z }, material);
+}
+
+function addDashedMarking(group, length, offset, material, y, width = 0.1, centerX = 0) {
+  const dashLength = 2.1;
+  const gap = 2.6;
+  const count = Math.max(1, Math.min(48, Math.floor((length + gap) / (dashLength + gap))));
+  const usedLength = count * dashLength + Math.max(0, count - 1) * gap;
+  const start = centerX - usedLength / 2 + dashLength / 2;
+  for (let index = 0; index < count; index += 1) {
+    addMarking(group, Math.min(dashLength, length), width, start + index * (dashLength + gap), offset, material, y);
+  }
+}
+
+function addDirectionArrow(group, x, z, direction, color, y) {
+  const shape = new THREE.Shape();
+  shape.moveTo(-0.9, -0.11);
+  shape.lineTo(0.28, -0.11);
+  shape.lineTo(0.28, -0.34);
+  shape.lineTo(0.95, 0);
+  shape.lineTo(0.28, 0.34);
+  shape.lineTo(0.28, 0.11);
+  shape.lineTo(-0.9, 0.11);
+  shape.closePath();
+  const arrow = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide }));
+  arrow.rotation.x = -Math.PI / 2;
+  arrow.rotation.z = direction === "REVERSE" ? Math.PI : 0;
+  arrow.position.set(x, y, z);
+  group.add(arrow);
+}
+
+function addGradedRibbon(group, samples, width, offset, material, elevationOffset) {
+  if (samples.length < 2) return null;
+  const mesh = new THREE.Mesh(createGradedStripGeometry(samples, {
+    width,
+    offset,
+    elevationOffset,
+  }), material);
+  mesh.renderOrder = 3;
+  group.add(mesh);
+  return mesh;
+}
+
+function addGradedDashedRibbon(group, samples, width, offset, material, elevationOffset) {
+  const dashLength = 2.1;
+  const gap = 2.6;
+  const length = samples.at(-1)?.segmentDistance ?? 0;
+  for (let start = 0; start < length; start += dashLength + gap) {
+    addGradedRibbon(group, sliceGradedSamples(samples, start, Math.min(length, start + dashLength)), width, offset, material, elevationOffset);
+  }
+}
+
+function addGradedRoadPath(group, object, material, pathRenderContext) {
+  const verticalPath = pathRenderContext.verticalPath;
+  const roadWidth = Math.max(2.4, object.path?.width ?? object.dimensions.depth);
+  const laneCount = Math.min(8, Math.max(1, Math.round(object.parameters?.laneCount ?? 2)));
+  const direction = object.parameters?.trafficDirection ?? "TWO_WAY";
+  const laneStyle = object.parameters?.laneMarkingStyle ?? "DASHED";
+  const centerLineStyle = object.parameters?.centerLineStyle ?? "DOUBLE_SOLID";
+  const laneMaterial = new THREE.MeshBasicMaterial({ color: object.parameters?.laneColor ?? "#f4f4ee", side: THREE.DoubleSide });
+  const centerMaterial = new THREE.MeshBasicMaterial({ color: object.parameters?.centerLineColor ?? "#f1c94a", side: THREE.DoubleSide });
+  const edgeMaterial = new THREE.MeshBasicMaterial({ color: object.parameters?.edgeLineColor ?? "#f4f4ee", side: THREE.DoubleSide });
+  const markingOffset = object.dimensions.height + 0.014;
+  verticalPath.segments.forEach((segment) => {
+    const surface = new THREE.Mesh(createGradedStripGeometry(segment.samples, {
+      width: roadWidth,
+      thickness: object.dimensions.height,
+      elevationOffset: object.dimensions.height,
+    }), material);
+    surface.receiveShadow = true;
+    group.add(surface);
+    const ranges = visiblePathRanges(segment.length, pathRenderContext?.segmentTrims?.[segment.segmentIndex]);
+    const laneWidth = roadWidth / laneCount;
+    const edgeOffset = Math.max(0, roadWidth / 2 - 0.14);
+    ranges.forEach((range) => {
+      const samples = sliceGradedSamples(segment.samples, range.start, range.end);
+      [-edgeOffset, edgeOffset].forEach((offset) => addGradedRibbon(group, samples, 0.1, offset, edgeMaterial, markingOffset));
+      for (let boundary = 1; boundary < laneCount; boundary += 1) {
+        const offset = -roadWidth / 2 + laneWidth * boundary;
+        const centerLine = direction === "TWO_WAY" && laneCount > 1 && boundary === Math.ceil(laneCount / 2);
+        if (centerLine) {
+          const offsets = centerLineStyle.startsWith("DOUBLE") ? [-0.11, 0.11] : [0];
+          offsets.forEach((lineOffset) => {
+            if (centerLineStyle.endsWith("DASHED")) addGradedDashedRibbon(group, samples, 0.08, offset + lineOffset, centerMaterial, markingOffset);
+            else addGradedRibbon(group, samples, 0.08, offset + lineOffset, centerMaterial, markingOffset);
+          });
+        } else if (laneStyle === "SOLID") addGradedRibbon(group, samples, 0.09, offset, laneMaterial, markingOffset);
+        else addGradedDashedRibbon(group, samples, 0.09, offset, laneMaterial, markingOffset);
+      }
+    });
+  });
+  if (verticalPath.mode === VERTICAL_PATH_MODES.ELEVATED) {
+    addElevatedSupports(group, verticalPath, roadWidth, standardMaterial("#747b80", "CONCRETE"), Number(object.parameters?.supportSpacing) || 12);
+  }
+}
+
+function addRoadPath(group, object, material, pathRenderContext = null) {
+  if (pathRenderContext?.verticalPath?.segments?.length) {
+    addGradedRoadPath(group, object, material, pathRenderContext);
+    return;
+  }
+  const roadWidth = Math.max(2.4, object.path?.width ?? object.dimensions.depth);
+  const laneCount = Math.min(8, Math.max(1, Math.round(object.parameters?.laneCount ?? 2)));
+  const direction = object.parameters?.trafficDirection ?? "TWO_WAY";
+  const laneStyle = object.parameters?.laneMarkingStyle ?? "DASHED";
+  const centerLineStyle = object.parameters?.centerLineStyle ?? "DOUBLE_SOLID";
+  const laneMaterial = new THREE.MeshBasicMaterial({ color: object.parameters?.laneColor ?? "#f4f4ee" });
+  const centerMaterial = new THREE.MeshBasicMaterial({ color: object.parameters?.centerLineColor ?? "#f1c94a" });
+  const edgeMaterial = new THREE.MeshBasicMaterial({ color: object.parameters?.edgeLineColor ?? "#f4f4ee" });
+  const markingY = object.dimensions.height + 0.012;
+
+  const connectedEndpointIndexes = new Set(pathRenderContext?.connectedEndpointIndexes ?? []);
+  const segments = pathSegments(object);
+  segments.forEach((segment) => {
+    const segmentGroup = new THREE.Group();
+    segmentGroup.position.set(segment.center.x, 0, segment.center.z);
+    segmentGroup.rotation.y = -segment.angle;
+    box(
+      segmentGroup,
+      { x: segment.length, y: object.dimensions.height, z: roadWidth },
+      { x: 0, y: object.dimensions.height / 2, z: 0 },
+      material,
+    );
+    const ranges = visiblePathRanges(segment.length, pathRenderContext?.segmentTrims?.[segment.segmentIndex]);
+    const edgeOffset = Math.max(0, roadWidth / 2 - 0.14);
+    const laneWidth = roadWidth / laneCount;
+    ranges.forEach((range) => {
+      const rangeLength = range.end - range.start;
+      const rangeCenter = -segment.length / 2 + (range.start + range.end) / 2;
+      [-edgeOffset, edgeOffset].forEach((offset) => addMarking(segmentGroup, rangeLength, 0.1, rangeCenter, offset, edgeMaterial, markingY));
+      for (let boundary = 1; boundary < laneCount; boundary += 1) {
+        const offset = -roadWidth / 2 + laneWidth * boundary;
+        const isCenterLine = direction === "TWO_WAY" && laneCount > 1 && boundary === Math.ceil(laneCount / 2);
+        if (isCenterLine) {
+          const lineOffsets = centerLineStyle.startsWith("DOUBLE") ? [-0.11, 0.11] : [0];
+          lineOffsets.forEach((lineOffset) => {
+            if (centerLineStyle.endsWith("DASHED")) addDashedMarking(segmentGroup, rangeLength, offset + lineOffset, centerMaterial, markingY, 0.08, rangeCenter);
+            else addMarking(segmentGroup, rangeLength, 0.08, rangeCenter, offset + lineOffset, centerMaterial, markingY);
+          });
+        } else if (laneStyle === "SOLID") {
+          addMarking(segmentGroup, rangeLength, 0.09, rangeCenter, offset, laneMaterial, markingY);
+        } else {
+          addDashedMarking(segmentGroup, rangeLength, offset, laneMaterial, markingY, 0.1, rangeCenter);
+        }
+      }
+      if (object.parameters?.showDirectionArrows !== false && rangeLength >= 5) {
+        for (let lane = 0; lane < laneCount; lane += 1) {
+          const laneCenter = -roadWidth / 2 + laneWidth * (lane + 0.5);
+          const arrowDirection = direction === "ONE_WAY_REVERSE"
+            ? "REVERSE"
+            : direction === "TWO_WAY" && lane < Math.floor(laneCount / 2)
+              ? "REVERSE"
+              : "FORWARD";
+          addDirectionArrow(segmentGroup, rangeCenter, laneCenter, arrowDirection, object.parameters?.laneColor ?? "#f4f4ee", markingY + 0.004);
+        }
+      }
+    });
+    if (segment.segmentIndex === 0 && !connectedEndpointIndexes.has(0)) {
+      addMarking(segmentGroup, 0.1, roadWidth, -segment.length / 2, 0, edgeMaterial, markingY);
+    }
+    if (segment.segmentIndex === segments.length - 1 && !connectedEndpointIndexes.has(segments.length)) {
+      addMarking(segmentGroup, 0.1, roadWidth, segment.length / 2, 0, edgeMaterial, markingY);
+    }
+    group.add(segmentGroup);
+  });
+}
+
+function addGradedWalkwayPath(group, object, material, pathRenderContext) {
+  const verticalPath = pathRenderContext.verticalPath;
+  const pathWidth = Math.max(1, object.path?.width ?? object.dimensions.depth);
+  const curbWidth = Math.min(pathWidth * 0.18, Math.max(0.08, Number(object.parameters?.curbWidth) || 0.18));
+  const curbHeight = Math.max(0.04, Number(object.parameters?.curbHeight) || 0.14);
+  const curbMaterial = standardMaterial(object.parameters?.curbColor ?? "#c8c5bd", "CONCRETE");
+  const tactileMaterial = standardMaterial(object.parameters?.tactileColor ?? "#d7ad35", "PAINTED");
+  verticalPath.segments.forEach((segment) => {
+    const surface = new THREE.Mesh(createGradedStripGeometry(segment.samples, {
+      width: pathWidth,
+      thickness: object.dimensions.height,
+      elevationOffset: object.dimensions.height,
+    }), material);
+    surface.receiveShadow = true;
+    group.add(surface);
+    visiblePathRanges(segment.length, pathRenderContext?.segmentTrims?.[segment.segmentIndex]).forEach((range) => {
+      const samples = sliceGradedSamples(segment.samples, range.start, range.end);
+      [-1, 1].forEach((side) => addGradedRibbon(
+        group,
+        samples,
+        curbWidth,
+        side * (pathWidth / 2 - curbWidth / 2),
+        curbMaterial,
+        object.dimensions.height + curbHeight,
+      ));
+      if (object.parameters?.tactileEnabled !== false) addGradedRibbon(
+        group,
+        samples,
+        Math.min(0.32, pathWidth * 0.18),
+        0,
+        tactileMaterial,
+        object.dimensions.height + 0.014,
+      );
+    });
+  });
+}
+
+function addWalkwayPath(group, object, material, pathRenderContext = null) {
+  if (pathRenderContext?.verticalPath?.segments?.length) {
+    addGradedWalkwayPath(group, object, material, pathRenderContext);
+    return;
+  }
+  const pathWidth = Math.max(1, object.path?.width ?? object.dimensions.depth);
+  const curbWidth = Math.min(pathWidth * 0.18, Math.max(0.08, Number(object.parameters?.curbWidth) || 0.18));
+  const curbHeight = Math.max(0.04, Number(object.parameters?.curbHeight) || 0.14);
+  const curbMaterial = standardMaterial(object.parameters?.curbColor ?? "#c8c5bd", "CONCRETE");
+  const jointMaterial = new THREE.MeshBasicMaterial({ color: object.parameters?.jointColor ?? "#747b7d" });
+  const tactileMaterial = new THREE.MeshStandardMaterial({ color: object.parameters?.tactileColor ?? "#d7ad35", roughness: 0.9 });
+
+  pathSegments(object).forEach((segment) => {
+    const segmentGroup = new THREE.Group();
+    segmentGroup.position.set(segment.center.x, 0, segment.center.z);
+    segmentGroup.rotation.y = -segment.angle;
+    box(segmentGroup, { x: segment.length, y: object.dimensions.height, z: pathWidth }, { x: 0, y: object.dimensions.height / 2, z: 0 }, material);
+    visiblePathRanges(segment.length, pathRenderContext?.segmentTrims?.[segment.segmentIndex]).forEach((range) => {
+      const rangeLength = range.end - range.start;
+      const rangeCenter = -segment.length / 2 + (range.start + range.end) / 2;
+      [-1, 1].forEach((side) => box(
+        segmentGroup,
+        { x: rangeLength, y: curbHeight, z: curbWidth },
+        { x: rangeCenter, y: curbHeight / 2, z: side * (pathWidth / 2 - curbWidth / 2) },
+        curbMaterial,
+      ));
+      const jointCount = Math.min(64, Math.max(1, Math.floor(rangeLength / 1.2)));
+      for (let joint = 1; joint < jointCount; joint += 1) {
+        addMarking(segmentGroup, 0.025, pathWidth - curbWidth * 2, rangeCenter - rangeLength / 2 + rangeLength * joint / jointCount, 0, jointMaterial, object.dimensions.height + 0.008);
+      }
+      if (object.parameters?.tactileEnabled !== false) {
+        addMarking(segmentGroup, rangeLength, Math.min(0.32, pathWidth * 0.18), rangeCenter, 0, tactileMaterial, object.dimensions.height + 0.014);
+      }
+    });
+    group.add(segmentGroup);
+  });
+}
+
+function addBeamBetween(group, start, end, thickness, material) {
+  const direction = new THREE.Vector3().subVectors(end, start);
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(thickness, thickness, direction.length(), 8), material);
+  beam.position.copy(start).add(end).multiplyScalar(0.5);
+  beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.clone().normalize());
+  group.add(beam);
+}
+
+function addOutdoorStairs(group, object, material, edgeColor) {
+  const { width, depth, height } = object.dimensions;
+  const stepCount = Math.min(40, Math.max(2, Math.round(object.parameters?.stepCount ?? 12)));
+  const stepDepth = depth / stepCount;
+  const railMaterial = standardMaterial(object.parameters?.railingColor ?? "#5f696d", "METAL");
+  for (let index = 0; index < stepCount; index += 1) {
+    const stepHeight = height * (index + 1) / stepCount;
+    box(
+      group,
+      { x: width, y: stepHeight, z: stepDepth + 0.01 },
+      { x: 0, y: stepHeight / 2, z: -depth / 2 + stepDepth * (index + 0.5) },
+      material,
+      edgeColor,
+    );
+  }
+  if (object.parameters?.railingEnabled !== false) {
+    [-1, 1].forEach((side) => {
+      const x = side * Math.max(0, width / 2 - 0.09);
+      const railHeight = Math.min(1.1, Math.max(0.75, height * 0.38));
+      const start = new THREE.Vector3(x, railHeight, -depth / 2 + stepDepth / 2);
+      const end = new THREE.Vector3(x, height + railHeight, depth / 2 - stepDepth / 2);
+      addBeamBetween(group, start, end, 0.035, railMaterial);
+      [start, end].forEach((position) => cylinder(group, 0.035, 0.035, railHeight, { x: position.x, y: position.y - railHeight / 2, z: position.z }, railMaterial, 8));
+    });
+  }
+}
+
+function addOutdoorRamp(group, object, material, edgeColor) {
+  const { width, depth, height } = object.dimensions;
+  const landingLength = Math.min(depth * 0.35, Math.max(0.4, Number(object.parameters?.landingLength) || 1.5));
+  const runDepth = Math.max(0.5, depth - landingLength * 2);
+  const surfaceThickness = Math.min(0.35, Math.max(0.08, Number(object.parameters?.surfaceThickness) || 0.16));
+  const curbHeight = Math.min(0.35, Math.max(0.06, Number(object.parameters?.curbHeight) || 0.12));
+  const curbWidth = Math.min(0.16, width * 0.08);
+  const slopeAngle = Math.atan2(height, runDepth);
+  const slopeLength = Math.hypot(runDepth, height);
+  const curbMaterial = standardMaterial(object.parameters?.curbColor ?? "#c8c5bd", "CONCRETE");
+  const railMaterial = standardMaterial(object.parameters?.railingColor ?? "#5f696d", "METAL");
+
+  const ramp = box(
+    group,
+    { x: width, y: surfaceThickness, z: slopeLength },
+    { x: 0, y: height / 2 + surfaceThickness / 2, z: 0 },
+    material,
+    edgeColor,
+  );
+  ramp.rotation.x = -slopeAngle;
+
+  [
+    { z: -runDepth / 2 - landingLength / 2, y: surfaceThickness / 2 },
+    { z: runDepth / 2 + landingLength / 2, y: height + surfaceThickness / 2 },
+  ].forEach((landing) => box(
+    group,
+    { x: width, y: surfaceThickness, z: landingLength },
+    { x: 0, y: landing.y, z: landing.z },
+    material,
+    edgeColor,
+  ));
+
+  [-1, 1].forEach((side) => {
+    const x = side * (width / 2 - curbWidth / 2);
+    const slopeCurb = box(
+      group,
+      { x: curbWidth, y: curbHeight, z: slopeLength },
+      { x, y: height / 2 + surfaceThickness + curbHeight / 2, z: 0 },
+      curbMaterial,
+    );
+    slopeCurb.rotation.x = -slopeAngle;
+    [
+      { z: -runDepth / 2 - landingLength / 2, y: surfaceThickness + curbHeight / 2 },
+      { z: runDepth / 2 + landingLength / 2, y: height + surfaceThickness + curbHeight / 2 },
+    ].forEach((landing) => box(
+      group,
+      { x: curbWidth, y: curbHeight, z: landingLength },
+      { x, y: landing.y, z: landing.z },
+      curbMaterial,
+    ));
+  });
+
+  if (object.parameters?.tactileEnabled !== false) {
+    const tactileMaterial = standardMaterial(object.parameters?.tactileColor ?? "#d7ad35", "PAINTED");
+    [
+      { z: -depth / 2 + 0.28, y: surfaceThickness + 0.012 },
+      { z: depth / 2 - 0.28, y: height + surfaceThickness + 0.012 },
+    ].forEach((strip) => box(
+      group,
+      { x: Math.max(0.4, width - curbWidth * 2), y: 0.024, z: 0.38 },
+      { x: 0, y: strip.y, z: strip.z },
+      tactileMaterial,
+    ));
+  }
+
+  if (object.parameters?.railingEnabled !== false) {
+    const railHeight = 0.95;
+    const railX = Math.max(0, width / 2 - 0.07);
+    const railSections = [
+      [new THREE.Vector3(railX, railHeight, -depth / 2), new THREE.Vector3(railX, railHeight, -runDepth / 2)],
+      [new THREE.Vector3(railX, railHeight, -runDepth / 2), new THREE.Vector3(railX, height + railHeight, runDepth / 2)],
+      [new THREE.Vector3(railX, height + railHeight, runDepth / 2), new THREE.Vector3(railX, height + railHeight, depth / 2)],
+    ];
+    [-1, 1].forEach((side) => {
+      railSections.forEach(([start, end]) => {
+        const sideStart = start.clone();
+        const sideEnd = end.clone();
+        sideStart.x *= side;
+        sideEnd.x *= side;
+        addBeamBetween(group, sideStart, sideEnd, 0.035, railMaterial);
+        const midStart = sideStart.clone();
+        const midEnd = sideEnd.clone();
+        midStart.y -= railHeight * 0.45;
+        midEnd.y -= railHeight * 0.45;
+        addBeamBetween(group, midStart, midEnd, 0.025, railMaterial);
+      });
+      [-depth / 2, -runDepth / 2, 0, runDepth / 2, depth / 2].forEach((z) => {
+        const baseY = z <= -runDepth / 2
+          ? 0
+          : z >= runDepth / 2
+            ? height
+            : height * (z + runDepth / 2) / runDepth;
+        cylinder(group, 0.035, 0.035, railHeight, { x: side * railX, y: baseY + railHeight / 2, z }, railMaterial, 8);
+      });
+    });
+  }
+}
+
+function addTerrainFeatureHandle(group, object, selected, edgeColor) {
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(object.dimensions.width, object.dimensions.depth),
+    new THREE.MeshBasicMaterial({
+      color: object.appearance.color,
+      transparent: true,
+      opacity: selected ? 0.12 : 0,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    }),
+  );
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.y = object.profile === "LOW_GROUND" || object.profile === "DRAINAGE_CHANNEL"
+    ? 0.03
+    : object.dimensions.height + 0.04;
+  if (selected) addEdges(mesh, edgeColor);
+  group.add(mesh);
+}
+
+function averageConnectionColor(endpoints) {
+  const color = new THREE.Color(endpoints[0]?.appearance?.color ?? "#808080");
+  endpoints.slice(1).forEach((endpoint, index) => {
+    color.lerp(new THREE.Color(endpoint.appearance?.color ?? color), 1 / (index + 2));
+  });
+  return color;
+}
+
+function createJunctionShape(junction) {
+  if (!junction.polygon?.length) return null;
+  const shape = new THREE.Shape();
+  junction.polygon.forEach((point, index) => {
+    const x = point.x - junction.center.x;
+    const z = point.z - junction.center.z;
+    if (index === 0) shape.moveTo(x, -z);
+    else shape.lineTo(x, -z);
+  });
+  shape.closePath();
+  return shape;
+}
+
+function isWalkwayOpening(junction, point) {
+  return junction.approaches.some((approach) => {
+    const forward = point.x * approach.direction.x + point.z * approach.direction.z;
+    const side = Math.abs(-point.x * approach.direction.z + point.z * approach.direction.x);
+    return forward > junction.radius * 0.56 && side < approach.width * 0.48;
+  });
+}
+
+function addWalkwayJunctionCurbs(group, junction) {
+  const curbWidth = Math.min(0.18, junction.width * 0.08);
+  const curbHeight = Math.max(0.06, Number(junction.approaches[0]?.parameters?.curbHeight) || 0.14);
+  const material = standardMaterial(junction.approaches[0]?.parameters?.curbColor ?? "#c8c5bd", "CONCRETE");
+  const points = junction.polygon.map((point) => ({
+    x: point.x - junction.center.x,
+    z: point.z - junction.center.z,
+  }));
+  points.forEach((start, index) => {
+    const end = points[(index + 1) % points.length];
+    const center = { x: (start.x + end.x) / 2, z: (start.z + end.z) / 2 };
+    if (isWalkwayOpening(junction, center)) return;
+    const dx = end.x - start.x;
+    const dz = end.z - start.z;
+    const length = Math.hypot(dx, dz);
+    if (length < 0.04) return;
+    const curb = box(group, { x: length + 0.025, y: curbHeight, z: curbWidth }, {
+      x: center.x, y: curbHeight / 2 + 0.006, z: center.z,
+    }, material);
+    curb.rotation.y = -Math.atan2(dz, dx);
+  });
+}
+
+function addPolylineStripe(group, points, offset, width, material, y, dashed = false) {
+  points.slice(1).forEach((end, index) => {
+    if (dashed && index % 3 === 2) return;
+    const start = points[index];
+    const dx = end.x - start.x;
+    const dz = end.z - start.z;
+    const length = Math.hypot(dx, dz);
+    if (length < 0.01) return;
+    const normal = { x: -dz / length, z: dx / length };
+    const stripe = addMarking(
+      group,
+      length + 0.03,
+      width,
+      (start.x + end.x) / 2 + normal.x * offset,
+      (start.z + end.z) / 2 + normal.z * offset,
+      material,
+      y,
+    );
+    stripe.rotation.y = -Math.atan2(dz, dx);
+  });
+}
+
+function getCurvedJunctionPoints(junction) {
+  if (junction.approaches.length !== 2 || !["CURVE", "L_CORNER"].includes(junction.type)) return null;
+  const [left, right] = junction.approaches;
+  const leftReach = Math.min(left.segmentLength * 0.42, junction.radius + 0.35);
+  const rightReach = Math.min(right.segmentLength * 0.42, junction.radius + 0.35);
+  return new THREE.QuadraticBezierCurve3(
+    new THREE.Vector3(left.direction.x * leftReach, 0, left.direction.z * leftReach),
+    new THREE.Vector3(0, 0, 0),
+    new THREE.Vector3(right.direction.x * rightReach, 0, right.direction.z * rightReach),
+  ).getPoints(20);
+}
+
+function addRoadJunctionMarkings(group, junction) {
+  const points = getCurvedJunctionPoints(junction);
+  if (!points) return;
+  const source = junction.approaches[0];
+  const roadWidth = Math.min(...junction.approaches.map((approach) => approach.width));
+  const laneCount = Math.min(8, Math.max(1, Math.round(source.parameters?.laneCount ?? 2)));
+  const direction = source.parameters?.trafficDirection ?? "TWO_WAY";
+  const laneStyle = source.parameters?.laneMarkingStyle ?? "DASHED";
+  const centerStyle = source.parameters?.centerLineStyle ?? "DOUBLE_SOLID";
+  const laneMaterial = new THREE.MeshBasicMaterial({ color: source.parameters?.laneColor ?? "#f4f4ee" });
+  const centerMaterial = new THREE.MeshBasicMaterial({ color: source.parameters?.centerLineColor ?? "#f1c94a" });
+  const edgeMaterial = new THREE.MeshBasicMaterial({ color: source.parameters?.edgeLineColor ?? "#f4f4ee" });
+  const markingY = 0.018;
+  const edgeOffset = Math.max(0, roadWidth / 2 - 0.14);
+  [-edgeOffset, edgeOffset].forEach((offset) => addPolylineStripe(group, points, offset, 0.1, edgeMaterial, markingY));
+  const laneWidth = roadWidth / laneCount;
+  for (let boundary = 1; boundary < laneCount; boundary += 1) {
+    const offset = -roadWidth / 2 + laneWidth * boundary;
+    const centerLine = direction === "TWO_WAY" && laneCount > 1 && boundary === Math.ceil(laneCount / 2);
+    if (centerLine) {
+      const offsets = centerStyle.startsWith("DOUBLE") ? [-0.11, 0.11] : [0];
+      offsets.forEach((lineOffset) => addPolylineStripe(
+        group, points, offset + lineOffset, 0.08, centerMaterial, markingY, centerStyle.endsWith("DASHED"),
+      ));
+    } else {
+      addPolylineStripe(group, points, offset, 0.09, laneMaterial, markingY, laneStyle !== "SOLID");
+    }
+  }
+}
+
+function addWalkwayJunctionTactile(group, junction) {
+  const points = getCurvedJunctionPoints(junction);
+  const source = junction.approaches[0];
+  if (!points || source.parameters?.tactileEnabled === false) return;
+  const material = new THREE.MeshStandardMaterial({
+    color: source.parameters?.tactileColor ?? "#d7ad35",
+    roughness: 0.9,
+  });
+  addPolylineStripe(group, points, 0, Math.min(0.32, junction.width * 0.18), material, 0.02);
+}
+
+export function createSitePathConnectionObject(junction, { preview = false } = {}) {
+  const group = new THREE.Group();
+  group.name = `${junction.profile} 자동 연결부`;
+  group.userData.sitePathConnectionId = junction.id;
+  group.userData.geometrySignature = JSON.stringify({ junction, preview });
+  const connectionColor = averageConnectionColor(junction.approaches);
+  const shape = createJunctionShape(junction);
+  if (!shape) return group;
+  const material = new THREE.MeshStandardMaterial({
+    color: connectionColor,
+    roughness: junction.profile === "ROAD" ? 0.98 : 0.9,
+    metalness: 0,
+    transparent: preview,
+    opacity: preview ? 0.56 : 1,
+    depthWrite: !preview,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+  });
+  const surface = new THREE.Mesh(new THREE.ShapeGeometry(shape), material);
+  surface.rotation.x = -Math.PI / 2;
+  surface.position.y = 0.006;
+  surface.renderOrder = preview ? 5 : 2;
+  group.add(surface);
+  if (preview) {
+    const outlinePoints = junction.polygon.map((point) => new THREE.Vector3(
+      point.x - junction.center.x,
+      0.022,
+      point.z - junction.center.z,
+    ));
+    group.add(new THREE.LineLoop(
+      new THREE.BufferGeometry().setFromPoints(outlinePoints),
+      new THREE.LineBasicMaterial({ color: 0x55d6be, transparent: true, opacity: 0.95, depthTest: false }),
+    ));
+  } else if (junction.profile === "ROAD") {
+    addRoadJunctionMarkings(group, junction);
+  } else {
+    addWalkwayJunctionCurbs(group, junction);
+    addWalkwayJunctionTactile(group, junction);
+  }
+  group.position.set(junction.center.x, junction.center.y, junction.center.z);
+
+  group.traverse((child) => {
+    child.userData.sitePathConnectionId = junction.id;
+    child.raycast = () => {};
+  });
+  return group;
+}
+
 function addLinearPath(group, object, material, edgeColor) {
   const points = object.path?.points ?? [];
   for (let index = 1; index < points.length; index += 1) {
@@ -570,12 +1177,14 @@ function addLinearPath(group, object, material, edgeColor) {
   }
 }
 
-export function getSiteObjectSignature(object, selected, theme) {
+export function getSiteObjectSignature(object, selected, theme, pathRenderContext = null) {
   const geometryDefinition = { ...object, position: undefined, rotation: undefined };
-  return JSON.stringify({ geometryDefinition, selected, theme });
+  return JSON.stringify({ geometryDefinition, selected, theme, pathRenderContext });
 }
 
-export function createSiteEnvironmentObject(object, { selected, theme, selectionColor, edgeColor }) {
+export function createSiteEnvironmentObject(object, {
+  selected, theme, selectionColor, edgeColor, pathRenderContext = null,
+}) {
   const group = new THREE.Group();
   group.name = object.name;
   group.userData.siteObjectId = object.id;
@@ -596,11 +1205,16 @@ export function createSiteEnvironmentObject(object, { selected, theme, selection
     PIPE_TANK: () => addPipeTank(group, object, material, resolvedEdge),
     PARKING: () => addParkingFacility(group, object, material, resolvedEdge),
     SURFACE: () => {
-      if (object.geometryMode === "LINEAR") addLinearPath(group, object, material, resolvedEdge);
+      if (object.profile === "ROAD") addRoadPath(group, object, material, pathRenderContext);
+      else if (object.profile === "WALKWAY") addWalkwayPath(group, object, material, pathRenderContext);
+      else if (object.geometryMode === "LINEAR") addLinearPath(group, object, material, resolvedEdge);
       else addAreaSurface(group, object, material, resolvedEdge);
-      if (object.profile === "ROAD") addParkingLines(group, { ...object, dimensions: { ...object.dimensions, depth: object.path?.width ?? object.dimensions.depth } });
       if (object.profile === "CROSSWALK") addParkingLines(group, object);
     },
+    ACCESS: () => object.profile === "OUTDOOR_RAMP"
+      ? addOutdoorRamp(group, object, material, resolvedEdge)
+      : addOutdoorStairs(group, object, material, resolvedEdge),
+    TERRAIN: () => addTerrainFeatureHandle(group, object, selected, resolvedEdge),
     UTILITY: () => addAreaSurface(group, object, material, resolvedEdge),
   };
   const generator = generators[object.assetKind];
@@ -616,6 +1230,6 @@ export function createSiteEnvironmentObject(object, { selected, theme, selection
   group.position.set(object.position.x, object.position.y, object.position.z);
   group.rotation.set(object.rotation.x, object.rotation.y, object.rotation.z);
   group.visible = object.visible;
-  group.userData.geometrySignature = getSiteObjectSignature(object, selected, theme);
+  group.userData.geometrySignature = getSiteObjectSignature(object, selected, theme, pathRenderContext);
   return group;
 }

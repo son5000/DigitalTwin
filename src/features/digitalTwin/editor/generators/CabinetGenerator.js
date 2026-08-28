@@ -1,6 +1,16 @@
 import * as THREE from "three";
 
 import { addEquipmentLabel, addGeometry } from "./generatorHelpers";
+import { getMaterialPreset, normalizeMaterialAppearance } from "@/features/digitalTwin/editor/constants/materialPresets";
+
+function slotAppearance(appearance, appearanceSlots, slot, fallback) {
+  return normalizeMaterialAppearance({
+    ...getMaterialPreset(fallback.materialPreset),
+    ...appearance,
+    ...fallback,
+    ...appearanceSlots?.[slot],
+  });
+}
 
 function createLineSegments(points, color) {
   const geometry = new THREE.BufferGeometry().setFromPoints(points);
@@ -16,13 +26,16 @@ export function generateCabinet({
   edgeColor,
   sceneTheme,
   appearance,
+  appearanceSlots,
   showEdges,
 }) {
   const { width, height, depth } = dimensions;
   const group = new THREE.Group();
+  const bodyAppearance = slotAppearance(appearance, appearanceSlots, "body", { materialPreset: "PAINTED_METAL" });
+  const hardwareAppearance = slotAppearance(appearance, appearanceSlots, "hardware", { materialPreset: "STAINLESS", color: "#AAB4B8" });
   const bodyGeometry = new THREE.BoxGeometry(width, height, depth);
   addGeometry(group, bodyGeometry, {
-    appearance,
+    appearance: bodyAppearance,
     edgeColor,
     position: [0, height / 2, 0],
     showEdges,
@@ -44,6 +57,32 @@ export function generateCabinet({
   }
 
   group.add(createLineSegments(seamPoints, edgeColor));
+
+  const doorColumns = ["CABINET_DOUBLE", "CABINET_VERTICAL_SPLIT", "SWITCHBOARD", "MCC_PANEL"].includes(type) ? 2 : 1;
+  const doorRows = ["CABINET_HORIZONTAL_SPLIT", "BATTERY_CABINET", "DISTRIBUTION_PANEL"].includes(type) ? 2 : 1;
+  for (let column = 0; column < doorColumns; column += 1) {
+    for (let row = 0; row < doorRows; row += 1) {
+      const centerX = -width / 2 + width * (column + 0.5) / doorColumns;
+      const centerY = height * (row + 0.5) / doorRows;
+      addGeometry(group, new THREE.BoxGeometry(0.035, Math.min(0.18, height / doorRows * 0.22), 0.035), {
+        appearance: hardwareAppearance,
+        edgeColor,
+        position: [centerX + width / doorColumns * 0.3, centerY, frontZ + 0.035],
+        showEdges: false,
+      });
+    }
+  }
+
+  if (["SERVER_RACK", "RACK", "UPS", "TRANSFORMER"].includes(type)) {
+    for (let index = 0; index < 5; index += 1) {
+      addGeometry(group, new THREE.BoxGeometry(width * 0.58, 0.018, 0.018), {
+        appearance: hardwareAppearance,
+        edgeColor,
+        position: [0, height * (0.22 + index * 0.1), frontZ + 0.035],
+        showEdges: false,
+      });
+    }
+  }
 
   const plateWidth = Math.max(0.3, width * 0.68);
   const plateHeight = Math.min(0.16, headerHeight * 0.52);

@@ -1,0 +1,141 @@
+.editorPage { width: 100%; height: 100vh; height: 100dvh; min-height: 0; display: grid; grid-template-rows: auto auto minmax(0, 1fr); overflow: hidden; color: var(--color-text); background: var(--color-background); font-family: var(--font-family-base); font-size: var(--editor-font-size-sm); font-weight: var(--editor-font-weight-medium); line-height: var(--editor-line-height); }
+.toolbar { min-height: 56px; display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--color-border); background: var(--color-surface); }
+.toolbar button, .toolPanel button, .propertyPanel button, .viewTabs button { min-height: 32px; padding: 5px 10px; border: 1px solid var(--color-border); border-radius: var(--radius-medium); color: var(--color-text); background: var(--color-surface-raised); cursor: pointer; }
+.toolbar button:hover, .toolPanel button:hover, .propertyPanel button:hover, .viewTabs button:hover { border-color: var(--color-border-strong); color: var(--color-heading); background: var(--state-hover); }
+.toolbar button:disabled, .toolPanel button:disabled, .propertyPanel button:disabled { cursor: not-allowed; }
+.toolbarSpacer { flex: 1; }
+.iconButton { white-space: nowrap; }
+.themeToggle { width: 34px; padding: 0 !important; display: inline-grid; place-items: center; }
+.primaryButton { border-color: var(--color-primary) !important; color: var(--color-primary-contrast) !important; background: var(--color-primary) !important; }
+.primaryButton:hover { background: var(--color-primary-strong) !important; }
+.nameInput { width: min(340px, 30vw); min-height: 34px; padding: 5px 9px; border: 1px solid transparent; border-radius: var(--radius-medium); color: var(--color-heading); background: transparent; font-size: var(--editor-font-size-lg); font-weight: var(--editor-font-weight-semibold); }
+.nameInput:hover { border-color: var(--color-border); }
+.nameInput:focus { border-color: var(--color-primary); background: var(--color-input); }
+.saveStatus { color: var(--color-text-muted); white-space: nowrap; }
+.conflict { padding: 8px 14px; border-bottom: 1px solid rgb(var(--color-warning-rgb) / 36%); color: var(--color-warning); background: rgb(var(--color-warning-rgb) / 12%); }
+.editorLayout { position: relative; grid-row: 2 / -1; min-width: 0; min-height: 0; display: block; overflow: hidden; }
+.conflict + .editorLayout { grid-row: 3; }
+.toolPanel, .propertyPanel { min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-color: var(--color-scrollbar) transparent; scrollbar-gutter: stable; background: var(--color-surface); }
+.toolPanel { border-right: 1px solid var(--color-border); }
+.propertyPanel { border-left: 1px solid var(--color-border); font-size: var(--editor-font-size-sm); }
+.toolPanel section, .propertyPanel section { min-width: 0; padding: clamp(10px, 1vw, 14px); border-bottom: 1px solid var(--color-border); }
+.toolPanel section > header, .propertyPanel section > header { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 8px; margin-bottom: 9px; }
+.toolPanel strong, .propertyPanel strong { min-width: 0; overflow-wrap: anywhere; color: var(--color-heading); font-size: var(--editor-font-size-sm); font-weight: var(--editor-font-weight-semibold); }
+.propertyPanel button { min-height: 30px; padding: 4px 8px; font-size: var(--editor-font-size-xs); line-height: 1.35; }
+.templateGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.templateGrid button { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.active { border-color: var(--state-selected-border) !important; color: var(--color-accent-strong) !important; background: var(--state-selected) !important; }
+.sectionList { display: grid; gap: 5px; }
+.sectionList button { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; text-align: left; }
+.sectionList button span, .sectionList button small { grid-column: 1; }
+.sectionList button small { color: var(--color-text-subtle); font-size: var(--editor-font-size-xs); }
+.sectionList button em { grid-column: 2; grid-row: 1 / 3; align-self: center; color: var(--color-text-faint); font-style: normal; }
+.metrics dl { display: grid; gap: 5px; margin: 0; }
+.metrics dl div { display: flex; justify-content: space-between; gap: 10px; }
+.metrics dt { color: var(--color-text-muted); }
+.metrics dd { margin: 0; color: var(--color-heading); font-weight: var(--editor-font-weight-semibold); }
+.floatingPanelContent { height: 100%; overflow: visible; border: 0; background: transparent; scrollbar-gutter: auto; }
+.viewport { position: relative; width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; container-type: inline-size; background: var(--color-canvas-base); }
+.viewTabs { position: absolute; z-index: 3; top: 12px; left: 50%; display: flex; padding: 3px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-medium); background: var(--color-surface-overlay); box-shadow: var(--shadow-panel); transform: translateX(-50%); }
+.viewTabs button { border-color: transparent; background: transparent; }
+.viewTabs button[aria-pressed="true"] { color: var(--color-accent-strong); background: var(--state-selected); }
+.field { display: grid; gap: 4px; margin-top: 8px; }
+.field > span { color: var(--color-text-muted); font-size: var(--editor-font-size-xs); }
+.field input, .field select, .field textarea { width: 100%; min-width: 0; min-height: 34px; box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--color-border); border-radius: var(--radius-medium); color: var(--color-text); background: var(--color-input); font-size: var(--editor-font-size-sm); }
+.field input:hover, .field select:hover, .field textarea:hover { border-color: var(--color-border-strong); }
+.field textarea { min-height: 64px; resize: vertical; }
+.field input:focus, .field select:focus, .field textarea:focus { border-color: var(--color-primary); }
+.fieldGrid { display: grid; grid-template-columns: repeat(2, minmax(112px, 1fr)); gap: 0 8px; }
+.inlineActions, .toggleRow { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.toggleRow button[aria-pressed="true"] { border-color: var(--state-selected-border); color: var(--color-accent-strong); background: var(--state-selected); }
+.validation { color: var(--color-danger-soft); background: rgb(var(--color-danger-rgb) / 12%); }
+.validation header span { padding: 1px 7px; border-radius: 999px; color: var(--color-danger-soft); background: rgb(var(--color-danger-rgb) / 20%); }
+.validation p, .validation ul { margin: 6px 0 0; padding-left: 18px; }
+.loading { min-height: 100vh; display: grid; place-items: center; color: var(--color-text); background: var(--color-background); }
+.previewHost, .planCanvas { position: absolute; inset: 0; }
+.previewHost canvas { width: 100%; height: 100%; display: block; }
+.cameraPresets { position: absolute; z-index: 3; top: 12px; right: 12px; max-width: calc(100% - 24px); display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px; padding: 3px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-medium); background: var(--color-surface-overlay); box-shadow: var(--shadow-panel); }
+.cameraPresets button { min-width: 38px; min-height: 28px; padding: 3px 7px; border: 0; border-radius: var(--radius-small); color: var(--color-text-muted); background: transparent; font-size: var(--editor-font-size-xs); line-height: 1.25; white-space: nowrap; cursor: pointer; }
+.cameraPresets button:hover { color: var(--color-heading); background: var(--state-hover); }
+.previewScale, .scaleBadge { position: absolute; z-index: 3; right: 12px; bottom: 12px; padding: 5px 8px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-medium); color: var(--color-text-muted); background: var(--color-surface-overlay); box-shadow: var(--shadow-panel); font-size: var(--editor-font-size-xs); }
+.planCanvas { width: 100%; height: 100%; touch-action: none; background: var(--color-canvas-base); }
+.planBackground { fill: var(--color-canvas-base); }
+.gridLine { stroke: var(--color-canvas-pattern); stroke-width: .55; vector-effect: non-scaling-stroke; }
+.axisLine { stroke: var(--color-border-strong); stroke-width: 1.15; vector-effect: non-scaling-stroke; }
+.footprintShape { fill: rgb(var(--color-primary-rgb) / 22%); stroke: var(--color-primary); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.holeShape { fill: var(--color-canvas-base); stroke: var(--color-warning); stroke-width: 1.4; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+.vertex { fill: var(--color-heading); stroke: var(--color-border-strong); stroke-width: 1.5; cursor: grab; vector-effect: non-scaling-stroke; }
+.vertexSelected { fill: var(--color-primary); stroke: var(--color-primary-contrast); cursor: grabbing; }
+.workspaceTabs { display: flex; gap: 2px; padding: 3px; border: 1px solid var(--color-border); border-radius: var(--radius-medium); background: var(--color-input); }
+.workspaceTabs button { min-height: 28px; padding: 3px 8px; border: 0; background: transparent; font-size: var(--editor-font-size-xs); }
+.workspaceTabs button[aria-pressed="true"] { color: var(--color-accent-strong); background: var(--state-selected); box-shadow: inset 0 0 0 1px var(--state-selected-border); }
+.sampleButton, .primaryInline { width: 100%; margin-bottom: 8px; border-color: var(--state-selected-border) !important; color: var(--color-accent-strong) !important; background: var(--state-selected) !important; }
+.primaryInline { margin: 10px 0 0; }
+.dangerAction { width: 100%; margin-top: 10px; color: var(--color-danger) !important; }
+.entityList, .groupList { display: grid; gap: 4px; }
+.entityList button, .groupList button { min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 2px 7px; text-align: left; }
+.entityList button > span { grid-row: 1 / 3; color: var(--color-accent-strong); font-size: var(--editor-font-size-lg); }
+.entityList button strong, .groupList button span { min-width: 0; overflow: hidden; color: inherit; font-size: var(--editor-font-size-xs); text-overflow: ellipsis; white-space: nowrap; }
+.entityList button small, .groupList button small { grid-column: 2; color: var(--color-text-subtle); font-size: var(--editor-font-size-xs); }
+.groupList button { grid-template-columns: minmax(0, 1fr) auto; }
+.groupList button small { grid-column: 2; }
+.checkField { min-height: 30px; display: inline-flex; align-items: center; gap: 7px; color: var(--color-text-muted); font-size: var(--editor-font-size-xs); cursor: pointer; }
+.checkField input { width: 15px; height: 15px; accent-color: var(--color-primary); }
+.membershipList { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 8px; }
+.autoLevelRow { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 6px; }
+.autoLevelRow > button { grid-column: 1 / -1; }
+.levelList { display: grid; gap: 5px; margin-top: 10px; }
+.levelItem { min-width: 0; display: grid; grid-template-columns: minmax(76px, 1fr) 58px auto 58px auto auto; align-items: center; gap: 3px; }
+.levelItem input { width: 100%; min-width: 0; min-height: 30px; box-sizing: border-box; padding: 3px 5px; border: 1px solid var(--color-border); border-radius: var(--radius-small); color: var(--color-text); background: var(--color-input); font-size: var(--editor-font-size-xs); }
+.levelItem span { color: var(--color-text-subtle); }
+.levelItem button { min-height: 28px; padding: 3px 5px; }
+.assemblyEntity { fill: rgb(var(--color-primary-rgb) / 20%); stroke: var(--color-primary); stroke-width: 1.6; vector-effect: non-scaling-stroke; cursor: move; transition: opacity .15s, fill .15s; }
+.assemblyEntity:hover { fill: rgb(var(--color-primary-rgb) / 30%); }
+.assemblyEntitySelected { fill: rgb(var(--color-primary-rgb) / 42%); stroke: var(--color-accent-strong); stroke-width: 2.5; vector-effect: non-scaling-stroke; cursor: move; }
+.assemblyEntityGhost { fill: rgb(var(--color-primary-rgb) / 6%); stroke: var(--color-text-faint); stroke-width: 1; opacity: .24; vector-effect: non-scaling-stroke; }
+.assemblyEntityHidden { display: none; }
+.connectorPath { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: var(--connector-width, 8); pointer-events: stroke; cursor: pointer; }
+.connectorPath.assemblyEntity { stroke: var(--color-info); }
+.connectorPath.assemblyEntitySelected { stroke: var(--color-accent-strong); }
+.connectorPath.assemblyEntityGhost { stroke: var(--color-text-faint); }
+.validation li[data-severity="warning"] { color: var(--color-warning); }
+
+@container (max-width: 620px) {
+  .cameraPresets { top: 54px; max-width: min(184px, calc(100% - 24px)); }
+}
+
+@container (max-width: 420px) {
+  .cameraPresets { right: 8px; max-width: 98px; }
+  .cameraPresets button { min-width: 42px; padding-inline: 5px; }
+  .previewScale { right: 8px; bottom: 8px; max-width: calc(100% - 16px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+
+@media (max-width: 1080px) {
+  .toolbar { flex-wrap: wrap; }
+  .nameInput { width: 240px; }
+}
+
+@media (max-width: 860px) {
+  .editorPage { height: 100dvh; overflow: hidden; }
+  .editorLayout { min-height: 0; overflow: hidden; }
+  .toolPanel, .propertyPanel { max-height: none; border: 0; scrollbar-gutter: auto; }
+  .toolbarSpacer { display: none; }
+}
+
+@media (max-width: 560px) {
+  .toolbar { padding: 7px 8px; gap: 6px; }
+  .toolbar button { padding-inline: 8px; font-size: var(--editor-font-size-xs); }
+  .nameInput { width: min(100%, 220px); flex: 1 1 160px; }
+  .saveStatus { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+  .propertyPanel section { padding: 12px; }
+  .fieldGrid { grid-template-columns: repeat(2, minmax(104px, 1fr)); }
+  .workspaceTabs { order: 10; width: 100%; }
+  .workspaceTabs button { flex: 1; }
+  .levelItem { grid-template-columns: minmax(82px, 1fr) 58px auto 58px; }
+  .levelItem button { grid-column: span 2; }
+}
+
+@media (max-width: 380px) {
+  .fieldGrid { grid-template-columns: 1fr; }
+  .inlineActions button, .toggleRow button { flex: 1 1 calc(50% - 6px); }
+}

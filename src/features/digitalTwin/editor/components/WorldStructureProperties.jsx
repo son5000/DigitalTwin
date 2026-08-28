@@ -12,6 +12,7 @@ import { StructureIcon } from "@/components/icons";
 
 import NumericField from "./NumericField";
 import MaterialAppearanceEditor from "./MaterialAppearanceEditor";
+import MaterialSlotEditor from "./MaterialSlotEditor";
 import PropertySection from "./PropertySection";
 import styles from "./WorldStructureProperties.module.css";
 
@@ -37,6 +38,9 @@ export default function WorldStructureProperties({ structure, spaces, floors = [
         ? SPACE_MATERIAL_PRESET_IDS
         : undefined;
   const materialPreset = getMaterialPreset(getMaterialPresetId(structure.appearance));
+  const compatibleModels = Object.values(WORLD_STRUCTURE_TEMPLATE_MAP).filter((item) => (
+    item.objectType === definition.objectType && !item.legacyOnly
+  ));
 
   return (
     <section className={styles.properties}>
@@ -44,6 +48,14 @@ export default function WorldStructureProperties({ structure, spaces, floors = [
 
       <PropertySection title="기본 정보" summary={definition.nameKo} defaultOpen>
         <label className={styles.textField}><span>이름</span><input type="text" disabled={disabled} value={structure.name} onChange={(event) => onChange({ name: event.target.value })} /></label>
+        {compatibleModels.length > 1 ? (
+          <label className={styles.textField}>
+            <span>세부 모델</span>
+            <select disabled={disabled} value={structure.type} onChange={(event) => onChange({ type: event.target.value })}>
+              {compatibleModels.map((model) => <option key={model.id} value={model.id}>{model.nameKo}</option>)}
+            </select>
+          </label>
+        ) : null}
         {structure.type === "ROOM" ? <label className={styles.textField}><span>공간 용도</span><input type="text" disabled={disabled} value={structure.usage ?? ""} placeholder="예: 사무실, 회의실, 창고" onChange={(event) => onChange({ usage: event.target.value })} /></label> : null}
         {definition.variants && (
           <label className={styles.textField}><span>형태</span><select disabled={disabled} value={structure.variant} onChange={(event) => {
@@ -139,6 +151,17 @@ export default function WorldStructureProperties({ structure, spaces, floors = [
           onChange={(appearance) => onChange({ appearance })}
         />
       </PropertySection>
+
+      {definition.materialSlots?.length ? (
+        <PropertySection title="재질 영역" summary={`${definition.materialSlots.length}개 영역`} defaultOpen>
+          <MaterialSlotEditor
+            slots={definition.materialSlots}
+            appearances={structure.appearanceSlots}
+            disabled={disabled}
+            onChange={(appearanceSlots) => onChange({ appearanceSlots })}
+          />
+        </PropertySection>
+      ) : null}
 
       <PropertySection title="표시 및 잠금" summary={structure.locked ? "잠김" : "편집 가능"}>
         <label className={styles.check}><input type="checkbox" checked={structure.visible} onChange={(event) => onChange({ visible: event.target.checked })} /><span>표시</span></label>

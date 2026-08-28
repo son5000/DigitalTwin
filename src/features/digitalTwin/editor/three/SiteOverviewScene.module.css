@@ -83,11 +83,11 @@
   background: var(--color-positive);
 }
 
-.cameraResetButton {
+.cameraResetButton,
+.autoConnectButton {
   position: absolute;
   z-index: 3;
   bottom: var(--editor-overlay-gap, 12px);
-  left: var(--editor-overlay-left-safe, 74px);
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -104,8 +104,22 @@
   backdrop-filter: blur(8px);
 }
 
+.cameraResetButton { left: var(--editor-overlay-left-safe, 74px); }
+
+.autoConnectButton {
+  left: calc(var(--editor-overlay-left-safe, 74px) + 124px);
+}
+
+.autoConnectButton.active {
+  border-color: rgb(var(--color-accent-rgb) / 68%);
+  color: var(--color-accent-strong);
+  background: rgb(var(--color-accent-rgb) / 13%);
+}
+
 .cameraResetButton:hover,
-.cameraResetButton:focus-visible {
+.cameraResetButton:focus-visible,
+.autoConnectButton:hover,
+.autoConnectButton:focus-visible {
   border-color: rgb(var(--color-accent-rgb) / 65%);
   color: var(--color-accent-strong);
 }
@@ -113,4 +127,5 @@
 @media (max-width: 900px), (orientation: portrait) {
   .sceneStatus { right: var(--editor-overlay-gap, 8px); }
   .cameraResetButton { bottom: var(--editor-overlay-mobile-bottom-safe, 74px); left: var(--editor-overlay-gap, 8px); }
+  .autoConnectButton { bottom: var(--editor-overlay-mobile-bottom-safe, 74px); left: 132px; }
 }

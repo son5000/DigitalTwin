@@ -10,6 +10,7 @@ import { ComponentIcon, DeleteIcon, EnterIcon, EquipmentIcon, SnapIcon } from "@
 
 import NumericField from "./NumericField";
 import MaterialAppearanceEditor from "./MaterialAppearanceEditor";
+import MaterialSlotEditor from "./MaterialSlotEditor";
 import PropertySection from "./PropertySection";
 import styles from "./EquipmentProperties.module.css";
 
@@ -55,6 +56,9 @@ export default function EquipmentProperties({
   }
 
   const template = EQUIPMENT_SHAPE_TEMPLATE_MAP[equipment.shapeTemplateId];
+  const compatibleModels = EQUIPMENT_SHAPE_TEMPLATES.filter((item) => (
+    item.objectType === template.objectType && !item.legacyOnly
+  ));
   const calibration = detailAsset?.calibration;
   const primaryBinding = equipment.dataBindings?.[0] ?? {
     protocol: "MQTT",
@@ -87,9 +91,12 @@ export default function EquipmentProperties({
           <input type="text" value={equipment.name} onChange={(event) => onChange({ name: event.target.value })} />
         </label>
         <label className={styles.textField}>
-          <span>형태</span>
-          <select value={equipment.shapeTemplateId} onChange={(event) => onChange({ shapeTemplateId: event.target.value })}>
-            {EQUIPMENT_SHAPE_TEMPLATES.map((item) => (
+          <span>세부 모델</span>
+          <select value={equipment.shapeTemplateId} onChange={(event) => {
+            const model = EQUIPMENT_SHAPE_TEMPLATE_MAP[event.target.value];
+            onChange({ shapeTemplateId: model.id, sourceTemplateId: model.id, category: model.category });
+          }}>
+            {(compatibleModels.length ? compatibleModels : [template]).map((item) => (
               <option key={item.id} value={item.id}>{item.nameKo} · {item.name}</option>
             ))}
           </select>
@@ -270,6 +277,17 @@ export default function EquipmentProperties({
           onChange={(appearance) => onChange({ appearance })}
         />
       </PropertySection>
+
+      {template.materialSlots?.length ? (
+        <PropertySection title="재질 영역" summary={`${template.materialSlots.length}개 영역`} defaultOpen>
+          <MaterialSlotEditor
+            slots={template.materialSlots}
+            appearances={equipment.appearanceSlots}
+            presetIds={EQUIPMENT_MATERIAL_PRESET_IDS}
+            onChange={(appearanceSlots) => onChange({ appearanceSlots })}
+          />
+        </PropertySection>
+      ) : null}
 
       {!placementOnly ? <PropertySection title="Parts" summary={`${equipment.parts?.length ?? 0} Parts`} defaultOpen>
         <div className={styles.partSummary}>

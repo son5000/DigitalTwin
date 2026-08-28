@@ -4,6 +4,7 @@ import {
   getDefaultObjectVariants,
 } from "@/features/digitalTwin/editor/constants/objectLibraryCatalog";
 import { SITE_OBJECT_GEOMETRY_MODES } from "@/features/digitalTwin/editor/constants/siteEnvironmentTemplates.types";
+import { normalizeVerticalPath, VERTICAL_PATH_MODES } from "@/features/digitalTwin/editor/terrain/VerticalPathModel";
 
 export { SITE_OBJECT_GEOMETRY_MODES } from "@/features/digitalTwin/editor/constants/siteEnvironmentTemplates.types";
 
@@ -11,6 +12,7 @@ export const SITE_INTERACTION_MODES = Object.freeze({
   NAVIGATE: "NAVIGATE",
   AREA_SELECT: "AREA_SELECT",
   PLACE_OBJECT: "PLACE_OBJECT",
+  EDIT_TERRAIN: "EDIT_TERRAIN",
 });
 
 export const SITE_MATERIAL_OPTIONS = Object.freeze([
@@ -21,6 +23,9 @@ export const SITE_MATERIAL_OPTIONS = Object.freeze([
   { id: "PAINTED", label: "도장" },
   { id: "GLASS", label: "유리" },
   { id: "BRICK", label: "벽돌" },
+  { id: "SOIL", label: "토사" },
+  { id: "ROCK", label: "암석" },
+  { id: "GRAVEL", label: "자갈" },
 ]);
 
 export const TREE_DEFAULT_SPACING = 4;
@@ -105,7 +110,7 @@ export function createSiteObjectFromArea(templateId, area, sequence = 1, variant
       parkingAngle: template.parameters?.parkingAngle ?? 90,
     },
     path: template.geometryMode === SITE_OBJECT_GEOMETRY_MODES.LINEAR
-      ? createLinearPath(areaWidth, areaDepth)
+      ? { ...createLinearPath(areaWidth, areaDepth), elevationMode: VERTICAL_PATH_MODES.FOLLOW_TERRAIN }
       : null,
     visible: true,
     locked: false,
@@ -142,12 +147,13 @@ export function normalizeSiteObject(object, index = 0) {
       ...object.parameters,
     },
     path: template.geometryMode === SITE_OBJECT_GEOMETRY_MODES.LINEAR
-      ? {
+      ? normalizeVerticalPath({
           width: Math.max(0.5, finite(object.path?.width, Math.min(width, depth))),
+          elevationMode: object.path?.elevationMode ?? object.parameters?.verticalPathMode ?? VERTICAL_PATH_MODES.FOLLOW_TERRAIN,
           points: Array.isArray(object.path?.points) && object.path.points.length >= 2
-            ? object.path.points.map((point) => ({ x: finite(point.x, 0), z: finite(point.z, 0) }))
+            ? object.path.points.map((point) => ({ ...point, x: finite(point.x, 0), z: finite(point.z, 0) }))
             : createLinearPath(width, depth).points,
-        }
+        })
       : null,
     visible: object.visible !== false,
     locked: Boolean(object.locked),

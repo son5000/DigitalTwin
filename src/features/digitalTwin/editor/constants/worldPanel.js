@@ -2,5 +2,6 @@ export const WORLD_PANEL_IDS = Object.freeze({
   OBJECTS: "OBJECTS",
   OBJECT_LIST: "OBJECT_LIST",
   SETTINGS: "SETTINGS",
+  TERRAIN: "TERRAIN",
   DETAILS: "DETAILS",
 });

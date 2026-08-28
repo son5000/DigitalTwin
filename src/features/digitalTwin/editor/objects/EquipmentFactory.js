@@ -8,6 +8,7 @@ import { generateDuct } from "@/features/digitalTwin/editor/generators/DuctGener
 import { generateMechanical } from "@/features/digitalTwin/editor/generators/MechanicalGenerator";
 import { generatePipe } from "@/features/digitalTwin/editor/generators/PipeGenerator";
 import { generateTank } from "@/features/digitalTwin/editor/generators/TankGenerator";
+import { generateSemanticEquipment } from "@/features/digitalTwin/editor/generators/SemanticEquipmentGenerator";
 
 const CATEGORY_GENERATORS = {
   BASIC: generateBasicShape,
@@ -16,9 +17,9 @@ const CATEGORY_GENERATORS = {
   PIPE: generatePipe,
   DUCT: generateDuct,
   TANK: generateTank,
-  SAFETY: generateBasicShape,
-  SENSOR: generateBasicShape,
-  UTILITY: generateBasicShape,
+  SAFETY: generateSemanticEquipment,
+  SENSOR: generateSemanticEquipment,
+  UTILITY: generateSemanticEquipment,
   CUSTOM: generateBasicShape,
 };
 
@@ -32,6 +33,7 @@ export function getEquipmentGeometrySignature(
     JSON.stringify(equipment.dimensions),
     JSON.stringify(equipment.parameters),
     JSON.stringify(equipment.appearance),
+    JSON.stringify(equipment.appearanceSlots),
     selected,
     colliding,
     dimmed,
@@ -40,9 +42,21 @@ export function getEquipmentGeometrySignature(
   ].join("|");
 }
 
+export function getEquipmentBatchKey(equipment, { theme = "dark", viewerTranslucent = true } = {}) {
+  return [
+    equipment.shapeTemplateId,
+    JSON.stringify(equipment.dimensions),
+    JSON.stringify(equipment.parameters),
+    JSON.stringify(equipment.appearance),
+    JSON.stringify(equipment.appearanceSlots),
+    viewerTranslucent,
+    theme,
+  ].join("|");
+}
+
 export function createEquipmentObject(
   equipment,
-  { selected = false, colliding = false, dimmed = false, theme = "dark", viewerTranslucent = true } = {},
+  { selected = false, colliding = false, dimmed = false, theme = "dark", viewerTranslucent = true, enableLod = true } = {},
 ) {
   const sceneTheme = SCENE_THEMES[theme];
   const template = EQUIPMENT_SHAPE_TEMPLATE_MAP[equipment.shapeTemplateId];
@@ -63,6 +77,7 @@ export function createEquipmentObject(
     dimensions: equipment.dimensions,
     parameters: equipment.parameters,
     appearance,
+    appearanceSlots: equipment.appearanceSlots,
     label: equipment.name,
     edgeColor,
     sceneTheme,
@@ -78,7 +93,28 @@ export function createEquipmentObject(
     equipment,
     { selected, colliding, dimmed, theme, viewerTranslucent },
   );
-  equipmentGroup.add(visual);
+  if (template?.lod && !selected && enableLod) {
+    const lod = new THREE.LOD();
+    const lowMaterial = new THREE.MeshStandardMaterial({
+      color: appearance.color,
+      roughness: appearance.roughness ?? 0.6,
+      metalness: appearance.metalness ?? 0.1,
+      transparent: (appearance.opacity ?? 1) < 1,
+      opacity: appearance.opacity ?? 1,
+    });
+    const lowProxy = new THREE.Mesh(
+      new THREE.BoxGeometry(equipment.dimensions.width, equipment.dimensions.height, equipment.dimensions.depth),
+      lowMaterial,
+    );
+    lowProxy.position.y = equipment.dimensions.height / 2;
+    lowProxy.castShadow = true;
+    lowProxy.receiveShadow = true;
+    lod.addLevel(visual, 0);
+    lod.addLevel(lowProxy, template.lod.mediumDistance);
+    equipmentGroup.add(lod);
+  } else {
+    equipmentGroup.add(visual);
+  }
   equipmentGroup.position.set(equipment.position.x, equipment.position.y, equipment.position.z);
   equipmentGroup.rotation.set(equipment.rotation.x, equipment.rotation.y, equipment.rotation.z);
   return equipmentGroup;
