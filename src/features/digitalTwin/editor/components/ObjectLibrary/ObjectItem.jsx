@@ -30,6 +30,9 @@ export default function ObjectItem({ definition, active, onSelect }) {
       <ObjectPreview definition={definition} />
       <span className={styles.itemText}>
         <strong>{displayName}</strong>
+        {definition.installationBadges?.length ? (
+          <small>{definition.installationBadges.join(" · ")}{definition.modelVariants?.length > 1 ? ` · 변형 ${definition.modelVariants.length}` : ""}</small>
+        ) : null}
       </span>
       <span className={styles.itemAction} aria-hidden="true">
         {active ? <CheckIcon size={15} /> : <AddIcon size={15} />}

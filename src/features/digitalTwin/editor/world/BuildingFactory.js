@@ -4,6 +4,7 @@ import { createCustomBuildingGroup } from "@/features/customAssets/building/buil
 import { getRuntimeCustomAsset } from "@/features/customAssets/core/customAssetRegistry";
 import { BUILDING_FACADES, getBuildingFacadeOpenings } from "@/features/digitalTwin/editor/model/buildingOpenings";
 import { createPresetMaterial } from "@/features/digitalTwin/editor/three/presetMaterial";
+import { applyUserTextureToObject } from "@/features/digitalTwin/editor/three/userTextureRuntime";
 
 function createEdgeOverlay(geometry, color) {
   return new THREE.LineSegments(
@@ -30,6 +31,7 @@ function addMass(group, size, position, material, buildingId, edgeColor) {
   const mesh = new THREE.Mesh(geometry, material.clone());
   mesh.position.set(position.x, position.y, position.z);
   mesh.userData.buildingId = buildingId;
+  mesh.userData.textureSurface = "EXTERIOR";
   mesh.add(createEdgeOverlay(geometry, edgeColor));
   group.add(mesh);
   return mesh;
@@ -159,6 +161,7 @@ export function getBuildingSignature(building, floorCount, selected, expanded, t
     variants: building.variants,
     facadeOpenings: building.facadeOpenings,
     appearance: building.appearance,
+    userTexture: building.userTexture,
     floorCount,
     selected,
     expanded,
@@ -332,6 +335,7 @@ export function createBuildingObject(building, floors, visualState) {
       visualState.theme,
       visualState.viewerTranslucent,
     );
+    applyUserTextureToObject(customGroup, building.userTexture);
     return customGroup;
   }
   const group = new THREE.Group();
@@ -407,6 +411,7 @@ export function createBuildingObject(building, floors, visualState) {
     );
     roof.position.y = totalHeight;
     roof.userData.buildingId = building.id;
+    roof.userData.textureSurface = "ROOF";
     group.add(roof);
   } else if (roofType === "SAWTOOTH") {
     const toothCount = 4;
@@ -421,6 +426,7 @@ export function createBuildingObject(building, floors, visualState) {
       );
       tooth.position.set(-width / 2 + toothWidth * (index + 0.5), totalHeight, 0);
       tooth.userData.buildingId = building.id;
+      tooth.userData.textureSurface = "ROOF";
       group.add(tooth);
     }
   } else if (roofType === "INDUSTRIAL_VENT") {
@@ -428,12 +434,14 @@ export function createBuildingObject(building, floors, visualState) {
     const roof = new THREE.Mesh(roofGeometry, roofMaterial);
     roof.position.y = totalHeight + 0.12;
     roof.userData.buildingId = building.id;
+    roof.userData.textureSurface = "ROOF";
     group.add(roof);
     for (let index = 0; index < 3; index += 1) {
       const monitorGeometry = new THREE.BoxGeometry(width * 0.18, Math.max(1, floorHeight * 0.32), depth * 0.42);
       const monitor = new THREE.Mesh(monitorGeometry, roofMaterial.clone());
       monitor.position.set(-width * 0.24 + index * width * 0.24, totalHeight + Math.max(1, floorHeight * 0.32) / 2, 0);
       monitor.userData.buildingId = building.id;
+      monitor.userData.textureSurface = "ROOF";
       monitor.add(createEdgeOverlay(monitorGeometry, visualState.edgeColor));
       group.add(monitor);
     }
@@ -442,6 +450,7 @@ export function createBuildingObject(building, floors, visualState) {
     const roof = new THREE.Mesh(roofGeometry, roofMaterial);
     roof.position.y = totalHeight + 0.12;
     roof.userData.buildingId = building.id;
+    roof.userData.textureSurface = "ROOF";
     roof.add(createEdgeOverlay(roofGeometry, visualState.edgeColor));
     group.add(roof);
   }
@@ -453,6 +462,7 @@ export function createBuildingObject(building, floors, visualState) {
   );
   apron.position.y = 0.04;
   apron.userData.buildingId = building.id;
+  apron.userData.textureSurface = "EXCLUDE";
   group.add(apron);
 
   group.userData.geometrySignature = getBuildingSignature(
@@ -465,5 +475,6 @@ export function createBuildingObject(building, floors, visualState) {
   );
   if (visualState.expanded) updateBuildingFloorVisualState(group, building, floors, visualState);
   else applyViewerTransparency(group, visualState.viewerTranslucent);
+  applyUserTextureToObject(group, building.userTexture);
   return group;
 }

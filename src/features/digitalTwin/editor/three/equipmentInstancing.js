@@ -57,7 +57,7 @@ export function createEquipmentRenderObjects(entries, options = {}) {
     groups.set(key, batch);
   });
   return [...groups.values()].flatMap((batch) => {
-    if (!options.disableInstancing && batch.length >= MIN_INSTANCE_COUNT && batch.every(({ equipment }) => equipment.id !== options.selectedEquipmentId)) {
+    if (!options.disableInstancing && batch.length >= MIN_INSTANCE_COUNT && batch.every(({ equipment }) => equipment.id !== options.selectedEquipmentId && !equipment.userTexture)) {
       return [createInstanceGroup(batch, options)];
     }
     return batch.map(({ equipment, baseY }) => {

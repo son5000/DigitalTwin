@@ -17,6 +17,7 @@ import {
   getVerticalPathMetrics,
   VERTICAL_PATH_MODES,
 } from "@/features/digitalTwin/editor/terrain/VerticalPathModel";
+import { OUTDOOR_PLACEMENT_MODES } from "@/features/digitalTwin/editor/model/outdoorEquipmentPlacement";
 
 import NumericField from "./NumericField";
 import { ObjectVariantSelector } from "./ObjectLibrary";
@@ -64,6 +65,8 @@ export default function SiteObjectProperties({ object, siteEnvironment, siteObje
   const isStairs = object.profile === "OUTDOOR_STAIRS";
   const isRamp = object.profile === "OUTDOOR_RAMP";
   const isTerrain = object.assetKind === "TERRAIN";
+  const isOutdoorEquipment = object.assetKind === "OUTDOOR_EQUIPMENT";
+  const isOutdoorStorage = isOutdoorEquipment && ["TANK", "SILO", "BASIN", "CLARIFIER", "WATER_TOWER"].some((key) => object.profile.includes(key));
   const supportsCardinalDirection = isRoad || isWalkway || isStairs || isRamp;
   const rotationDegrees = object.rotation.y * 180 / Math.PI;
   const cardinalRotation = ((Math.round(rotationDegrees / 90) * 90) % 360 + 360) % 360;
@@ -133,6 +136,38 @@ export default function SiteObjectProperties({ object, siteEnvironment, siteObje
         value={object.variants}
         onChange={(variants) => onChange({ variants })}
       />
+
+      {isOutdoorEquipment ? (
+        <div className={styles.section}>
+          <h3>옥외 배치와 상태</h3>
+          <div className={styles.fields}>
+            <label>
+              <span>배치 위치</span>
+              <select value={object.placement?.mode ?? OUTDOOR_PLACEMENT_MODES.GROUND} onChange={(event) => onChange({ placement: { ...object.placement, mode: event.target.value } })}>
+                {(object.placementRules?.allowedModes ?? [OUTDOOR_PLACEMENT_MODES.GROUND]).map((mode) => <option key={mode} value={mode}>{({ GROUND: "야외 지면", ROOF: "옥상", WALL: "외벽", UNDERGROUND: "지하", ROAD_EDGE: "도로 주변" })[mode]}</option>)}
+              </select>
+            </label>
+            <label><span>외관 상태</span><select value={object.parameters.condition ?? "NORMAL"} onChange={(event) => onChange({ parameters: { condition: event.target.value } })}><option value="NORMAL">정상</option><option value="WEATHERED">오염·풍화</option><option value="WORN">마모</option><option value="RUSTED">녹 발생</option></select></label>
+          </div>
+          <p>{object.placement?.buildingId ? `건축물 ${object.placement.buildingId}에 종속됨` : "배치 시 허용 위치에 자동 스냅됩니다."}</p>
+        </div>
+      ) : null}
+
+      {isOutdoorStorage ? (
+        <div className={styles.section}>
+          <h3>저장·수위 설정</h3>
+          <div className={styles.fields}>
+            <NumericField label="용량" value={object.parameters.capacity ?? 0} min={0.1} max={10000} step={1} unit="m³" onChange={(capacity) => onChange({ parameters: { capacity } })} />
+            <NumericField label="수위" value={(object.parameters.fillLevel ?? 0) * 100} min={0} max={100} step={1} unit="%" onChange={(fillLevel) => onChange({ parameters: { fillLevel: fillLevel / 100 } })} />
+            <label><span>저장 물질</span><input value={object.parameters.storedMaterial ?? ""} onChange={(event) => onChange({ parameters: { storedMaterial: event.target.value } })} /></label>
+            <NumericField label="입구" value={object.parameters.inletCount ?? 1} min={0} max={12} step={1} unit="개" onChange={(inletCount) => onChange({ parameters: { inletCount } })} />
+            <NumericField label="출구" value={object.parameters.outletCount ?? 1} min={0} max={12} step={1} unit="개" onChange={(outletCount) => onChange({ parameters: { outletCount } })} />
+            <label className={styles.toggle}><input type="checkbox" checked={object.parameters.openTop === true} onChange={(event) => onChange({ parameters: { openTop: event.target.checked } })} /><span>상부 개방</span></label>
+            <label className={styles.toggle}><input type="checkbox" checked={object.parameters.ladderEnabled !== false} onChange={(event) => onChange({ parameters: { ladderEnabled: event.target.checked } })} /><span>점검 사다리</span></label>
+            <label className={styles.toggle}><input type="checkbox" checked={object.parameters.railingEnabled !== false} onChange={(event) => onChange({ parameters: { railingEnabled: event.target.checked } })} /><span>안전 난간</span></label>
+          </div>
+        </div>
+      ) : null}
 
       {isRoad ? (
         <div className={styles.section}>

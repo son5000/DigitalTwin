@@ -10,6 +10,7 @@ import {
   sliceGradedSamples,
 } from "@/features/digitalTwin/editor/terrain/GradedRoadFactory";
 import { VERTICAL_PATH_MODES } from "@/features/digitalTwin/editor/terrain/VerticalPathModel";
+import { createPresetMaterial } from "@/features/digitalTwin/editor/three/presetMaterial";
 
 function materialFor(object, selected) {
   const presets = {
@@ -554,6 +555,339 @@ function addStreetlights(group, object, material) {
     lamp.position.set(x, object.dimensions.height, z);
     group.add(pole, lamp);
   }
+}
+
+function outdoorPbr(color, preset = "PAINTED_METAL", condition = "NORMAL") {
+  const weathering = condition === "RUSTED" ? { pattern: "RUST", aging: 0.72 }
+    : condition === "WEATHERED" ? { pattern: "GALVANIZED", aging: 0.38 }
+      : { aging: condition === "WORN" ? 0.28 : 0.08 };
+  return createPresetMaterial({ materialPresetId: preset, color, ...weathering });
+}
+
+function addConnectionPoint(group, object, id, position, direction, kind = "PIPE") {
+  const point = new THREE.Object3D();
+  point.position.set(position.x, position.y, position.z);
+  point.userData = { connectionPointId: `${object.id}:${id}`, connectionKind: kind, direction };
+  point.name = `${object.name} ${id}`;
+  group.add(point);
+}
+
+function addFlange(group, position, radius, rotation, material) {
+  const flange = cylinder(group, radius, radius, 0.14, position, material, 18, rotation);
+  for (let index = 0; index < 8; index += 1) {
+    const angle = index * Math.PI / 4;
+    const bolt = cylinder(group, radius * 0.055, radius * 0.055, 0.18, {
+      x: position.x + Math.cos(angle) * radius * 0.76,
+      y: position.y + Math.sin(angle) * radius * 0.76,
+      z: position.z,
+    }, outdoorPbr("#4C5457", "STEEL"), 6, rotation);
+    bolt.userData.outdoorDetail = "BOLT";
+  }
+  return flange;
+}
+
+function addLadder(group, x, height, z, material) {
+  [-0.18, 0.18].forEach((offset) => cylinder(group, 0.025, 0.025, height, { x: x + offset, y: height / 2, z }, material, 8));
+  const rungs = Math.max(3, Math.floor(height / 0.34));
+  for (let index = 1; index < rungs; index += 1) box(group, { x: 0.42, y: 0.035, z: 0.035 }, { x, y: height * index / rungs, z }, material);
+}
+
+function addTopRailing(group, radius, y, material) {
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(radius, 0.035, 8, 32), material);
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = y + 0.75;
+  group.add(ring);
+  for (let index = 0; index < 12; index += 1) {
+    const angle = index * Math.PI / 6;
+    cylinder(group, 0.025, 0.025, 0.75, { x: Math.cos(angle) * radius, y: y + 0.375, z: Math.sin(angle) * radius }, material, 8);
+  }
+}
+
+function addAxialFan(group, position, radius, material) {
+  const shroud = new THREE.Mesh(new THREE.TorusGeometry(radius, radius * 0.09, 8, 28), material);
+  shroud.position.set(position.x, position.y, position.z);
+  shroud.rotation.x = Math.PI / 2;
+  group.add(shroud);
+  const hub = cylinder(group, radius * 0.13, radius * 0.13, 0.16, position, material, 12);
+  for (let index = 0; index < 6; index += 1) {
+    const blade = box(group, { x: radius * 0.12, y: 0.06, z: radius * 0.72 }, position, material);
+    blade.rotation.y = index * Math.PI / 3;
+  }
+  return hub;
+}
+
+function addOutdoorTankDetails(group, object, shell, steel) {
+  const { width, depth, height } = object.dimensions;
+  const profile = object.profile;
+  const fillLevel = Math.max(0, Math.min(1, Number(object.parameters.fillLevel) || 0));
+  const liquid = outdoorPbr("#378FAA", "GLASS");
+  if (profile.startsWith("HORIZONTAL")) {
+    cylinder(group, height * 0.38, height * 0.38, depth * 0.78, { x: 0, y: height * 0.55, z: 0 }, shell, 28, { x: Math.PI / 2 });
+    [-0.27, 0.27].forEach((z) => {
+      const saddle = box(group, { x: width * 0.72, y: height * 0.32, z: depth * 0.12 }, { x: 0, y: height * 0.16, z: z * depth }, steel);
+      saddle.geometry.translate(0, 0, 0);
+    });
+    [-1, 1].forEach((side) => {
+      addFlange(group, { x: 0, y: height * 0.55, z: side * depth * 0.43 }, height * 0.18, { x: Math.PI / 2 }, steel);
+      addConnectionPoint(group, object, side > 0 ? "OUTLET" : "INLET", { x: 0, y: height * 0.55, z: side * depth * 0.5 }, { x: 0, y: 0, z: side });
+    });
+    cylinder(group, 0.17, 0.17, height * 0.34, { x: 0, y: height * 0.92, z: 0 }, steel, 14);
+    box(group, { x: 0.09, y: height * 0.62, z: 0.09 }, { x: width * 0.43, y: height * 0.52, z: depth * 0.1 }, outdoorPbr("#D5DEDD", "GLASS"));
+    box(group, { x: 0.055, y: height * 0.58 * fillLevel, z: 0.055 }, { x: width * 0.43, y: height * 0.23 + height * 0.29 * fillLevel, z: depth * 0.1 }, liquid);
+    return;
+  }
+  const shellHeight = profile.includes("SILO") ? height * 0.62 : height * 0.82;
+  cylinder(group, width * 0.44, width * 0.44, shellHeight, { x: 0, y: shellHeight / 2 + (profile.includes("SILO") ? height * 0.2 : 0), z: 0 }, shell, 32);
+  if (profile.includes("SILO")) {
+    const hopper = new THREE.Mesh(new THREE.ConeGeometry(width * 0.44, height * 0.34, 28), shell);
+    hopper.position.y = height * 0.17; hopper.rotation.z = Math.PI; group.add(hopper);
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(width * 0.46, height * 0.16, 28), shell);
+    roof.position.y = height * 0.9; group.add(roof);
+    [-1, 1].forEach((x) => [-1, 1].forEach((z) => cylinder(group, 0.07, 0.07, height * 0.36, { x: x * width * 0.32, y: height * 0.18, z: z * width * 0.32 }, steel, 8)));
+    addConnectionPoint(group, object, "OUTLET", { x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
+  } else {
+    if (object.parameters.openTop === true) {
+      cylinder(group, width * 0.41, width * 0.41, 0.08, { x: 0, y: shellHeight * fillLevel, z: 0 }, liquid, 28);
+    } else {
+      const roof = new THREE.Mesh(new THREE.SphereGeometry(width * 0.45, 28, 10, 0, Math.PI * 2, 0, Math.PI / 2), shell);
+      roof.position.y = shellHeight; group.add(roof);
+    }
+    if (profile.includes("BOLTED")) for (let level = 1; level < 5; level += 1) {
+      const seam = new THREE.Mesh(new THREE.TorusGeometry(width * 0.445, 0.025, 6, 32), steel);
+      seam.rotation.x = Math.PI / 2; seam.position.y = shellHeight * level / 5; group.add(seam);
+    }
+  }
+  if (object.parameters.ladderEnabled !== false) addLadder(group, width * 0.48, height * 0.88, 0, steel);
+  if (object.parameters.railingEnabled !== false) addTopRailing(group, width * 0.45, height * 0.84, steel);
+  box(group, { x: 0.08, y: shellHeight * 0.7, z: 0.08 }, { x: width * 0.47, y: shellHeight * 0.48, z: width * 0.08 }, outdoorPbr("#D5DEDD", "GLASS"));
+  box(group, { x: 0.05, y: shellHeight * 0.66 * fillLevel, z: 0.05 }, { x: width * 0.47, y: shellHeight * 0.15 + shellHeight * 0.33 * fillLevel, z: width * 0.08 }, liquid);
+  addFlange(group, { x: width * 0.47, y: height * 0.22, z: 0 }, width * 0.12, { z: Math.PI / 2 }, steel);
+  addConnectionPoint(group, object, "INLET", { x: width * 0.5, y: height * 0.78, z: 0 }, { x: 1, y: 0, z: 0 });
+  addConnectionPoint(group, object, "OUTLET", { x: width * 0.5, y: height * 0.22, z: 0 }, { x: 1, y: 0, z: 0 });
+}
+
+function addOpenWaterStructure(group, object, concrete, steel) {
+  const { width, depth, height } = object.dimensions;
+  const level = Math.max(0, Math.min(1, Number(object.parameters.fillLevel) || 0));
+  const liquid = outdoorPbr("#3B91AA", "GLASS");
+  const circular = object.profile.includes("CIRCULAR") || object.profile.includes("RADIAL");
+  if (circular) {
+    const wall = new THREE.Mesh(new THREE.CylinderGeometry(width / 2, width / 2, height, 40, 1, true), concrete);
+    wall.position.y = height / 2; group.add(wall);
+    cylinder(group, width * 0.46, width * 0.46, 0.12, { x: 0, y: height * level, z: 0 }, liquid, 40);
+    if (object.profile.includes("CLARIFIER")) {
+      cylinder(group, 0.22, 0.3, height * 1.3, { x: 0, y: height * 0.75, z: 0 }, steel, 16);
+      const bridge = box(group, { x: width * 0.94, y: 0.14, z: 0.55 }, { x: 0, y: height + 0.16, z: 0 }, steel);
+      bridge.userData.outdoorDetail = "SCRAPER_BRIDGE";
+      cylinder(group, 0.6, 0.6, 0.35, { x: 0, y: height + 0.38, z: 0 }, steel, 16);
+    }
+    addTopRailing(group, width * 0.49, height, steel);
+  } else {
+    const thickness = 0.18;
+    box(group, { x: width, y: height, z: thickness }, { x: 0, y: height / 2, z: -depth / 2 }, concrete);
+    box(group, { x: width, y: height, z: thickness }, { x: 0, y: height / 2, z: depth / 2 }, concrete);
+    box(group, { x: thickness, y: height, z: depth }, { x: -width / 2, y: height / 2, z: 0 }, concrete);
+    box(group, { x: thickness, y: height, z: depth }, { x: width / 2, y: height / 2, z: 0 }, concrete);
+    box(group, { x: width * 0.94, y: 0.08, z: depth * 0.94 }, { x: 0, y: height * level, z: 0 }, liquid);
+    if (object.profile.includes("CLARIFIER")) {
+      for (let lane = 1; lane < 3; lane += 1) box(group, { x: thickness, y: height * 0.8, z: depth * 0.94 }, { x: -width / 2 + width * lane / 3, y: height * 0.4, z: 0 }, concrete);
+      box(group, { x: width, y: 0.14, z: 0.65 }, { x: 0, y: height + 0.14, z: 0 }, steel);
+    }
+  }
+  addConnectionPoint(group, object, "INLET", { x: -width / 2, y: height * 0.65, z: 0 }, { x: -1, y: 0, z: 0 });
+  addConnectionPoint(group, object, "OUTLET", { x: width / 2, y: height * 0.25, z: 0 }, { x: 1, y: 0, z: 0 });
+}
+
+function addOutdoorMachine(group, object, shell, steel, dark) {
+  const { width, depth, height } = object.dimensions;
+  const profile = object.profile;
+  box(group, { x: width * 1.04, y: 0.12, z: depth * 1.04 }, { x: 0, y: 0.06, z: 0 }, steel);
+  if (profile.startsWith("COOLING_TOWER")) {
+    box(group, { x: width, y: height * 0.72, z: depth }, { x: 0, y: height * 0.38, z: 0 }, shell);
+    for (let index = 0; index < 7; index += 1) [-1, 1].forEach((side) => box(group, { x: width * 0.88, y: 0.06, z: 0.08 }, { x: 0, y: height * (0.18 + index * 0.07), z: side * depth * 0.51 }, dark));
+    const fans = Math.max(1, Number(object.parameters.fanCount) || 1);
+    for (let index = 0; index < fans; index += 1) addAxialFan(group, { x: -width / 2 + width * (index + 0.5) / fans, y: height * 0.82, z: 0 }, Math.min(width / fans, depth) * 0.32, dark);
+    box(group, { x: width * 0.9, y: 0.12, z: depth * 0.85 }, { x: 0, y: height * 0.76, z: 0 }, steel);
+    addConnectionPoint(group, object, "SUPPLY", { x: -width / 2, y: height * 0.18, z: 0 }, { x: -1, y: 0, z: 0 });
+    addConnectionPoint(group, object, "RETURN", { x: width / 2, y: height * 0.18, z: 0 }, { x: 1, y: 0, z: 0 });
+    return;
+  }
+  if (profile.startsWith("CONDENSER")) {
+    box(group, { x: width, y: height * 0.88, z: depth }, { x: 0, y: height * 0.5, z: 0 }, shell);
+    const fans = Math.max(1, Number(object.parameters.fanCount) || 1);
+    for (let index = 0; index < fans; index += 1) addAxialFan(group, { x: -width / 2 + width * (index + 0.5) / fans, y: height + 0.03, z: 0 }, Math.min(width / fans, depth) * 0.3, dark);
+    for (let fin = 1; fin < 18; fin += 1) box(group, { x: 0.025, y: height * 0.72, z: depth * 1.01 }, { x: -width / 2 + width * fin / 18, y: height * 0.48, z: 0 }, steel);
+    return;
+  }
+  if (profile.startsWith("PUMP")) {
+    const vertical = profile.includes("VERTICAL");
+    if (vertical) {
+      cylinder(group, width * 0.22, width * 0.27, height * 0.46, { x: 0, y: height * 0.34, z: 0 }, shell, 20);
+      cylinder(group, width * 0.18, width * 0.18, height * 0.38, { x: 0, y: height * 0.76, z: 0 }, dark, 18);
+      const elbow = new THREE.Mesh(new THREE.TorusGeometry(width * 0.32, width * 0.1, 10, 20, Math.PI / 2), shell);
+      elbow.position.set(width * 0.22, height * 0.3, 0); elbow.rotation.x = Math.PI / 2; group.add(elbow);
+    } else {
+      const casing = new THREE.Mesh(new THREE.TorusGeometry(height * 0.27, height * 0.11, 10, 24), shell);
+      casing.position.set(-width * 0.22, height * 0.48, 0); casing.rotation.y = Math.PI / 2; group.add(casing);
+      cylinder(group, height * 0.2, height * 0.2, width * 0.42, { x: width * 0.2, y: height * 0.45, z: 0 }, dark, 18, { z: Math.PI / 2 });
+      box(group, { x: width * 0.22, y: height * 0.34, z: depth * 0.55 }, { x: 0, y: height * 0.45, z: 0 }, outdoorPbr("#D2B343", "PAINTED_METAL"));
+    }
+    addConnectionPoint(group, object, "SUCTION", { x: -width / 2, y: height * 0.45, z: 0 }, { x: -1, y: 0, z: 0 });
+    addConnectionPoint(group, object, "DISCHARGE", { x: 0, y: height, z: 0 }, { x: 0, y: 1, z: 0 });
+    return;
+  }
+  if (profile.startsWith("VALVE")) {
+    cylinder(group, height * 0.18, height * 0.24, width * 0.52, { x: 0, y: height * 0.35, z: 0 }, shell, 20, { z: Math.PI / 2 });
+    [-1, 1].forEach((side) => addFlange(group, { x: side * width * 0.3, y: height * 0.35, z: 0 }, height * 0.25, { z: Math.PI / 2 }, steel));
+    if (profile.includes("GATE")) {
+      cylinder(group, 0.07, 0.07, height * 0.5, { x: 0, y: height * 0.62, z: 0 }, steel, 10);
+      const wheel = new THREE.Mesh(new THREE.TorusGeometry(width * 0.28, 0.045, 8, 24), dark); wheel.rotation.x = Math.PI / 2; wheel.position.y = height * 0.95; group.add(wheel);
+    } else box(group, { x: width * 0.28, y: height * 0.22, z: depth * 0.35 }, { x: 0, y: height * 0.72, z: 0 }, dark);
+    addConnectionPoint(group, object, "A", { x: -width / 2, y: height * 0.35, z: 0 }, { x: -1, y: 0, z: 0 });
+    addConnectionPoint(group, object, "B", { x: width / 2, y: height * 0.35, z: 0 }, { x: 1, y: 0, z: 0 });
+    return;
+  }
+}
+
+function addOutdoorPower(group, object, shell, steel, dark) {
+  const { width, depth, height } = object.dimensions;
+  const profile = object.profile;
+  if (profile.startsWith("TRANSFORMER")) {
+    box(group, { x: width * 0.72, y: height * 0.62, z: depth * 0.75 }, { x: 0, y: height * 0.38, z: 0 }, shell);
+    const fins = profile.includes("OIL") ? 10 : 5;
+    for (let index = 0; index < fins; index += 1) [-1, 1].forEach((side) => box(group, { x: 0.045, y: height * 0.48, z: depth * 0.72 }, { x: side * width * (0.38 + index * 0.012), y: height * 0.38, z: 0 }, steel));
+    for (let index = 0; index < 3; index += 1) cylinder(group, 0.07, 0.13, height * 0.3, { x: -width * 0.22 + index * width * 0.22, y: height * 0.84, z: 0 }, outdoorPbr("#765F48", "PLASTIC"), 12);
+    return;
+  }
+  if (profile.startsWith("GENERATOR")) {
+    if (profile.includes("OPEN")) {
+      cylinder(group, height * 0.2, height * 0.2, width * 0.55, { x: 0, y: height * 0.44, z: 0 }, dark, 18, { z: Math.PI / 2 });
+      box(group, { x: width * 0.38, y: height * 0.48, z: depth * 0.72 }, { x: -width * 0.24, y: height * 0.48, z: 0 }, shell);
+      box(group, { x: width * 0.2, y: height * 0.42, z: depth * 0.64 }, { x: width * 0.38, y: height * 0.46, z: 0 }, outdoorPbr("#384C57", "PAINTED_METAL"));
+    } else {
+      box(group, { x: width, y: height * 0.84, z: depth }, { x: 0, y: height * 0.48, z: 0 }, shell);
+      for (let index = 0; index < 8; index += 1) box(group, { x: 0.035, y: height * 0.34, z: 0.05 }, { x: width * 0.35, y: height * (0.3 + index * 0.045), z: depth / 2 + 0.03 }, dark);
+    }
+    cylinder(group, 0.09, 0.12, height * 0.72, { x: -width * 0.35, y: height * 1.15, z: 0 }, steel, 10);
+    box(group, { x: width * 0.2, y: height * 0.2, z: 0.04 }, { x: width * 0.2, y: height * 0.68, z: depth / 2 + 0.03 }, outdoorPbr("#254B5B", "GLASS"));
+    addConnectionPoint(group, object, "POWER", { x: width / 2, y: height * 0.35, z: 0 }, { x: 1, y: 0, z: 0 }, "ELECTRICAL");
+    return;
+  }
+  if (profile.startsWith("SOLAR")) {
+    const rows = Math.max(1, Number(object.parameters.panelRows) || 2);
+    const columns = Math.max(2, Number(object.parameters.panelColumns) || 4);
+    const angle = profile.includes("TILT") ? Math.PI * 0.28 : Math.PI * 0.17;
+    for (let row = 0; row < rows; row += 1) for (let column = 0; column < columns; column += 1) {
+      const panel = box(group, { x: width / columns * 0.92, y: 0.07, z: depth / rows * 0.9 }, { x: -width / 2 + width * (column + 0.5) / columns, y: height * 0.55, z: -depth / 2 + depth * (row + 0.5) / rows }, shell, steel.color);
+      panel.rotation.x = -angle;
+    }
+    [-1, 1].forEach((x) => [-1, 1].forEach((z) => box(group, { x: 0.08, y: height * 0.55, z: 0.08 }, { x: x * width * 0.42, y: height * 0.275, z: z * depth * 0.38 }, steel)));
+    addConnectionPoint(group, object, "DC", { x: width / 2, y: 0.2, z: 0 }, { x: 1, y: 0, z: 0 }, "ELECTRICAL");
+  }
+}
+
+function addOutdoorUtility(group, object, shell, steel, dark) {
+  const { width, depth, height } = object.dimensions;
+  const profile = object.profile;
+  if (profile.startsWith("HYDRANT")) {
+    cylinder(group, width * 0.3, width * 0.36, height * 0.7, { x: 0, y: height * 0.4, z: 0 }, shell, 18);
+    cylinder(group, width * 0.2, width * 0.32, height * 0.18, { x: 0, y: height * 0.84, z: 0 }, shell, 14);
+    [-1, 1].forEach((side) => { cylinder(group, width * 0.15, width * 0.2, width * 0.26, { x: side * width * 0.33, y: height * 0.56, z: 0 }, shell, 12, { z: Math.PI / 2 }); addConnectionPoint(group, object, side > 0 ? "HOSE_R" : "HOSE_L", { x: side * width * 0.5, y: height * 0.56, z: 0 }, { x: side, y: 0, z: 0 }); });
+    const nut = cylinder(group, 0.08, 0.08, 0.12, { x: 0, y: height * 0.98, z: 0 }, steel, 6); nut.rotation.y = Math.PI / 6;
+    return;
+  }
+  if (profile.startsWith("STREETLIGHT")) {
+    cylinder(group, 0.06, 0.12, height * 0.92, { x: 0, y: height * 0.46, z: 0 }, steel, 12);
+    const arm = box(group, { x: width * 0.75, y: 0.08, z: 0.08 }, { x: width * 0.28, y: height * 0.9, z: 0 }, steel); arm.rotation.z = -0.16;
+    box(group, { x: width * 0.42, y: 0.1, z: depth * 0.45 }, { x: width * 0.63, y: height * 0.85, z: 0 }, outdoorPbr("#E5D99D", "GLASS"));
+    if (profile.includes("SOLAR")) { const panel = box(group, { x: width * 0.72, y: 0.06, z: depth * 0.8 }, { x: -width * 0.2, y: height * 0.76, z: 0 }, dark); panel.rotation.z = 0.35; box(group, { x: width * 0.25, y: height * 0.2, z: depth * 0.45 }, { x: 0, y: height * 0.6, z: 0 }, shell); }
+    return;
+  }
+  if (profile.startsWith("EV_CHARGER")) {
+    box(group, { x: width, y: height, z: depth }, { x: 0, y: height / 2, z: 0 }, shell);
+    box(group, { x: width * 0.62, y: height * 0.23, z: 0.04 }, { x: 0, y: height * 0.7, z: depth / 2 + 0.03 }, outdoorPbr("#244B59", "GLASS"));
+    const cableCount = profile.includes("DUAL") ? 2 : 1;
+    for (let index = 0; index < cableCount; index += 1) { const cable = new THREE.Mesh(new THREE.TorusGeometry(height * 0.18, 0.025, 8, 20, Math.PI * 1.4), dark); cable.position.set((index ? 1 : -1) * width * 0.34, height * 0.38, depth * 0.36); cable.rotation.y = Math.PI / 2; group.add(cable); }
+    addConnectionPoint(group, object, "POWER", { x: 0, y: 0.1, z: -depth / 2 }, { x: 0, y: 0, z: -1 }, "ELECTRICAL");
+    return;
+  }
+  if (profile.startsWith("CCTV")) {
+    box(group, { x: width * 0.18, y: height * 0.18, z: depth * 0.8 }, { x: 0, y: height * 0.65, z: -depth * 0.35 }, steel);
+    if (profile.includes("DOME")) { const dome = new THREE.Mesh(new THREE.SphereGeometry(width * 0.42, 20, 10, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), outdoorPbr("#4B6876", "GLASS")); dome.position.y = height * 0.42; group.add(dome); }
+    else { cylinder(group, width * 0.36, width * 0.3, height * 0.46, { x: 0, y: height * 0.4, z: 0 }, shell, 18); const lens = cylinder(group, width * 0.16, width * 0.16, 0.08, { x: 0, y: height * 0.38, z: depth * 0.33 }, outdoorPbr("#173845", "GLASS"), 16, { x: Math.PI / 2 }); lens.userData.outdoorDetail = "LENS"; }
+    return;
+  }
+  if (["ENV_SENSOR_COMPACT", "WEATHER_STATION"].includes(profile)) {
+    cylinder(group, 0.04, 0.07, height * 0.82, { x: 0, y: height * 0.41, z: 0 }, steel, 10);
+    if (profile === "ENV_SENSOR_COMPACT") {
+      for (let index = 0; index < 6; index += 1) cylinder(group, width * (0.34 - index * 0.025), width * (0.34 - index * 0.025), 0.045, { x: 0, y: height * (0.58 + index * 0.035), z: 0 }, shell, 18);
+      cylinder(group, 0.025, 0.025, height * 0.2, { x: 0, y: height * 0.92, z: 0 }, dark, 8);
+    } else {
+      const cross = box(group, { x: width * 0.82, y: 0.045, z: 0.045 }, { x: 0, y: height * 0.86, z: 0 }, steel);
+      for (let index = 0; index < 3; index += 1) { const cup = new THREE.Mesh(new THREE.SphereGeometry(width * 0.1, 10, 6), dark); cup.position.set(Math.cos(index * Math.PI * 2 / 3) * width * 0.38, height * 0.86, Math.sin(index * Math.PI * 2 / 3) * width * 0.38); group.add(cup); }
+      cross.rotation.y = 0.2;
+      const vane = box(group, { x: width * 0.5, y: height * 0.12, z: 0.04 }, { x: 0, y: height * 0.72, z: 0 }, shell); vane.rotation.y = 0.6;
+    }
+  }
+}
+
+function addOutdoorEquipment(group, object, edgeColor) {
+  const detailGroup = new THREE.Group();
+  const condition = object.parameters?.condition ?? "NORMAL";
+  const preset = object.appearance.material === "CONCRETE" ? "CONCRETE" : object.appearance.material === "STAINLESS" ? "STAINLESS" : object.appearance.material === "PLASTIC" ? "PLASTIC" : "PAINTED_METAL";
+  const shell = outdoorPbr(object.appearance.color, preset, condition);
+  const steel = outdoorPbr("#66777C", "STEEL", condition);
+  const dark = outdoorPbr("#33464E", "PAINTED_METAL", condition);
+  if (object.profile.includes("TANK") || object.profile.includes("SILO")) addOutdoorTankDetails(detailGroup, object, shell, steel);
+  else if (object.profile.includes("BASIN") || object.profile.includes("CLARIFIER")) addOpenWaterStructure(detailGroup, object, outdoorPbr(object.appearance.color, "CONCRETE", condition), steel);
+  else if (object.profile.includes("WATER_TOWER")) {
+    const legHeight = object.dimensions.height * 0.58;
+    const concrete = object.profile.includes("CONCRETE");
+    const legMaterial = concrete ? outdoorPbr("#999A94", "CONCRETE", condition) : steel;
+    const legCount = concrete ? 1 : 4;
+    for (let index = 0; index < legCount; index += 1) { const angle = index * Math.PI * 2 / legCount; cylinder(detailGroup, concrete ? object.dimensions.width * 0.18 : 0.11, concrete ? object.dimensions.width * 0.24 : 0.11, legHeight, { x: concrete ? 0 : Math.cos(angle) * object.dimensions.width * 0.36, y: legHeight / 2, z: concrete ? 0 : Math.sin(angle) * object.dimensions.width * 0.36 }, legMaterial, concrete ? 24 : 10); }
+    cylinder(detailGroup, object.dimensions.width * 0.42, object.dimensions.width * 0.42, object.dimensions.height * 0.32, { x: 0, y: object.dimensions.height * 0.76, z: 0 }, shell, 28);
+    addLadder(detailGroup, object.dimensions.width * 0.44, object.dimensions.height * 0.9, 0, steel);
+    addConnectionPoint(detailGroup, object, "OUTLET", { x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
+  } else if (["COOLING_TOWER", "CONDENSER", "PUMP", "VALVE"].some((prefix) => object.profile.startsWith(prefix))) addOutdoorMachine(detailGroup, object, shell, steel, dark);
+  else if (["TRANSFORMER", "GENERATOR", "SOLAR"].some((prefix) => object.profile.startsWith(prefix))) addOutdoorPower(detailGroup, object, shell, steel, dark);
+  else addOutdoorUtility(detailGroup, object, shell, steel, dark);
+  detailGroup.traverse((child) => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; if (edgeColor && child.geometry && !child.isInstancedMesh && child.children.length === 0) child.userData.collisionProxy = true; } });
+
+  const lowGeometry = object.profile.includes("TANK") || object.profile.includes("SILO")
+    ? new THREE.CylinderGeometry(object.dimensions.width / 2, object.dimensions.width / 2, object.dimensions.height, 10)
+    : new THREE.BoxGeometry(object.dimensions.width, object.dimensions.height, object.dimensions.depth);
+  const lowDetail = new THREE.Mesh(lowGeometry, shell);
+  lowDetail.position.y = object.dimensions.height / 2;
+  lowDetail.castShadow = true;
+  lowDetail.receiveShadow = true;
+  lowDetail.userData.collisionProxy = true;
+  const lod = new THREE.LOD();
+  lod.addLevel(detailGroup, 0);
+  lod.addLevel(lowDetail, Math.max(45, object.dimensions.height * 8));
+  group.add(lod);
+}
+
+export function generateOutdoorEquipment({
+  type,
+  profile,
+  dimensions,
+  parameters = {},
+  appearance = {},
+  edgeColor,
+}) {
+  const group = new THREE.Group();
+  addOutdoorEquipment(group, {
+    id: `PREVIEW_${type}`,
+    profile: profile ?? type,
+    dimensions,
+    parameters,
+    appearance: {
+      color: appearance.color ?? "#78909C",
+      material: appearance.materialPreset ?? "PAINTED",
+    },
+  }, edgeColor);
+  return group;
 }
 
 function pathSegments(object) {
@@ -1204,6 +1538,7 @@ export function createSiteEnvironmentObject(object, {
     SAFETY: () => addSafety(group, object, material),
     PIPE_TANK: () => addPipeTank(group, object, material, resolvedEdge),
     PARKING: () => addParkingFacility(group, object, material, resolvedEdge),
+    OUTDOOR_EQUIPMENT: () => addOutdoorEquipment(group, object, resolvedEdge),
     SURFACE: () => {
       if (object.profile === "ROAD") addRoadPath(group, object, material, pathRenderContext);
       else if (object.profile === "WALKWAY") addWalkwayPath(group, object, material, pathRenderContext);

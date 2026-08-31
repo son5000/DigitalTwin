@@ -36,6 +36,7 @@ export function generateCabinet({
   const bodyGeometry = new THREE.BoxGeometry(width, height, depth);
   addGeometry(group, bodyGeometry, {
     appearance: bodyAppearance,
+    materialSlot: "body",
     edgeColor,
     position: [0, height / 2, 0],
     showEdges,
@@ -66,6 +67,7 @@ export function generateCabinet({
       const centerY = height * (row + 0.5) / doorRows;
       addGeometry(group, new THREE.BoxGeometry(0.035, Math.min(0.18, height / doorRows * 0.22), 0.035), {
         appearance: hardwareAppearance,
+        materialSlot: "hardware",
         edgeColor,
         position: [centerX + width / doorColumns * 0.3, centerY, frontZ + 0.035],
         showEdges: false,
@@ -77,6 +79,7 @@ export function generateCabinet({
     for (let index = 0; index < 5; index += 1) {
       addGeometry(group, new THREE.BoxGeometry(width * 0.58, 0.018, 0.018), {
         appearance: hardwareAppearance,
+        materialSlot: "hardware",
         edgeColor,
         position: [0, height * (0.22 + index * 0.1), frontZ + 0.035],
         showEdges: false,

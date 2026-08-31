@@ -1,4 +1,8 @@
 import { getObjectLibraryDefinitions, OBJECT_LIBRARY_DEFINITION_MAP } from "@/features/digitalTwin/editor/constants/objectLibraryCatalog";
+import {
+  getUnifiedEquipmentTemplates,
+  UNIFIED_EQUIPMENT_TEMPLATE_MAP,
+} from "@/features/digitalTwin/editor/constants/unifiedEquipmentCatalog";
 import { ObjectLibrary } from "@/features/digitalTwin/editor/components/ObjectLibrary";
 
 import styles from "./SiteAuthoringPanel.module.css";
@@ -15,8 +19,13 @@ export default function SiteAuthoringPanel({
   onSelectTemplate,
   onVariantsChange,
 }) {
-  const activeTemplate = OBJECT_LIBRARY_DEFINITION_MAP[activeTemplateId];
-  const templates = getObjectLibraryDefinitions(allowedTemplateIds);
+  const activeTemplate = OBJECT_LIBRARY_DEFINITION_MAP[activeTemplateId] ?? UNIFIED_EQUIPMENT_TEMPLATE_MAP[activeTemplateId];
+  const sourceTemplates = getObjectLibraryDefinitions(allowedTemplateIds);
+  const equipmentCategoryIds = new Set(["INDUSTRIAL_EQUIPMENT", "ELECTRICAL_EQUIPMENT", "SAFETY_FACILITY", "PIPE_TANK", "OUTDOOR_EQUIPMENT"]);
+  const templates = [
+    ...sourceTemplates.filter((template) => !equipmentCategoryIds.has(template.categoryId)),
+    ...getUnifiedEquipmentTemplates(allowedTemplateIds),
+  ];
 
   return (
     <section className={styles.panel} aria-label="부지 구성 도구">

@@ -1,0 +1,20 @@
+.editor { display: grid; min-width: 0; gap: 8px; }
+.dropZone { position: relative; display: grid; min-height: 112px; overflow: hidden; place-items: center; border: 1px dashed var(--color-border); border-radius: var(--radius-small); color: var(--color-text-subtle); background: var(--color-input); font-size: var(--editor-font-size-xs); }
+.dropZone:hover { border-color: var(--color-accent); }
+.dropZone img { width: 100%; height: 112px; object-fit: cover; }
+.dropZone input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.metadata { display: grid; gap: 4px; margin: 0; padding: 8px 9px; border-radius: var(--radius-small); background: var(--color-input); }
+.metadata div { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 8px; font-size: var(--editor-font-size-xs); }
+.metadata dt { color: var(--color-text-subtle); }
+.metadata dd { overflow: hidden; margin: 0; color: var(--color-heading); text-overflow: ellipsis; white-space: nowrap; }
+.actions { display: flex; flex-wrap: wrap; gap: 7px; }
+.actions button { min-height: 36px; padding: 0 10px; border: 1px solid var(--color-border); border-radius: var(--radius-small); color: var(--color-text); background: var(--color-surface-raised); font-size: var(--editor-font-size-xs); }
+.actions button:first-child { border-color: rgb(var(--color-accent-rgb) / 55%); color: var(--color-accent-strong); }
+.actions button:disabled { opacity: .45; }
+.actions .dangerButton { color: var(--color-danger); }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.selectField { display: grid; min-width: 0; gap: 4px; color: var(--color-text-subtle); font-size: var(--editor-font-size-xs); }
+.selectField select { width: 100%; min-height: 36px; padding: 0 9px; border: 1px solid var(--color-border); border-radius: var(--radius-small); color: var(--color-heading); background: var(--color-input); }
+.error { margin: 0; font-size: var(--editor-font-size-xs); line-height: 1.45; }
+.error { color: var(--color-danger); }
+@media (max-width: 380px) { .grid { grid-template-columns: minmax(0, 1fr); } }

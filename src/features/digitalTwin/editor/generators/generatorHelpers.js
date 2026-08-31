@@ -15,6 +15,7 @@ export function addGeometry(group, geometry, options) {
     position = [0, 0, 0],
     rotation = [0, 0, 0],
     scale = [1, 1, 1],
+    materialSlot,
     showEdges = appearance.showEdges,
   } = options;
   const mesh = new THREE.Mesh(geometry, createSurfaceMaterial(appearance));
@@ -23,6 +24,7 @@ export function addGeometry(group, geometry, options) {
   mesh.position.set(...position);
   mesh.rotation.set(...rotation);
   mesh.scale.set(...scale);
+  if (materialSlot) mesh.userData.materialSlot = materialSlot;
   group.add(mesh);
 
   if (showEdges) {

@@ -21,6 +21,8 @@ export const OBJECT_LIBRARY_CATEGORY_IDS = Object.freeze({
   SAFETY_FACILITY: "SAFETY_FACILITY",
   PIPE_TANK: "PIPE_TANK",
   PARKING_FACILITY: "PARKING_FACILITY",
+  OUTDOOR_EQUIPMENT: "OUTDOOR_EQUIPMENT",
+  EQUIPMENT: "EQUIPMENT",
 });
 
 const CATEGORY_SOURCE = [
@@ -31,11 +33,8 @@ const CATEGORY_SOURCE = [
   ["ROAD_FACILITY", "도로 시설", "Road Facility", "도로·보행·경계 시설", "road", [["SURFACE", "노면"], ["ACCESS", "보행 접근"], ["BOUNDARY", "경계·보호"]]],
   ["ENVIRONMENT", "환경", "Environment", "부지의 자연·배경 요소", "environment", [["GROUND", "지면"], ["NATURAL", "자연물"], ["AMENITY", "편의시설"]]],
   ["LANDSCAPING", "조경", "Landscaping", "산업 단지 조경과 식재", "landscape", [["TREE", "교목"], ["PLANTING", "식재"], ["FURNITURE", "조경 시설"]]],
-  ["INDUSTRIAL_EQUIPMENT", "산업 설비", "Industrial Equipment", "생산·기계 설비 프록시", "mechanical", [["ROTATING", "회전 기계"], ["PROCESS", "공정 설비"], ["HANDLING", "이송 설비"]]],
-  ["ELECTRICAL_EQUIPMENT", "전기 설비", "Electrical Equipment", "배전·전력·제어 설비", "electrical", [["DISTRIBUTION", "배전"], ["POWER", "전력"], ["CONTROL", "제어"]]],
+  ["EQUIPMENT", "설비", "Equipment", "기능별 통합 설비 카탈로그", "mechanical", [["ELECTRICAL", "전기"], ["HVAC", "공조·환기"], ["PIPE_WATER", "배관·탱크·수처리"], ["FIRE_SAFETY", "소방·안전"], ["COMM_SECURITY", "통신·보안"], ["ENERGY_ENVIRONMENT", "에너지·환경"], ["GENERAL", "일반 설비"]]],
   ["LOGISTICS", "물류 시설", "Logistics", "보관·상하역·이송 시설", "logistics", [["STORAGE", "보관"], ["HANDLING", "하역·이송"]]],
-  ["SAFETY_FACILITY", "안전 시설", "Safety Facility", "작업자·설비 안전 요소", "safety", [["PROTECTION", "보호 시설"], ["EMERGENCY", "비상 대응"]]],
-  ["PIPE_TANK", "배관 / 탱크", "Pipe / Tank", "유체 이송과 저장 설비", "tank", [["PIPE", "배관"], ["TANK", "탱크·용기"]]],
   ["PARKING_FACILITY", "주차 시설", "Parking Facility", "주차 구획과 부대시설", "parking", [["PARKING", "주차 구획"], ["CONTROL", "주차 제어"], ["AMENITY", "편의시설"]]],
 ];
 
@@ -103,6 +102,8 @@ function building([id, name, description, subcategoryId, profile, width, depth, 
     description,
     iconKey: profile.startsWith("INDUSTRIAL") ? "factory" : "building",
     type: "BUILDING",
+    modelSource: `procedural:${id}`,
+    thumbnailSource: `/assets/object-thumbnails/${id}.png`,
     assetKind: "BUILDING",
     profile,
     createsBuilding: id !== "ENVIRONMENT_BUILDING",
@@ -177,6 +178,7 @@ function site([id, categoryId, subcategoryId, name, description, assetKind, prof
     id, categoryId, subcategoryId, name, nameKo: SITE_OBJECT_DISPLAY_NAMES[id] ?? name,
     nameEn: id.replaceAll("_", " ").toLocaleLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()),
     description, type: "SITE_OBJECT", assetKind, profile, geometryMode,
+    modelSource: `procedural:${id}`, thumbnailSource: `/assets/object-thumbnails/${id}.png`,
     iconKey: category?.iconKey ?? "environment", width, depth, height, color, material,
     parameters, defaultVariants: {}, variantGroups: [], keywords: [name, description, id, assetKind, profile],
   };
@@ -290,10 +292,93 @@ const SITE_OBJECTS = [
   ["BIKE_RACK", "PARKING_FACILITY", "AMENITY", "자전거 거치대", "반복 U Frame Bike Rack", "PARKING", "BIKE_RACK", 3, 0.8, 0.9, "#718087", "METAL"],
 ].map(site);
 
+function outdoor([id, subcategoryId, name, description, profile, width, depth, height, color, material, allowedModes, parameters = {}]) {
+  return {
+    id,
+    categoryId: OBJECT_LIBRARY_CATEGORY_IDS.OUTDOOR_EQUIPMENT,
+    subcategoryId,
+    name,
+    nameKo: name,
+    nameEn: id.replaceAll("_", " ").toLocaleLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()),
+    description,
+    iconKey: "mechanical",
+    modelSource: `procedural:${profile}`,
+    thumbnailSource: `/assets/object-thumbnails/${id}.png`,
+    type: "SITE_OBJECT",
+    assetKind: "OUTDOOR_EQUIPMENT",
+    profile,
+    geometryMode: SITE_OBJECT_GEOMETRY_MODES.POINT,
+    width,
+    depth,
+    height,
+    color,
+    material,
+    placementRules: { allowedModes, snapDistance: 1.8, roadSnapDistance: 5 },
+    parameters: {
+      condition: "NORMAL",
+      capacity: 10,
+      fillLevel: 0.65,
+      storedMaterial: "물",
+      openTop: false,
+      inletCount: 1,
+      outletCount: 1,
+      ladderEnabled: true,
+      railingEnabled: true,
+      ...parameters,
+    },
+    defaultVariants: {},
+    variantGroups: [],
+    keywords: [name, description, profile, "옥외", "야외", ...allowedModes],
+  };
+}
+
+const GROUND_ROOF = ["GROUND", "ROOF"];
+const GROUND_UNDERGROUND = ["GROUND", "UNDERGROUND"];
+const GROUND_WALL_ROAD = ["GROUND", "WALL", "ROAD_EDGE"];
+const OUTDOOR_EQUIPMENT = [
+  ["OUT_TANK_VERTICAL_WELDED", "STORAGE", "용접식 수직 탱크", "돔 지붕·점검구·외부 사다리가 있는 저장 탱크", "VERTICAL_TANK_WELDED", 3.2, 3.2, 6.2, "#9AA8AB", "STAINLESS", GROUND_ROOF, { capacity: 42 }, "tank"],
+  ["OUT_TANK_VERTICAL_BOLTED", "STORAGE", "볼트 조립식 수직 탱크", "패널 이음과 원형 난간이 드러나는 대형 탱크", "VERTICAL_TANK_BOLTED", 5.2, 5.2, 7.4, "#788C91", "METAL", ["GROUND"], { capacity: 120, condition: "WEATHERED" }, "tank"],
+  ["OUT_TANK_HORIZONTAL_SADDLE", "STORAGE", "새들형 수평 탱크", "타원형 헤드·새들 지지대·플랜지를 갖춘 탱크", "HORIZONTAL_TANK_SADDLE", 3, 7, 3, "#9DAAAD", "STAINLESS", GROUND_ROOF, { capacity: 35 }, "tank"],
+  ["OUT_TANK_HORIZONTAL_BULLET", "STORAGE", "고압 불릿 탱크", "두꺼운 압력용기 헤드와 다중 노즐을 가진 탱크", "HORIZONTAL_TANK_BULLET", 3.6, 9, 3.8, "#B0B7B5", "METAL", ["GROUND"], { capacity: 58, storedMaterial: "가스" }, "tank"],
+  ["OUT_BASIN_OPEN_RECT", "STORAGE", "직사각 개방형 수조", "콘크리트 벽·내부 액체·상부 난간이 있는 수조", "OPEN_BASIN_RECT", 7, 5, 2.2, "#8E9692", "CONCRETE", GROUND_UNDERGROUND, { capacity: 60, openTop: true }, "basin"],
+  ["OUT_BASIN_OPEN_CIRCULAR", "STORAGE", "원형 개방형 수조", "원형 콘크리트 벽과 점검 통로를 갖춘 수조", "OPEN_BASIN_CIRCULAR", 6, 6, 2.4, "#8F9895", "CONCRETE", GROUND_UNDERGROUND, { capacity: 70, openTop: true }, "basin"],
+  ["OUT_WATER_TOWER_STEEL", "STORAGE", "강재 고가수조", "브레이싱 타워·구형 수조·사다리를 갖춘 고가수조", "WATER_TOWER_STEEL", 5, 5, 11, "#88999D", "METAL", ["GROUND"], { capacity: 80 }, "tower"],
+  ["OUT_WATER_TOWER_CONCRETE", "STORAGE", "콘크리트 고가수조", "콘크리트 기둥과 원통형 상부 수조 구조", "WATER_TOWER_CONCRETE", 6, 6, 13, "#9A9B94", "CONCRETE", ["GROUND"], { capacity: 130 }, "tower"],
+  ["OUT_SILO_CORRUGATED", "STORAGE", "골강판 사일로", "골강판 외피·원뿔 지붕·배출 호퍼가 있는 사일로", "SILO_CORRUGATED", 5, 5, 10, "#8E9A9C", "METAL", ["GROUND"], { capacity: 160, storedMaterial: "곡물" }, "silo"],
+  ["OUT_SILO_PROCESS", "STORAGE", "공정용 사일로", "지지 프레임·호퍼·계기판과 배출 밸브를 갖춘 사일로", "SILO_PROCESS", 4.2, 4.2, 9, "#A2AAAB", "STAINLESS", ["GROUND"], { capacity: 90, storedMaterial: "분체" }, "silo"],
+  ["OUT_CLARIFIER_RADIAL", "STORAGE", "원형 침전조", "중앙 구동부와 회전 스크레이퍼 암이 있는 침전조", "CLARIFIER_RADIAL", 12, 12, 2.2, "#929993", "CONCRETE", ["GROUND"], { capacity: 180, openTop: true }, "basin"],
+  ["OUT_CLARIFIER_RECT", "STORAGE", "직사각 침전조", "다중 유로와 상부 주행 브리지를 갖춘 침전조", "CLARIFIER_RECT", 12, 5, 2.5, "#8F9793", "CONCRETE", ["GROUND"], { capacity: 140, openTop: true }, "basin"],
+  ["OUT_COOLING_TOWER_PACKAGE", "HVAC", "패키지 냉각탑", "상부 팬·흡입 루버·배관 헤더가 있는 냉각탑", "COOLING_TOWER_PACKAGE", 4, 3, 4.2, "#78929A", "PAINTED", GROUND_ROOF, { fanCount: 1 }, "cooling"],
+  ["OUT_COOLING_TOWER_DOUBLE", "HVAC", "2셀 냉각탑", "두 개의 대형 축류팬과 점검 데크가 있는 냉각탑", "COOLING_TOWER_DOUBLE", 7, 4, 5, "#758B91", "PAINTED", GROUND_ROOF, { fanCount: 2 }, "cooling"],
+  ["OUT_CONDENSER_SINGLE", "HVAC", "단일 팬 실외기", "코일·방열핀·상부 팬이 보이는 실외기", "CONDENSER_SINGLE", 1.1, 0.8, 0.9, "#D0D5D3", "PAINTED", GROUND_ROOF, { fanCount: 1, ladderEnabled: false, railingEnabled: false }, "cooling"],
+  ["OUT_CONDENSER_MULTI", "HVAC", "다중 팬 실외기", "V형 코일과 복수 팬이 있는 대용량 실외기", "CONDENSER_MULTI", 3.8, 1.4, 1.7, "#BAC2C0", "PAINTED", GROUND_ROOF, { fanCount: 3, ladderEnabled: false, railingEnabled: false }, "cooling"],
+  ["OUT_TRANSFORMER_PAD", "POWER", "패드형 변압기", "잠금 캐비닛·케이블 박스·환기구가 있는 변압기", "TRANSFORMER_PAD", 1.8, 1.4, 1.6, "#647E69", "PAINTED", GROUND_ROOF, { ladderEnabled: false, railingEnabled: false }, "power"],
+  ["OUT_TRANSFORMER_OIL", "POWER", "유입식 변압기", "방열핀·부싱·오일 탱크가 드러난 옥외 변압기", "TRANSFORMER_OIL", 3.4, 2.5, 3.2, "#6F806D", "PAINTED", ["GROUND"], { condition: "WEATHERED", ladderEnabled: false, railingEnabled: false }, "power"],
+  ["OUT_GENERATOR_OPEN", "POWER", "개방형 발전기", "엔진·교류발전기·배기와 제어반이 노출된 발전기", "GENERATOR_OPEN", 4.2, 1.8, 2.2, "#526F79", "PAINTED", GROUND_ROOF, { ladderEnabled: false, railingEnabled: false }, "power"],
+  ["OUT_GENERATOR_ENCLOSED", "POWER", "방음형 발전기", "루버·배기 스택·점검문이 있는 방음 발전기", "GENERATOR_ENCLOSED", 5.2, 2.2, 2.6, "#627982", "PAINTED", GROUND_ROOF, { ladderEnabled: false, railingEnabled: false }, "power"],
+  ["OUT_PUMP_END_SUCTION", "PROCESS", "횡형 원심 펌프", "볼류트 케이싱·모터·커플링 가드가 있는 펌프", "PUMP_END_SUCTION", 2.8, 1.2, 1.4, "#4E83A0", "PAINTED", GROUND_ROOF, { ladderEnabled: false, railingEnabled: false }, "pump"],
+  ["OUT_PUMP_VERTICAL", "PROCESS", "수직 터빈 펌프", "수직 모터·토출 엘보·베이스 플랜지가 있는 펌프", "PUMP_VERTICAL", 1.5, 1.5, 3.2, "#54879D", "PAINTED", GROUND_ROOF, { ladderEnabled: false, railingEnabled: false }, "pump"],
+  ["OUT_VALVE_GATE", "PROCESS", "옥외 게이트 밸브", "플랜지 몸체·스템·수동 휠이 구분되는 밸브", "VALVE_GATE", 1.4, 0.8, 1.8, "#557D91", "PAINTED", GROUND_ROOF, { ladderEnabled: false, railingEnabled: false }, "pump"],
+  ["OUT_VALVE_BUTTERFLY", "PROCESS", "버터플라이 밸브", "웨이퍼 몸체와 감속기 핸들이 있는 밸브", "VALVE_BUTTERFLY", 1.2, 0.7, 1.3, "#5B8192", "PAINTED", GROUND_ROOF, { ladderEnabled: false, railingEnabled: false }, "pump"],
+  ["OUT_HYDRANT_WET", "UTILITY", "옥외 소화전", "측면 캡·체인·상부 작동 너트가 있는 소화전", "HYDRANT_WET", 0.55, 0.55, 1.25, "#C44F45", "PAINTED", GROUND_WALL_ROAD, { ladderEnabled: false, railingEnabled: false }, "utility"],
+  ["OUT_HYDRANT_INDUSTRIAL", "UTILITY", "산업용 소화전", "대구경 플랜지와 이중 방수구를 갖춘 소화전", "HYDRANT_INDUSTRIAL", 0.8, 0.8, 1.55, "#B94740", "PAINTED", GROUND_WALL_ROAD, { ladderEnabled: false, railingEnabled: false }, "utility"],
+  ["OUT_CCTV_DOME", "SENSOR", "돔형 CCTV", "벽 브래킷과 투명 돔 하우징의 카메라", "CCTV_DOME", 0.35, 0.45, 0.35, "#D5D9D7", "PLASTIC", ["WALL", "ROOF"], { ladderEnabled: false, railingEnabled: false }, "sensor"],
+  ["OUT_CCTV_PTZ", "SENSOR", "PTZ CCTV", "회전 헤드·선실드·폴 브래킷이 있는 카메라", "CCTV_PTZ", 0.45, 0.55, 0.7, "#C9CFCD", "METAL", ["WALL", "ROOF", "GROUND"], { ladderEnabled: false, railingEnabled: false }, "sensor"],
+  ["OUT_STREETLIGHT_LED", "UTILITY", "LED 가로등", "테이퍼 폴·곡선 암·평판 LED 헤드", "STREETLIGHT_LED", 1.2, 0.8, 7, "#66767C", "METAL", ["GROUND", "ROAD_EDGE"], { ladderEnabled: false, railingEnabled: false }, "utility"],
+  ["OUT_STREETLIGHT_SOLAR", "UTILITY", "태양광 가로등", "태양광 패널·배터리함·LED 등기구가 결합된 가로등", "STREETLIGHT_SOLAR", 1.6, 1, 7.5, "#65757A", "METAL", ["GROUND", "ROAD_EDGE"], { ladderEnabled: false, railingEnabled: false }, "utility"],
+  ["OUT_EV_CHARGER_SINGLE", "UTILITY", "옥외 완속 충전기", "디스플레이·케이블·커넥터 거치대가 있는 충전기", "EV_CHARGER_SINGLE", 0.55, 0.45, 1.55, "#3F8273", "PAINTED", ["GROUND", "WALL", "ROAD_EDGE"], { ladderEnabled: false, railingEnabled: false }, "utility"],
+  ["OUT_EV_CHARGER_DUAL", "UTILITY", "옥외 급속 충전기", "이중 케이블·대형 화면·환기구를 갖춘 충전기", "EV_CHARGER_DUAL", 0.9, 0.65, 1.9, "#39796E", "PAINTED", ["GROUND", "ROAD_EDGE"], { ladderEnabled: false, railingEnabled: false }, "utility"],
+  ["OUT_SOLAR_FIXED", "POWER", "고정식 태양광 어레이", "강재 레일과 경사 모듈로 구성된 태양광 설비", "SOLAR_FIXED", 4.8, 3, 2.2, "#31536B", "GLASS", GROUND_ROOF, { panelRows: 2, panelColumns: 4, ladderEnabled: false, railingEnabled: false }, "power"],
+  ["OUT_SOLAR_TILT", "POWER", "고경사 태양광 어레이", "삼각 지지대와 높은 경사각을 가진 태양광 설비", "SOLAR_TILT", 5.4, 3.6, 3, "#2E506A", "GLASS", GROUND_ROOF, { panelRows: 2, panelColumns: 5, ladderEnabled: false, railingEnabled: false }, "power"],
+  ["OUT_ENV_SENSOR_COMPACT", "SENSOR", "복합 환경 센서", "복사 차폐통·가스 흡입구·통신 안테나가 있는 센서", "ENV_SENSOR_COMPACT", 0.45, 0.45, 1.8, "#D4D8D5", "PLASTIC", ["GROUND", "ROOF", "WALL"], { ladderEnabled: false, railingEnabled: false }, "sensor"],
+  ["OUT_WEATHER_STATION", "SENSOR", "자동 기상 관측기", "풍향풍속계·우량계·태양 복사 센서가 결합된 관측기", "WEATHER_STATION", 1.5, 1.5, 3.5, "#D0D5D2", "METAL", ["GROUND", "ROOF"], { ladderEnabled: false, railingEnabled: false }, "sensor"],
+].map(outdoor);
+
 export const OBJECT_LIBRARY_DEFINITIONS = Object.freeze([
   ...BUILDINGS,
   ...INDUSTRIAL_BUILDINGS,
   ...SITE_OBJECTS,
+  ...OUTDOOR_EQUIPMENT,
 ]);
 
 const STATIC_OBJECT_LIBRARY_DEFINITION_MAP = Object.freeze(Object.fromEntries(

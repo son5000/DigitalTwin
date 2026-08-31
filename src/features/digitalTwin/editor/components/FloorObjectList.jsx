@@ -6,7 +6,7 @@ import {
   WorldStructureTypeIcon,
 } from "@/components/icons";
 import { ObjectLibrarySearch } from "@/features/digitalTwin/editor/components/ObjectLibrary";
-import { EQUIPMENT_SHAPE_TEMPLATE_MAP } from "@/features/digitalTwin/editor/constants/equipmentShapeTemplates";
+import { UNIFIED_EQUIPMENT_TEMPLATE_MAP } from "@/features/digitalTwin/editor/constants/unifiedEquipmentCatalog";
 import { WORLD_STRUCTURE_TEMPLATE_MAP } from "@/features/digitalTwin/editor/constants/worldStructureTemplates";
 import { STAIR_SCOPES } from "@/features/digitalTwin/editor/utils/stairStructure";
 
@@ -79,7 +79,7 @@ export default function FloorObjectList({
         <div className={styles.items}>
           {visibleEquipment.map((item) => (
             <button key={item.id} type="button" className={selectedEquipmentId === item.id ? styles.active : ""} aria-pressed={selectedEquipmentId === item.id} onClick={() => onSelectEquipment(item)}>
-              <span className={styles.icon}><EquipmentTemplateIcon template={EQUIPMENT_SHAPE_TEMPLATE_MAP[item.shapeTemplateId]} size={17} /></span>
+              <span className={styles.icon}><EquipmentTemplateIcon template={UNIFIED_EQUIPMENT_TEMPLATE_MAP[item.shapeTemplateId]} size={17} /></span>
               <span>{item.name}</span>
               <small>{floorNameById[item.floorId] ?? "층 미지정"}</small>
             </button>

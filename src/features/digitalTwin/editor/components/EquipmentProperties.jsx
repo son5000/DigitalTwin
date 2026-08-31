@@ -1,9 +1,8 @@
 import { useState } from "react";
 
 import {
-  EQUIPMENT_SHAPE_TEMPLATE_MAP,
-  EQUIPMENT_SHAPE_TEMPLATES,
-} from "@/features/digitalTwin/editor/constants/equipmentShapeTemplates";
+  UNIFIED_EQUIPMENT_TEMPLATE_MAP,
+} from "@/features/digitalTwin/editor/constants/unifiedEquipmentCatalog";
 import { EQUIPMENT_MATERIAL_PRESET_IDS } from "@/features/digitalTwin/editor/constants/materialPresets";
 import { degreesToRadians, radiansToDegrees } from "@/features/digitalTwin/editor/utils/editorMath";
 import { ComponentIcon, DeleteIcon, EnterIcon, EquipmentIcon, SnapIcon } from "@/components/icons";
@@ -11,6 +10,7 @@ import { ComponentIcon, DeleteIcon, EnterIcon, EquipmentIcon, SnapIcon } from "@
 import NumericField from "./NumericField";
 import MaterialAppearanceEditor from "./MaterialAppearanceEditor";
 import MaterialSlotEditor from "./MaterialSlotEditor";
+import UserTextureEditor from "./UserTextureEditor";
 import PropertySection from "./PropertySection";
 import styles from "./EquipmentProperties.module.css";
 
@@ -23,6 +23,13 @@ const STATUS_LABELS = {
 };
 
 const EQUIPMENT_CATEGORY_LABELS = {
+  ELECTRICAL: "전기",
+  HVAC: "공조·환기",
+  PIPE_WATER: "배관·탱크·수처리",
+  FIRE_SAFETY: "소방·안전",
+  COMM_SECURITY: "통신·보안",
+  ENERGY_ENVIRONMENT: "에너지·환경",
+  GENERAL: "일반 설비",
   BASIC: "기본 도형",
   CABINET: "전기·캐비닛",
   MECHANICAL: "기계 설비",
@@ -88,10 +95,12 @@ export default function EquipmentProperties({
     );
   }
 
-  const template = EQUIPMENT_SHAPE_TEMPLATE_MAP[equipment.shapeTemplateId];
-  const compatibleModels = EQUIPMENT_SHAPE_TEMPLATES.filter((item) => (
-    item.objectType === template.objectType && !item.legacyOnly
-  ));
+  const template = UNIFIED_EQUIPMENT_TEMPLATE_MAP[equipment.shapeTemplateId];
+  const compatibleModels = template.modelVariants.map((variant) => ({
+    ...UNIFIED_EQUIPMENT_TEMPLATE_MAP[variant.id],
+    id: variant.id,
+    nameKo: variant.label,
+  }));
   const calibration = detailAsset?.calibration;
   const primaryBinding = equipment.dataBindings?.[0] ?? {
     protocol: "MQTT",
@@ -126,7 +135,7 @@ export default function EquipmentProperties({
         <label className={styles.textField}>
           <span>세부 모델</span>
           <select value={equipment.shapeTemplateId} onChange={(event) => {
-            const model = EQUIPMENT_SHAPE_TEMPLATE_MAP[event.target.value];
+            const model = UNIFIED_EQUIPMENT_TEMPLATE_MAP[event.target.value];
             onChange({ shapeTemplateId: model.id, sourceTemplateId: model.id, category: model.category });
           }}>
             {(compatibleModels.length ? compatibleModels : [template]).map((item) => (
@@ -321,6 +330,19 @@ export default function EquipmentProperties({
           />
         </PropertySection>
       ) : null}
+
+      <PropertySection title="사용자 텍스처" summary={equipment.userTexture ? "적용됨" : "기본 재질"}>
+        <UserTextureEditor
+          value={equipment.userTexture}
+          targets={[
+            { id: "ALL", label: "전체" },
+            ...(["CABINET", "MECHANICAL", "SAFETY", "SENSOR", "UTILITY"].includes(template.category)
+              ? (template.materialSlots ?? []).map((slot) => ({ id: `SLOT:${slot.id}`, label: slot.label ?? slot.id }))
+              : []),
+          ]}
+          onChange={(userTexture) => onChange({ userTexture })}
+        />
+      </PropertySection>
 
       {!placementOnly ? <PropertySection title="부품" summary={`${equipment.parts?.length ?? 0}개 부품`} defaultOpen>
         <div className={styles.partSummary}>

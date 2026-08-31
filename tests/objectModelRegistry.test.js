@@ -23,7 +23,9 @@ test("모든 신규 배치 모델은 데이터 기반 레지스트리 메타데�
     assert.ok(model.objectTypeLabel);
     assert.ok(model.description);
     assert.ok(model.placement);
-    assert.ok(model.thumbnail.startsWith("procedural:"));
+    assert.ok(model.modelSource.startsWith("procedural:"));
+    assert.ok(model.thumbnailSource.startsWith("/assets/object-thumbnails/"));
+    assert.ok(!model.thumbnailSource.startsWith("procedural:"));
     assert.ok(model.lod.mediumDistance > 0);
     assert.ok(Array.isArray(model.materialSlots));
   });

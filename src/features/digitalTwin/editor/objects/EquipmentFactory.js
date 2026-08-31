@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-import { EQUIPMENT_SHAPE_TEMPLATE_MAP } from "@/features/digitalTwin/editor/constants/equipmentShapeTemplates";
+import { UNIFIED_EQUIPMENT_TEMPLATE_MAP } from "@/features/digitalTwin/editor/constants/unifiedEquipmentCatalog";
 import { SCENE_THEMES } from "@/features/digitalTwin/editor/constants/sceneThemes";
 import { generateBasicShape } from "@/features/digitalTwin/editor/generators/BasicShapeGenerator";
 import { generateCabinet } from "@/features/digitalTwin/editor/generators/CabinetGenerator";
@@ -9,6 +9,8 @@ import { generateMechanical } from "@/features/digitalTwin/editor/generators/Mec
 import { generatePipe } from "@/features/digitalTwin/editor/generators/PipeGenerator";
 import { generateTank } from "@/features/digitalTwin/editor/generators/TankGenerator";
 import { generateSemanticEquipment } from "@/features/digitalTwin/editor/generators/SemanticEquipmentGenerator";
+import { applyUserTextureToObject } from "@/features/digitalTwin/editor/three/userTextureRuntime";
+import { generateOutdoorEquipment } from "@/features/digitalTwin/editor/world/SiteEnvironmentFactory";
 
 const CATEGORY_GENERATORS = {
   BASIC: generateBasicShape,
@@ -21,6 +23,7 @@ const CATEGORY_GENERATORS = {
   SENSOR: generateSemanticEquipment,
   UTILITY: generateSemanticEquipment,
   CUSTOM: generateBasicShape,
+  UNIFIED_OUTDOOR: generateOutdoorEquipment,
 };
 
 export function getEquipmentGeometrySignature(
@@ -34,6 +37,7 @@ export function getEquipmentGeometrySignature(
     JSON.stringify(equipment.parameters),
     JSON.stringify(equipment.appearance),
     JSON.stringify(equipment.appearanceSlots),
+    JSON.stringify(equipment.userTexture),
     selected,
     colliding,
     dimmed,
@@ -49,6 +53,7 @@ export function getEquipmentBatchKey(equipment, { theme = "dark", viewerTransluc
     JSON.stringify(equipment.parameters),
     JSON.stringify(equipment.appearance),
     JSON.stringify(equipment.appearanceSlots),
+    JSON.stringify(equipment.userTexture),
     viewerTranslucent,
     theme,
   ].join("|");
@@ -59,13 +64,13 @@ export function createEquipmentObject(
   { selected = false, colliding = false, dimmed = false, theme = "dark", viewerTranslucent = true, enableLod = true } = {},
 ) {
   const sceneTheme = SCENE_THEMES[theme];
-  const template = EQUIPMENT_SHAPE_TEMPLATE_MAP[equipment.shapeTemplateId];
+  const template = UNIFIED_EQUIPMENT_TEMPLATE_MAP[equipment.shapeTemplateId];
   const edgeColor = selected
     ? sceneTheme.selection
     : colliding
       ? sceneTheme.collision
       : sceneTheme.equipmentEdge;
-  const generator = CATEGORY_GENERATORS[template?.category] ?? generateBasicShape;
+  const generator = CATEGORY_GENERATORS[template?.generatorKey ?? template?.floorCategory ?? template?.category] ?? generateBasicShape;
   const sourceAppearance = viewerTranslucent
     ? equipment.appearance
     : { ...equipment.appearance, opacity: 1 };
@@ -74,6 +79,7 @@ export function createEquipmentObject(
     : sourceAppearance;
   const visual = generator({
     type: equipment.shapeTemplateId,
+    profile: template?.profile,
     dimensions: equipment.dimensions,
     parameters: equipment.parameters,
     appearance,
@@ -117,5 +123,6 @@ export function createEquipmentObject(
   }
   equipmentGroup.position.set(equipment.position.x, equipment.position.y, equipment.position.z);
   equipmentGroup.rotation.set(equipment.rotation.x, equipment.rotation.y, equipment.rotation.z);
+  applyUserTextureToObject(equipmentGroup, equipment.userTexture);
   return equipmentGroup;
 }

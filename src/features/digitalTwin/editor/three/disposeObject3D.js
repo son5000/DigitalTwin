@@ -2,6 +2,9 @@ import { releaseSharedGeometry } from "./sharedGeometryCache";
 import { releaseBorrowedSharedMaterial, releaseSharedMaterial } from "./presetMaterial";
 
 export function disposeObject3D(object) {
+  object.userData.disposed = true;
+  object.userData.releaseUserTexture?.();
+  delete object.userData.releaseUserTexture;
   object.traverse((child) => {
     if (child.geometry && !releaseSharedGeometry(child.geometry)) child.geometry.dispose();
 

@@ -13,8 +13,8 @@ export function generateMechanical({ type, dimensions, appearance, appearanceSlo
   const group = new THREE.Group();
   const body = slotAppearance(appearance, appearanceSlots, "body", { materialPreset: "PAINTED_METAL" });
   const frame = slotAppearance(appearance, appearanceSlots, "frame", { materialPreset: "STEEL", color: "#59666B" });
-  const bodyOptions = { appearance: body, edgeColor, showEdges };
-  const frameOptions = { appearance: frame, edgeColor, showEdges: false };
+  const bodyOptions = { appearance: body, edgeColor, showEdges, materialSlot: "body" };
+  const frameOptions = { appearance: frame, edgeColor, showEdges: false, materialSlot: "frame" };
 
   addGeometry(group, new THREE.BoxGeometry(width, height * 0.12, depth), { ...frameOptions, position: [0, height * 0.06, 0] });
   if (type === "MACHINE_BASE") {

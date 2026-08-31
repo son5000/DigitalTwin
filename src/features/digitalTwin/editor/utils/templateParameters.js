@@ -7,9 +7,10 @@ import {
 export function getDimensionsFromParameters(template, parameters = {}) {
   const defaults = template.defaultDimensions;
   const values = { ...template.defaultParameters, ...parameters };
+  const category = template.floorCategory ?? template.category;
   let dimensions = { ...defaults };
 
-  if (template.category === "PIPE") {
+  if (category === "PIPE") {
     const diameter = clampDimension(values.diameter ?? defaults.height);
     const length = clampDimension(values.length ?? defaults.width);
     dimensions = { width: length, height: diameter, depth: diameter };
@@ -25,7 +26,7 @@ export function getDimensionsFromParameters(template, parameters = {}) {
     } else if (template.id === "PIPE_VALVE") {
       dimensions.height = Math.max(defaults.height, diameter * 2.5);
     }
-  } else if (template.category === "DUCT") {
+  } else if (category === "DUCT") {
     dimensions = {
       width: clampDimension(values.length ?? defaults.width),
       height: clampDimension(values.height ?? defaults.height),

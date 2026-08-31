@@ -1,19 +1,19 @@
 import { useMemo, useState } from "react";
 
 import {
-  EQUIPMENT_CATEGORIES,
-  EQUIPMENT_SHAPE_TEMPLATE_MAP,
-  EQUIPMENT_SHAPE_TEMPLATES,
-} from "@/features/digitalTwin/editor/constants/equipmentShapeTemplates";
+  UNIFIED_EQUIPMENT_CATEGORIES,
+  UNIFIED_EQUIPMENT_TEMPLATE_MAP,
+  UNIFIED_EQUIPMENT_TEMPLATES,
+} from "@/features/digitalTwin/editor/constants/unifiedEquipmentCatalog";
 import {
   AddIcon,
   CloseIcon,
-  EquipmentTemplateIcon,
   GridViewIcon,
   ListViewIcon,
   SearchIcon,
   StarIcon,
 } from "@/components/icons";
+import ObjectModelThumbnail from "@/features/digitalTwin/editor/components/ObjectModelThumbnail";
 
 import styles from "./EquipmentLibrary.module.css";
 
@@ -30,7 +30,7 @@ function TemplateCard({ template, activeTemplateId, favoriteTemplateIds, viewMod
         title={`${template.nameKo} (${template.name}) 배치`}
         onClick={() => onSelect(template.id)}
       >
-        <span className={styles.thumbnail} aria-hidden="true"><EquipmentTemplateIcon template={template} size={26} /></span>
+        <span className={styles.thumbnail}><ObjectModelThumbnail definition={template} title={template.nameKo} /></span>
         <span className={styles.cardText}>
           <strong>{template.nameKo}</strong>
           <small>{template.name}</small>
@@ -67,7 +67,7 @@ export default function EquipmentLibrary({
   const [viewMode, setViewMode] = useState("grid");
   const normalizedQuery = query.trim().toLocaleLowerCase("ko-KR");
   const filteredTemplates = useMemo(
-    () => EQUIPMENT_SHAPE_TEMPLATES.filter((template) => {
+    () => UNIFIED_EQUIPMENT_TEMPLATES.filter((template) => {
       const matchesCategory = categoryId === "ALL" || template.category === categoryId;
       const searchText = [template.name, template.nameKo, template.id, ...template.keywords]
         .join(" ")
@@ -77,10 +77,10 @@ export default function EquipmentLibrary({
     [categoryId, normalizedQuery],
   );
   const favoriteTemplates = favoriteTemplateIds
-    .map((id) => EQUIPMENT_SHAPE_TEMPLATE_MAP[id])
+    .map((id) => UNIFIED_EQUIPMENT_TEMPLATE_MAP[id])
     .filter(Boolean);
   const recentTemplates = recentTemplateIds
-    .map((id) => EQUIPMENT_SHAPE_TEMPLATE_MAP[id])
+    .map((id) => UNIFIED_EQUIPMENT_TEMPLATE_MAP[id])
     .filter(Boolean)
     .slice(0, 5);
   const showQuickSections = categoryId === "ALL" && !normalizedQuery;
@@ -136,7 +136,8 @@ export default function EquipmentLibrary({
         <label>
           <span className={styles.visuallyHidden}>카테고리</span>
           <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
-            {EQUIPMENT_CATEGORIES.map((category) => (
+            <option value="ALL">전체</option>
+            {UNIFIED_EQUIPMENT_CATEGORIES.map((category) => (
               <option key={category.id} value={category.id}>
                 {category.nameKo} · {category.name}
               </option>

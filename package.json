@@ -8,6 +8,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "test": "node --test tests",
+    "thumbnails": "node scripts/generate-object-thumbnails.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

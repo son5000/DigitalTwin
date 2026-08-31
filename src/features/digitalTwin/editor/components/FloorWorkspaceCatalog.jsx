@@ -13,10 +13,10 @@ import {
 import { ObjectLibrarySearch } from "@/features/digitalTwin/editor/components/ObjectLibrary";
 import ObjectModelThumbnail from "@/features/digitalTwin/editor/components/ObjectModelThumbnail";
 import {
-  EQUIPMENT_CATEGORIES,
-  EQUIPMENT_SHAPE_TEMPLATE_MAP,
-  EQUIPMENT_SHAPE_TEMPLATES,
-} from "@/features/digitalTwin/editor/constants/equipmentShapeTemplates";
+  UNIFIED_EQUIPMENT_CATEGORIES,
+  UNIFIED_EQUIPMENT_TEMPLATE_MAP,
+  UNIFIED_EQUIPMENT_TEMPLATES,
+} from "@/features/digitalTwin/editor/constants/unifiedEquipmentCatalog";
 import {
   WORLD_STRUCTURE_GROUPS,
   WORLD_STRUCTURE_TEMPLATE_MAP,
@@ -58,9 +58,9 @@ function CatalogItem({ definition, domain, active, favorite = false, onSelect, o
         onClick={() => onSelect(definition.id)}
       >
         <span className={objectStyles.preview} aria-hidden="true">
-          <ObjectModelThumbnail familyId={definition.objectType} title={definition.nameKo} />
+          <ObjectModelThumbnail definition={definition} title={definition.nameKo} />
         </span>
-        <span className={objectStyles.itemText}><strong>{definition.nameKo}</strong><small>{formatDimensions(definition)}</small></span>
+        <span className={objectStyles.itemText}><strong>{definition.nameKo}</strong><small>{definition.installationBadges?.join(" · ") ?? formatDimensions(definition)}{definition.modelVariants?.length > 1 ? ` · 변형 ${definition.modelVariants.length}` : ""}</small></span>
         <span className={objectStyles.itemAction} aria-hidden="true">{active ? <CloseIcon size={15} /> : <AddIcon size={15} />}</span>
       </button>
       {isEquipment ? (
@@ -147,11 +147,11 @@ export default function FloorWorkspaceCatalog({
   const isEquipment = mode === CATALOG_MODES.EQUIPMENT;
   const templates = useMemo(() => (
     isEquipment
-      ? EQUIPMENT_SHAPE_TEMPLATES.filter((template) => !template.legacyOnly)
+      ? UNIFIED_EQUIPMENT_TEMPLATES
       : WORLD_STRUCTURE_TEMPLATES.filter((template) => allowedStructureTemplateIds.includes(template.id))
   ).filter((template) => matchesQuery(template, normalizedQuery)), [allowedStructureTemplateIds, isEquipment, normalizedQuery]);
   const categories = useMemo(() => (isEquipment
-    ? EQUIPMENT_CATEGORIES.filter((category) => category.id !== "ALL")
+    ? UNIFIED_EQUIPMENT_CATEGORIES
     : WORLD_STRUCTURE_GROUPS
   ).map((category) => ({
     ...category,
@@ -159,7 +159,7 @@ export default function FloorWorkspaceCatalog({
   })).filter((category) => category.definitions.length), [isEquipment, templates]);
   const activeTemplateId = isEquipment ? activeEquipmentTemplateId : activeStructureTemplateId;
   const recentTemplates = recentTemplateIds.map((id) => (
-    isEquipment ? EQUIPMENT_SHAPE_TEMPLATE_MAP[id] : WORLD_STRUCTURE_TEMPLATE_MAP[id]
+    isEquipment ? UNIFIED_EQUIPMENT_TEMPLATE_MAP[id] : WORLD_STRUCTURE_TEMPLATE_MAP[id]
   )).filter((template) => template && templates.some((item) => item.id === template.id)).slice(0, 5);
 
   function selectTemplate(templateId) {
@@ -217,7 +217,7 @@ export default function FloorWorkspaceCatalog({
         <div className={`${objectStyles.activeObject} ${styles.activeTemplate}`}>
           <span className={`${objectStyles.preview} ${objectStyles.previewCompact}`} aria-hidden="true">
             {isEquipment
-              ? <EquipmentTemplateIcon template={EQUIPMENT_SHAPE_TEMPLATE_MAP[activeTemplateId]} size={18} />
+              ? <EquipmentTemplateIcon template={UNIFIED_EQUIPMENT_TEMPLATE_MAP[activeTemplateId]} size={18} />
               : <WorldStructureTypeIcon definition={WORLD_STRUCTURE_TEMPLATE_MAP[activeTemplateId]} size={18} />}
           </span>
           <span><small>현재 배치</small><strong>{templates.find((item) => item.id === activeTemplateId)?.nameKo ?? "배치 항목"}</strong></span>
@@ -230,7 +230,7 @@ export default function FloorWorkspaceCatalog({
           <header><strong>최근 사용</strong></header>
           <div>{recentTemplates.map((template) => (
             <button key={template.id} type="button" title={`${template.nameKo} 다시 배치`} onClick={() => selectTemplate(template.id)}>
-              <ObjectModelThumbnail familyId={template.objectType} title={template.nameKo} />
+              <ObjectModelThumbnail definition={template} title={template.nameKo} />
               <span>{template.nameKo}</span>
             </button>
           ))}</div>

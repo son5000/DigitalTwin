@@ -5,10 +5,10 @@ import { getFloorBaseElevation, getFloorHeight } from "@/features/customAssets/b
 
 import {
   DEFAULT_WORLD,
-  EQUIPMENT_SHAPE_TEMPLATE_MAP,
   TRANSFORM_MODES,
   VIEW_MODES,
 } from "@/features/digitalTwin/editor/constants/equipmentShapeTemplates";
+import { UNIFIED_EQUIPMENT_TEMPLATE_MAP } from "@/features/digitalTwin/editor/constants/unifiedEquipmentCatalog";
 import {
   cycleTransformMoveAxisMode,
   DEFAULT_TRANSFORM_TOOLS,
@@ -70,6 +70,10 @@ import {
   HIERARCHY_NODE_TYPES,
   normalizeHierarchy,
 } from "@/features/digitalTwin/editor/model/digitalTwinHierarchy";
+import {
+  moveAttachedOutdoorEquipment,
+  resolveOutdoorEquipmentPlacement,
+} from "@/features/digitalTwin/editor/model/outdoorEquipmentPlacement";
 import useWorldStructureState, {
   createDefaultWorldWalls,
 } from "@/features/digitalTwin/editor/store/useWorldStructureState";
@@ -97,7 +101,7 @@ function readStoredList(key) {
 }
 
 function mergeEquipment(equipment, changes) {
-  const template = EQUIPMENT_SHAPE_TEMPLATE_MAP[
+  const template = UNIFIED_EQUIPMENT_TEMPLATE_MAP[
     changes.shapeTemplateId ?? equipment.shapeTemplateId
   ];
 
@@ -516,7 +520,7 @@ export default function useDigitalTwinEditorState() {
 
   const addEquipment = useCallback(
     (templateId, floorPosition) => {
-      const template = EQUIPMENT_SHAPE_TEMPLATE_MAP[templateId];
+      const template = UNIFIED_EQUIPMENT_TEMPLATE_MAP[templateId];
       if (!template) return;
 
       const id = createId("WORLD_OBJECT");
@@ -902,7 +906,7 @@ export default function useDigitalTwinEditorState() {
 
     const equipment = scene.equipment
       .map((item) => {
-        const template = EQUIPMENT_SHAPE_TEMPLATE_MAP[item.shapeTemplateId];
+        const template = UNIFIED_EQUIPMENT_TEMPLATE_MAP[item.shapeTemplateId];
         return template ? normalizeEquipmentInstance(item, template) : null;
       })
       .filter(Boolean);
@@ -1297,6 +1301,7 @@ export default function useDigitalTwinEditorState() {
     if (!building) return;
     const clampResult = clampBuildingToSite(mergeBuildingDefinition(building, changes), siteEnvironment);
     const nextBuilding = clampResult.entity;
+    setSiteObjects((items) => items.map((item) => moveAttachedOutdoorEquipment(item, building, nextBuilding)));
     if (nextBuilding.customAssetId && changes.parameters) {
       const customAsset = getRuntimeCustomAsset(nextBuilding.customAssetId) ?? nextBuilding.customAssetSnapshot;
       nextBuilding.customAssetScale = {
@@ -1373,13 +1378,14 @@ export default function useDigitalTwinEditorState() {
     if (definition?.createsBuilding) return addBuildingFromArea(area, templateId, variantOverrides);
     const sequence = siteObjects.filter((object) => object.type === templateId).length + 1;
     const createdObject = createSiteObjectFromArea(templateId, area, sequence, variantOverrides);
-    const object = createdObject ? clampSiteObjectToSite(createdObject, siteEnvironment).entity : null;
+    const boundedObject = createdObject ? clampSiteObjectToSite(createdObject, siteEnvironment).entity : null;
+    const object = boundedObject ? resolveOutdoorEquipmentPlacement(boundedObject, buildings, siteObjects) : null;
     if (!object) return null;
     setSiteObjects((items) => [...items, object]);
     setSelectedSiteObjectId(object.id);
     setHierarchy((current) => ({ ...current, selectedNodeId: current.rootId }));
     return object.id;
-  }, [addBuildingFromArea, siteEnvironment, siteObjects]);
+  }, [addBuildingFromArea, buildings, siteEnvironment, siteObjects]);
 
   const addSiteObjectsFromArea = useCallback((templateId, area, variantOverrides = {}, placementOptions = {}) => {
     const definition = OBJECT_LIBRARY_DEFINITION_MAP[templateId];
@@ -1460,14 +1466,16 @@ export default function useDigitalTwinEditorState() {
           })),
         } : object.path,
       });
-      return normalizedObject ? clampSiteObjectToSite(normalizedObject, siteEnvironment).entity : null;
+      if (!normalizedObject) return null;
+      const boundedObject = clampSiteObjectToSite(normalizedObject, siteEnvironment).entity;
+      return resolveOutdoorEquipmentPlacement(boundedObject, buildings, siteObjects);
     }).filter(Boolean);
     const ids = createdObjects.map((object) => object.id);
     setSiteObjects((items) => [...items, ...createdObjects]);
     setSelectedSiteObjectId(ids.at(-1) ?? null);
     setHierarchy((current) => ({ ...current, selectedNodeId: current.rootId }));
     return { ...plan, ids };
-  }, [gridSettings.baseSize, gridSettings.enabled, hierarchy.nodes, hierarchy.rootId, siteEnvironment, siteObjects]);
+  }, [buildings, gridSettings.baseSize, gridSettings.enabled, hierarchy.nodes, hierarchy.rootId, siteEnvironment, siteObjects]);
 
   const selectSiteObject = useCallback((objectId) => {
     const exists = siteObjects.some((object) => object.id === objectId);
@@ -1490,12 +1498,18 @@ export default function useDigitalTwinEditorState() {
         path: changes.path ? { ...object.path, ...changes.path } : object.path,
     });
     if (!normalizedObject) return;
-    const result = clampSiteObjectToSite(normalizedObject, siteEnvironment);
+    const placedObject = resolveOutdoorEquipmentPlacement(
+      normalizedObject,
+      buildings,
+      siteObjects.filter((item) => item.id !== objectId),
+      changes.placement?.mode ?? normalizedObject.placement?.mode ?? "AUTO",
+    );
+    const result = clampSiteObjectToSite(placedObject, siteEnvironment);
     if (result.wasClamped || !result.fits) {
       setSiteBoundaryNotice(getSiteBoundaryNotice(result.wasClamped ? 1 : 0, result.fits ? 0 : 1));
     }
     setSiteObjects((items) => items.map((item) => item.id === objectId ? result.entity : item));
-  }, [siteEnvironment, siteObjects]);
+  }, [buildings, siteEnvironment, siteObjects]);
 
   const removeSelectedSiteObject = useCallback(() => {
     if (!selectedSiteObjectId) return;

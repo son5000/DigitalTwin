@@ -68,7 +68,8 @@ export function createObjectModelMetadata({
   description,
   placement = OBJECT_PLACEMENT_TYPES.FLOOR,
   materialSlots = [],
-  thumbnail,
+  thumbnailSource,
+  modelSource,
   legacyOnly = false,
   lod = { mediumDistance: 28, lowDistance: 70 },
 }) {
@@ -87,7 +88,8 @@ export function createObjectModelMetadata({
     placement,
     defaultPositionY,
     materialSlots,
-    thumbnail: thumbnail ?? `procedural:${family?.id ?? familyId}`,
+    modelSource: modelSource ?? `procedural:${id}`,
+    thumbnailSource: thumbnailSource ?? `/assets/object-thumbnails/${id}.png`,
     legacyOnly,
     lod,
   };

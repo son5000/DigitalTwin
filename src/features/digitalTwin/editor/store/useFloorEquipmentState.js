@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 
-import { EQUIPMENT_SHAPE_TEMPLATE_MAP } from "@/features/digitalTwin/editor/constants/equipmentShapeTemplates";
+import { UNIFIED_EQUIPMENT_TEMPLATE_MAP } from "@/features/digitalTwin/editor/constants/unifiedEquipmentCatalog";
 import { getBuildingFootprint } from "@/features/digitalTwin/editor/utils/buildingFootprint";
 import { clampDimension } from "@/features/digitalTwin/editor/utils/editorMath";
 import { normalizeEquipmentInstance } from "@/features/digitalTwin/editor/utils/templateParameters";
@@ -94,7 +94,7 @@ export default function useFloorEquipmentState({ buildings, floors, currentBuild
   }, []);
 
   const addFloorEquipment = useCallback((templateId, position, context = {}) => {
-    const template = EQUIPMENT_SHAPE_TEMPLATE_MAP[templateId];
+    const template = UNIFIED_EQUIPMENT_TEMPLATE_MAP[templateId];
     const sourceFloor = floors.find((floor) => floor.id === context.floorId) ?? currentFloor;
     const targetFloorIds = (context.targetFloorIds?.length ? context.targetFloorIds : [sourceFloor?.id]).filter(Boolean);
     const batchGroupId = targetFloorIds.length > 1 ? createId("EQUIPMENT_BATCH") : null;
@@ -181,7 +181,7 @@ export default function useFloorEquipmentState({ buildings, floors, currentBuild
     setEquipmentByFloorId(Object.fromEntries(Object.entries(snapshot.equipmentByFloorId ?? {}).map(([floorId, items]) => [
       floorId,
       (items ?? []).map((equipment) => {
-        const template = EQUIPMENT_SHAPE_TEMPLATE_MAP[equipment.shapeTemplateId];
+        const template = UNIFIED_EQUIPMENT_TEMPLATE_MAP[equipment.shapeTemplateId];
         return template ? normalizeEquipmentInstance({ ...equipment, floorId: equipment.floorId ?? floorId }, template) : null;
       }).filter(Boolean),
     ])));

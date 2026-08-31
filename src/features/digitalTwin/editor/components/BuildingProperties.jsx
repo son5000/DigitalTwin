@@ -8,6 +8,7 @@ import { BUILDING_FACADES, normalizeBuildingOpenings } from "@/features/digitalT
 
 import NumericField from "./NumericField";
 import MaterialAppearanceEditor from "./MaterialAppearanceEditor";
+import UserTextureEditor from "./UserTextureEditor";
 import { ObjectVariantSelector } from "./ObjectLibrary";
 import styles from "./BuildingProperties.module.css";
 
@@ -174,6 +175,16 @@ export default function BuildingProperties({ building, floorCount, floorPlanSumm
 
       <SettingsGroup title="재질과 색상" summary="표면 프리셋 · 물성">
         <MaterialAppearanceEditor appearance={building.appearance} onChange={(appearance) => onChange({ appearance })} />
+      </SettingsGroup>
+
+      <SettingsGroup title="사용자 텍스처" summary={building.userTexture ? "적용됨" : "기본 재질"}>
+        <UserTextureEditor
+          value={building.userTexture}
+          targets={isCustomBuilding
+            ? [{ id: "ALL", label: "전체 적용" }]
+            : [{ id: "ALL", label: "전체" }, { id: "EXTERIOR", label: "외벽" }, { id: "ROOF", label: "지붕" }]}
+          onChange={(userTexture) => onChange({ userTexture })}
+        />
       </SettingsGroup>
 
       <SettingsGroup title="위치와 회전" summary={`X ${building.position.x.toFixed(1)} · Z ${building.position.z.toFixed(1)}`}>

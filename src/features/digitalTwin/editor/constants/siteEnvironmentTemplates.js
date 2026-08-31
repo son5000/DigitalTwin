@@ -4,6 +4,10 @@ import {
   getDefaultObjectVariants,
 } from "@/features/digitalTwin/editor/constants/objectLibraryCatalog";
 import { SITE_OBJECT_GEOMETRY_MODES } from "@/features/digitalTwin/editor/constants/siteEnvironmentTemplates.types";
+import {
+  UNIFIED_EQUIPMENT_TEMPLATE_MAP,
+  UNIFIED_EQUIPMENT_TEMPLATES,
+} from "@/features/digitalTwin/editor/constants/unifiedEquipmentCatalog";
 import { normalizeVerticalPath, VERTICAL_PATH_MODES } from "@/features/digitalTwin/editor/terrain/VerticalPathModel";
 
 export { SITE_OBJECT_GEOMETRY_MODES } from "@/features/digitalTwin/editor/constants/siteEnvironmentTemplates.types";
@@ -19,6 +23,8 @@ export const SITE_MATERIAL_OPTIONS = Object.freeze([
   { id: "CONCRETE", label: "콘크리트" },
   { id: "ASPHALT", label: "아스팔트" },
   { id: "METAL", label: "금속" },
+  { id: "STAINLESS", label: "스테인리스" },
+  { id: "PLASTIC", label: "플라스틱" },
   { id: "GRASS", label: "잔디" },
   { id: "PAINTED", label: "도장" },
   { id: "GLASS", label: "유리" },
@@ -43,8 +49,12 @@ export function getTreeCountForArea(width, depth, spacing = TREE_DEFAULT_SPACING
   return Math.min(MAX_TREE_COUNT, columns * rows);
 }
 
-export const SITE_CREATION_TEMPLATES = OBJECT_LIBRARY_DEFINITIONS;
-export const SITE_CREATION_TEMPLATE_MAP = OBJECT_LIBRARY_DEFINITION_MAP;
+export const SITE_CREATION_TEMPLATES = [...OBJECT_LIBRARY_DEFINITIONS, ...UNIFIED_EQUIPMENT_TEMPLATES];
+export const SITE_CREATION_TEMPLATE_MAP = new Proxy(OBJECT_LIBRARY_DEFINITION_MAP, {
+  get(target, property, receiver) {
+    return Reflect.get(target, property, receiver) ?? UNIFIED_EQUIPMENT_TEMPLATE_MAP[property];
+  },
+});
 
 export function createSitePlacementArea(templateId, position, cellSize = 1) {
   const template = SITE_CREATION_TEMPLATE_MAP[templateId];
@@ -80,7 +90,8 @@ function getDefaultCount(template, width, depth) {
 }
 
 export function createSiteObjectFromArea(templateId, area, sequence = 1, variantOverrides = {}) {
-  const template = SITE_CREATION_TEMPLATE_MAP[templateId];
+  const template = UNIFIED_EQUIPMENT_TEMPLATE_MAP[variantOverrides.modelTemplateId]
+    ?? SITE_CREATION_TEMPLATE_MAP[templateId];
   if (!template || template.createsBuilding) return null;
   const areaWidth = Math.max(0.5, finite(area?.width, template.width ?? 1));
   const areaDepth = Math.max(0.5, finite(area?.depth, template.depth ?? 1));
@@ -103,6 +114,8 @@ export function createSiteObjectFromArea(templateId, area, sequence = 1, variant
     rotation: { x: 0, y: 0, z: 0 },
     dimensions: { width, height: template.height, depth },
     appearance: { color: template.color, material: template.material },
+    placementRules: template.placementRules ? structuredClone(template.placementRules) : null,
+    placement: template.placementRules ? { mode: null, buildingId: null, localPosition: null } : null,
     parameters: {
       ...template.parameters,
       count: getDefaultCount(template, areaWidth, areaDepth),
@@ -139,6 +152,8 @@ export function normalizeSiteObject(object, index = 0) {
     rotation: { x: 0, y: 0, z: 0, ...object.rotation },
     dimensions: { width, height: Math.max(0.02, finite(object.dimensions?.height, template.height)), depth },
     appearance: { color: template.color, material: template.material, ...object.appearance },
+    placementRules: template.placementRules ? { ...template.placementRules, ...object.placementRules } : null,
+    placement: template.placementRules ? { mode: null, buildingId: null, localPosition: null, ...object.placement } : null,
     parameters: {
       ...template.parameters,
       count: 1,

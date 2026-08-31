@@ -1,4 +1,4 @@
-import { EQUIPMENT_SHAPE_TEMPLATE_MAP } from "@/features/digitalTwin/editor/constants/equipmentShapeTemplates";
+import { UNIFIED_EQUIPMENT_TEMPLATE_MAP } from "@/features/digitalTwin/editor/constants/unifiedEquipmentCatalog";
 import { SCENE_THEMES } from "@/features/digitalTwin/editor/constants/sceneThemes";
 import { WORLD_STRUCTURE_TEMPLATE_MAP } from "@/features/digitalTwin/editor/constants/worldStructureTemplates";
 import { createEquipmentObject } from "@/features/digitalTwin/editor/objects/EquipmentFactory";
@@ -29,7 +29,7 @@ function createStructurePreview(templateId, theme) {
 }
 
 function createEquipmentPreview(templateId, theme) {
-  const template = EQUIPMENT_SHAPE_TEMPLATE_MAP[templateId];
+  const template = UNIFIED_EQUIPMENT_TEMPLATE_MAP[templateId];
   if (!template) return null;
   const equipment = normalizeEquipmentInstance({
     id: "EQUIPMENT_PLACEMENT_PREVIEW",

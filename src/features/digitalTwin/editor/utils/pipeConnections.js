@@ -1,4 +1,4 @@
-import { EQUIPMENT_SHAPE_TEMPLATE_MAP } from "@/features/digitalTwin/editor/constants/equipmentShapeTemplates";
+import { UNIFIED_EQUIPMENT_TEMPLATE_MAP } from "@/features/digitalTwin/editor/constants/unifiedEquipmentCatalog";
 
 const SNAP_DISTANCE = 0.4;
 
@@ -54,7 +54,7 @@ function getLocalConnectionPoints(equipment) {
 }
 
 export function isPipeEquipment(equipment) {
-  return EQUIPMENT_SHAPE_TEMPLATE_MAP[equipment?.shapeTemplateId]?.category === "PIPE";
+  return UNIFIED_EQUIPMENT_TEMPLATE_MAP[equipment?.shapeTemplateId]?.floorCategory === "PIPE";
 }
 
 export function getEquipmentConnectionPoints(equipment) {
