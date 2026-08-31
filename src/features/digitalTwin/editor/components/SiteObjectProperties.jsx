@@ -82,9 +82,9 @@ export default function SiteObjectProperties({ object, siteEnvironment, siteObje
   const gradeLimit = getRecommendedGradeLimit(object.profile);
 
   return (
-    <section className={styles.panel} aria-label={`${template.name} 속성`}>
+    <section className={styles.panel} aria-label={`${template.nameKo ?? template.name} 속성`}>
       <header className={styles.heading}>
-        <span>환경 요소 / {template.name}</span>
+        <span>환경 요소 / {template.nameKo ?? template.name}</span>
         <h2>{object.name}</h2>
       </header>
 
@@ -120,7 +120,7 @@ export default function SiteObjectProperties({ object, siteEnvironment, siteObje
                 ))}
               </div>
               <label className={styles.colorHex}>
-                <span>HEX</span>
+                <span>16진수</span>
                 <input value={object.appearance.color.toUpperCase()} onChange={(event) => /^#[0-9a-f]{6}$/i.test(event.target.value) && onChange({ appearance: { color: event.target.value } })} />
               </label>
             </div>

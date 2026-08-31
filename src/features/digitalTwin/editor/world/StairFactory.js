@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-import { getStairSegments } from "@/features/digitalTwin/editor/utils/stairStructure";
+import { getStairRenderInstances, getStairSegments } from "@/features/digitalTwin/editor/utils/stairStructure";
 
 function createMaterial(stair, opacity = stair.appearance?.opacity ?? 1) {
   return new THREE.MeshStandardMaterial({
@@ -55,15 +55,29 @@ export function createStairAssemblyObject(stair, floors, {
   currentFloorId = null,
   baseElevation = 0,
 } = {}) {
+  const renderInstance = getStairRenderInstances(stair, floors).find((instance) => (
+    !currentFloorId || instance.renderFloorId === currentFloorId
+  ));
+  return createStairRenderObject(stair, renderInstance ?? { segments: getStairSegments(stair, floors) }, {
+    selected, sceneTheme, baseElevation,
+  });
+}
+
+export function createStairRenderObject(stair, renderInstance, {
+  selected = false,
+  sceneTheme,
+  baseElevation = 0,
+} = {}) {
   const object = new THREE.Group();
   object.name = stair.name;
   object.visible = stair.visible ?? true;
   object.userData.worldStructureId = stair.id;
   object.userData.structureType = "STAIR";
   object.userData.domain = "WORLD";
+  object.userData.renderFloorId = renderInstance?.renderFloorId ?? stair.floorId ?? stair.fromFloorId;
+  object.userData.stairRenderInstanceId = renderInstance?.id ?? stair.id;
   const edgeColor = selected ? sceneTheme.worldSelection : sceneTheme.worldEdge;
-  getStairSegments(stair, floors)
-    .filter((segment) => !currentFloorId || segment.lowerFloorId === currentFloorId || segment.upperFloorId === currentFloorId)
+  (renderInstance?.segments ?? [])
     .forEach((segment) => {
       const flight = createFlight(stair, segment, edgeColor);
       flight.position.y = segment.lowerY - baseElevation;
@@ -92,7 +106,8 @@ function createUpLabel(color) {
 }
 
 export function createStairPlanObject(stair, floors, currentFloorId, { selected = false, sceneTheme } = {}) {
-  const segments = getStairSegments(stair, floors);
+  const renderInstance = getStairRenderInstances(stair, floors).find((instance) => instance.renderFloorId === currentFloorId);
+  const segments = renderInstance?.segments ?? getStairSegments(stair, floors);
   const segment = segments.find((item) => item.lowerFloorId === currentFloorId)
     ?? segments.find((item) => item.upperFloorId === currentFloorId)
     ?? segments[0];

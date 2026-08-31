@@ -66,6 +66,11 @@ import {
   updateTerrainMesh,
 } from "@/features/digitalTwin/editor/terrain/TerrainMeshFactory";
 import { resolveVerticalPath } from "@/features/digitalTwin/editor/terrain/VerticalPathModel";
+import {
+  applyBuildingIsolationVisibility,
+  captureBuildingIsolationVisibility,
+  restoreBuildingIsolationVisibility as restoreIsolationVisibility,
+} from "@/features/digitalTwin/editor/three/buildingIsolation";
 
 import {
   bindCameraFocusCancellation,
@@ -81,6 +86,7 @@ import {
   configureDualTransformControls,
   createDualTransformControls,
   detachDualTransformControls,
+  DISABLED_TRANSFORM_TOOLS,
   disposeDualTransformControls,
   dualTransformIsActive,
   setDualTransformDragging,
@@ -199,9 +205,7 @@ function beginBuildingFocusMode(runtime, cameraStateRef) {
   const cameraSnapshot = cameraStateRef?.current ?? captureCameraState(runtime);
   runtime.buildingFocusMode = {
     cameraSnapshot,
-    buildingVisibility: new Map([...runtime.buildingObjects].map(([id, object]) => [id, object.visible])),
-    siteObjectVisibility: new Map([...runtime.siteEnvironmentObjects].map(([id, object]) => [id, object.visible])),
-    siteConnectionVisible: runtime.siteConnectionRoot.visible,
+    ...captureBuildingIsolationVisibility(runtime),
   };
   if (cameraStateRef) cameraStateRef.current = cameraSnapshot;
 }
@@ -209,27 +213,13 @@ function beginBuildingFocusMode(runtime, cameraStateRef) {
 function applyBuildingFocusVisibility(runtime, selectedBuildingId) {
   const state = runtime.buildingFocusMode;
   if (!state) return;
-  runtime.buildingObjects.forEach((object, id) => {
-    if (!state.buildingVisibility.has(id)) state.buildingVisibility.set(id, object.visible);
-    object.visible = id === selectedBuildingId;
-  });
-  runtime.siteEnvironmentObjects.forEach((object, id) => {
-    if (!state.siteObjectVisibility.has(id)) state.siteObjectVisibility.set(id, object.visible);
-    object.visible = false;
-  });
-  runtime.siteConnectionRoot.visible = false;
+  applyBuildingIsolationVisibility(runtime, state, selectedBuildingId);
 }
 
 function restoreBuildingFocusVisibility(runtime) {
   const state = runtime.buildingFocusMode;
   if (!state) return;
-  runtime.buildingObjects.forEach((object, id) => {
-    object.visible = state.buildingVisibility.get(id) ?? object.visible;
-  });
-  runtime.siteEnvironmentObjects.forEach((object, id) => {
-    object.visible = state.siteObjectVisibility.get(id) ?? object.visible;
-  });
-  runtime.siteConnectionRoot.visible = state.siteConnectionVisible;
+  restoreIsolationVisibility(runtime, state);
   runtime.buildingFocusMode = null;
 }
 
@@ -272,6 +262,7 @@ function replaceSiteGrid(runtime, siteTheme, cellSize, environment, terrainFeatu
   runtime.scene.remove(runtime.grid);
   disposeObject3D(runtime.grid);
   runtime.grid = createTerrainGrid(environment, terrainFeatures, cellSize, siteTheme);
+  if (runtime.buildingFocusMode) runtime.grid.visible = false;
   runtime.scene.add(runtime.grid);
 }
 
@@ -629,7 +620,7 @@ export default function SiteOverviewScene({
 
     const runtime = {
       container, scene, renderer, perspectiveCamera, orthographicCamera,
-      activeCamera: perspectiveCamera, orthographicSize: 120, orbitControls, transformControls, transformTools: { translate: false, rotate: false }, objectRoot,
+      activeCamera: perspectiveCamera, orthographicSize: 120, orbitControls, transformControls, transformTools: DISABLED_TRANSFORM_TOOLS, objectRoot,
       buildingObjects: new Map(), siteEnvironmentObjects: new Map(), siteConnectionRoot, grid, gridRegionRoot,
       gridSnapMarker, ground, groundPicker, terrainBrushCursor, areaGuide, placementGhostRoot, hemisphereLight, keyLight, fillLight,
       dragging: false, areaStart: null, areaEnd: null, placementPointerDown: false, placementAreaStart: null,
@@ -1298,7 +1289,7 @@ export default function SiteOverviewScene({
     });
 
     rebuildSitePathConnections(runtime.siteConnectionRoot, pathNetwork);
-    runtime.siteConnectionRoot.visible = !runtime.buildingFocusMode;
+    if (runtime.buildingFocusMode) runtime.siteConnectionRoot.visible = false;
 
     const selectedObject = runtime.buildingObjects.get(selectedBuildingId)
       ?? runtime.siteEnvironmentObjects.get(selectedSiteObjectId);
@@ -1343,7 +1334,7 @@ export default function SiteOverviewScene({
       camera: runtime.activeCamera,
       allowVerticalTranslation: is3D,
     });
-    runtime.renderer.domElement.setAttribute("aria-label", `${is3D ? "3D" : "2D Top"} 월드 편집 화면`);
+    runtime.renderer.domElement.setAttribute("aria-label", `${is3D ? "3D" : "2D 평면"} 월드 편집 화면`);
 
     if (is3D) runtime.perspectiveCamera.up.set(0, 1, 0);
     else cancelCameraFocus(runtime);

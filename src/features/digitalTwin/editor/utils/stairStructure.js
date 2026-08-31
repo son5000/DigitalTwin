@@ -7,6 +7,12 @@ const DEFAULT_RISER_HEIGHT = 0.18;
 const DEFAULT_LANDING_DEPTH = 1.2;
 const HEAD_CLEARANCE = 2.1;
 
+export const STAIR_SCOPES = Object.freeze({
+  FLOOR: "FLOOR",
+  CONNECTING: "CONNECTING",
+  ALL_FLOORS: "ALL_FLOORS",
+});
+
 export function getOrderedBuildingFloors(floors, buildingId) {
   return floors
     .filter((floor) => !buildingId || floor.parentId === buildingId)
@@ -24,14 +30,123 @@ export function getStairValues(stair) {
   };
 }
 
-export function getStairServedFloorIds(stair, floors) {
+export function normalizeStairOwnership(stair, floors, currentFloorId = null) {
   const ordered = getOrderedBuildingFloors(floors, stair.buildingId);
-  const startFloorId = stair.startFloorId ?? stair.applicationScope?.startFloorId;
-  const endFloorId = stair.endFloorId ?? stair.applicationScope?.endFloorId;
+  const validIds = new Set(ordered.map((floor) => floor.id));
+  const legacyMode = stair.applicationScope?.mode;
+  const inferredScope = legacyMode === "ALL"
+    ? STAIR_SCOPES.ALL_FLOORS
+    : (stair.fromFloorId ?? stair.startFloorId ?? stair.applicationScope?.startFloorId)
+        !== (stair.toFloorId ?? stair.endFloorId ?? stair.applicationScope?.endFloorId)
+      ? STAIR_SCOPES.CONNECTING
+      : STAIR_SCOPES.FLOOR;
+  const scope = Object.values(STAIR_SCOPES).includes(stair.scope) ? stair.scope : inferredScope;
+  const fallbackFloorId = validIds.has(currentFloorId) ? currentFloorId : ordered[0]?.id ?? null;
+  let fromFloorId = stair.fromFloorId ?? stair.startFloorId ?? stair.floorId
+    ?? stair.applicationScope?.startFloorId ?? fallbackFloorId;
+  if (!validIds.has(fromFloorId)) fromFloorId = fallbackFloorId;
+  const fromIndex = Math.max(0, ordered.findIndex((floor) => floor.id === fromFloorId));
+
+  if (scope === STAIR_SCOPES.ALL_FLOORS) {
+    const connectedFloorIds = ordered.map((floor) => floor.id);
+    return {
+      ...stair,
+      scope,
+      floorId: connectedFloorIds[0] ?? null,
+      fromFloorId: connectedFloorIds[0] ?? null,
+      toFloorId: connectedFloorIds.at(-1) ?? null,
+      startFloorId: connectedFloorIds[0] ?? null,
+      endFloorId: connectedFloorIds.at(-1) ?? null,
+      servedFloorIds: connectedFloorIds,
+      applicationScope: { mode: "ALL", startFloorId: connectedFloorIds[0] ?? null, endFloorId: connectedFloorIds.at(-1) ?? null, floorIds: [], connectedFloorIds },
+    };
+  }
+
+  if (scope === STAIR_SCOPES.FLOOR || ordered.length < 2) {
+    const connectedFloorIds = fromFloorId ? [fromFloorId] : [];
+    return {
+      ...stair,
+      scope: STAIR_SCOPES.FLOOR,
+      floorId: fromFloorId,
+      fromFloorId,
+      toFloorId: fromFloorId,
+      startFloorId: fromFloorId,
+      endFloorId: fromFloorId,
+      servedFloorIds: connectedFloorIds,
+      applicationScope: { mode: "CURRENT", startFloorId: fromFloorId, endFloorId: fromFloorId, floorIds: [], connectedFloorIds },
+    };
+  }
+
+  let toFloorId = stair.toFloorId ?? stair.endFloorId ?? stair.applicationScope?.endFloorId;
+  if (!validIds.has(toFloorId) || toFloorId === fromFloorId) toFloorId = ordered[Math.min(fromIndex + 1, ordered.length - 1)]?.id;
+  const toIndex = ordered.findIndex((floor) => floor.id === toFloorId);
+  const lowerIndex = Math.min(fromIndex, toIndex);
+  const upperIndex = Math.max(fromIndex, toIndex);
+  fromFloorId = ordered[lowerIndex]?.id ?? fallbackFloorId;
+  toFloorId = ordered[upperIndex]?.id ?? fromFloorId;
+  const connectedFloorIds = ordered.slice(lowerIndex, upperIndex + 1).map((floor) => floor.id);
+  return {
+    ...stair,
+    scope: STAIR_SCOPES.CONNECTING,
+    floorId: fromFloorId,
+    fromFloorId,
+    toFloorId,
+    startFloorId: fromFloorId,
+    endFloorId: toFloorId,
+    servedFloorIds: connectedFloorIds,
+    applicationScope: { mode: "RANGE", startFloorId: fromFloorId, endFloorId: toFloorId, floorIds: [], connectedFloorIds },
+  };
+}
+
+export function getStairServedFloorIds(stair, floors) {
+  const normalized = normalizeStairOwnership(stair, floors);
+  const ordered = getOrderedBuildingFloors(floors, normalized.buildingId);
+  if (normalized.scope === STAIR_SCOPES.FLOOR) return normalized.floorId ? [normalized.floorId] : [];
+  const startFloorId = normalized.fromFloorId;
+  const endFloorId = normalized.toFloorId;
   const startIndex = ordered.findIndex((floor) => floor.id === startFloorId);
   const endIndex = ordered.findIndex((floor) => floor.id === endFloorId);
   if (startIndex < 0 || endIndex < 0 || startIndex >= endIndex) return [];
   return ordered.slice(startIndex, endIndex + 1).map((floor) => floor.id);
+}
+
+function createLocalFloorSegment(stair, floor, nextFloor) {
+  const values = getStairValues(stair);
+  const floorHeight = Math.max(0.5, Number(stair.parameters?.height) || ((nextFloor?.elevation ?? 0) - (floor?.elevation ?? 0)) || 3);
+  const riserCount = Math.max(2, Math.ceil(floorHeight / values.riserHeight));
+  return {
+    id: `${stair.id}:${floor.id}:LOCAL`, stairId: stair.id,
+    lowerFloorId: floor.id, upperFloorId: floor.id,
+    lowerY: floor.elevation ?? 0, upperY: (floor.elevation ?? 0) + floorHeight,
+    floorHeight, riserCount, actualRiserHeight: floorHeight / riserCount,
+    runLength: values.treadDepth * (riserCount - 1), ...values,
+  };
+}
+
+export function getStairRenderInstances(stair, floors) {
+  const normalized = normalizeStairOwnership(stair, floors);
+  const ordered = getOrderedBuildingFloors(floors, normalized.buildingId);
+  if (normalized.scope === STAIR_SCOPES.ALL_FLOORS) {
+    return ordered.map((floor, index) => ({
+      id: `${stair.id}:RENDER:${floor.id}`,
+      renderFloorId: floor.id,
+      fromFloorId: floor.id,
+      toFloorId: floor.id,
+      segments: [createLocalFloorSegment(normalized, floor, ordered[index + 1])],
+    }));
+  }
+  if (normalized.scope === STAIR_SCOPES.FLOOR) {
+    const floor = ordered.find((item) => item.id === normalized.floorId);
+    if (!floor) return [];
+    return [{ id: `${stair.id}:RENDER:${floor.id}`, renderFloorId: floor.id, fromFloorId: floor.id, toFloorId: floor.id, segments: [createLocalFloorSegment(normalized, floor, ordered[ordered.indexOf(floor) + 1])] }];
+  }
+  return [{
+    id: `${stair.id}:RENDER:${normalized.fromFloorId}`,
+    renderFloorId: normalized.fromFloorId,
+    fromFloorId: normalized.fromFloorId,
+    toFloorId: normalized.toFloorId,
+    segments: getStairSegments(normalized, ordered),
+  }];
 }
 
 export function getStairSegments(stair, floors) {
@@ -63,7 +178,7 @@ export function getStairSegments(stair, floors) {
 }
 
 export function getStairPlanSize(stair, floors) {
-  const segments = getStairSegments(stair, floors);
+  const segments = getStairRenderInstances(stair, floors).flatMap((instance) => instance.segments);
   const values = getStairValues(stair);
   return {
     width: values.width,
@@ -126,8 +241,8 @@ export function validateStairStructure(stair, floors, building, obstacles = []) 
   if (values.width < MIN_STAIR_WIDTH) return `계단 폭은 ${MIN_STAIR_WIDTH}m 이상이어야 합니다.`;
   if (values.treadDepth < MIN_TREAD_DEPTH) return `디딤판 깊이는 ${MIN_TREAD_DEPTH}m 이상이어야 합니다.`;
   if (values.riserHeight < MIN_RISER_HEIGHT || values.riserHeight > MAX_RISER_HEIGHT) return `목표 단높이는 ${MIN_RISER_HEIGHT}~${MAX_RISER_HEIGHT}m 범위여야 합니다.`;
-  const segments = getStairSegments(stair, floors);
-  if (!segments.length || segments.some((segment) => segment.floorHeight <= 0)) return "시작층은 종료층보다 아래에 있어야 합니다.";
+  const segments = getStairRenderInstances(stair, floors).flatMap((instance) => instance.segments);
+  if (!segments.length || segments.some((segment) => segment.floorHeight <= 0)) return "계단을 배치할 유효한 층 높이가 필요합니다.";
   const size = getStairPlanSize(stair, floors);
   const bounds = rotatedBounds(stair, size.width, size.depth);
   const footprintWidth = Math.max(0, Number(building?.parameters?.width) || 0);

@@ -5,6 +5,7 @@ import { TransformControls } from "three/addons/controls/TransformControls.js";
 
 import { TRANSFORM_MODES } from "@/features/digitalTwin/editor/constants/equipmentShapeTemplates";
 import { SCENE_THEMES } from "@/features/digitalTwin/editor/constants/sceneThemes";
+import { getMoveAxisConfiguration } from "@/features/digitalTwin/editor/constants/transformTools";
 import {
   formatGridResolution,
   getGridRegionsForScope,
@@ -37,11 +38,15 @@ function pointerFromEvent(event, canvas) {
   );
 }
 
-function configureTransformControls(controls, mode) {
+function configureTransformControls(controls, mode, moveAxisMode) {
   controls.setMode(mode);
-  controls.showX = mode === TRANSFORM_MODES.TRANSLATE;
-  controls.showY = true;
-  controls.showZ = mode === TRANSFORM_MODES.TRANSLATE;
+  const moveAxes = getMoveAxisConfiguration({ moveAxisMode });
+  const translating = mode === TRANSFORM_MODES.TRANSLATE;
+  controls.enabled = translating ? moveAxes.enabled : true;
+  controls.showX = translating ? moveAxes.showX : false;
+  controls.showY = translating ? moveAxes.showY : true;
+  controls.showZ = translating ? moveAxes.showZ : false;
+  controls.getHelper().visible = controls.enabled && Boolean(controls.object);
 }
 
 export default function PartEditorScene({
@@ -49,6 +54,7 @@ export default function PartEditorScene({
   selectedPartId,
   theme,
   transformMode,
+  moveAxisMode,
   gridSettings,
   gridScopeId,
   onSelectPart,
@@ -253,12 +259,13 @@ export default function PartEditorScene({
     const selectedPart = parts.find((part) => part.id === selectedPartId);
     if (selectedObject && !selectedPart?.locked) runtime.transformControls.attach(selectedObject);
     else runtime.transformControls.detach();
-  }, [equipment, selectedPartId, theme]);
+    configureTransformControls(runtime.transformControls, transformMode, moveAxisMode);
+  }, [equipment, moveAxisMode, selectedPartId, theme, transformMode]);
 
   useEffect(() => {
     const controls = runtimeRef.current?.transformControls;
-    if (controls) configureTransformControls(controls, transformMode);
-  }, [transformMode]);
+    if (controls) configureTransformControls(controls, transformMode, moveAxisMode);
+  }, [moveAxisMode, transformMode]);
 
   const selectedPart = equipment.parts?.find((part) => part.id === selectedPartId);
   const selectedPosition = selectedPart ? {

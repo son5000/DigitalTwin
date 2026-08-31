@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { TRANSFORM_MODES } from "@/features/digitalTwin/editor/constants/equipmentShapeTemplates";
 import {
@@ -9,10 +9,16 @@ import {
   DuplicateIcon,
   GridIcon,
   MoveIcon,
+  MoveOffIcon,
+  MovePlanarIcon,
   RotateIcon,
 } from "@/components/icons";
 import { formatGridResolution, GRID_CELL_SIZE_OPTIONS } from "@/features/digitalTwin/editor/constants/gridSettings";
 import { PART_SHAPES } from "@/features/digitalTwin/editor/constants/partTemplates";
+import {
+  cycleMoveAxisMode,
+  MOVE_AXIS_MODES,
+} from "@/features/digitalTwin/editor/constants/transformTools";
 import PartEditorScene from "@/features/digitalTwin/editor/three/PartEditorScene";
 
 import NumericField from "./NumericField";
@@ -81,6 +87,7 @@ export default function PartEditor({
 }) {
   const [selectedPartId, setSelectedPartId] = useState(() => equipment.parts?.[0]?.id ?? null);
   const [transformMode, setTransformMode] = useState(TRANSFORM_MODES.TRANSLATE);
+  const [moveAxisMode, setMoveAxisMode] = useState(MOVE_AXIS_MODES.XYZ);
   const selectedPart = equipment.parts?.find((part) => part.id === selectedPartId) ?? null;
   const handlePartChange = useCallback((changes) => {
     if (selectedPartId) onUpdatePart(equipment.id, selectedPartId, changes);
@@ -103,6 +110,29 @@ export default function PartEditor({
     onRemovePart(equipment.id, selectedPartId);
     setSelectedPartId(remainingPart?.id ?? null);
   }
+
+  const cycleMoveTool = useCallback(() => {
+    const next = cycleMoveAxisMode(moveAxisMode);
+    setMoveAxisMode(next);
+    if (next !== MOVE_AXIS_MODES.OFF) setTransformMode(TRANSFORM_MODES.TRANSLATE);
+  }, [moveAxisMode]);
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (!selectedPart || selectedPart.locked || event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement || event.target?.isContentEditable) return;
+      const key = event.key.toLowerCase();
+      if (key === "w") { event.preventDefault(); cycleMoveTool(); }
+      if (key === "e") { event.preventDefault(); setTransformMode(TRANSFORM_MODES.ROTATE); }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [cycleMoveTool, selectedPart]);
+
+  const moveModeUi = moveAxisMode === MOVE_AXIS_MODES.XYZ
+    ? { label: "전체 이동", badge: "XYZ", icon: <MoveIcon size={16} /> }
+    : moveAxisMode === MOVE_AXIS_MODES.PLANAR
+      ? { label: "평면 이동", badge: "평면", icon: <MovePlanarIcon size={16} /> }
+      : { label: "이동 꺼짐", badge: "꺼짐", icon: <MoveOffIcon size={16} /> };
 
   return (
     <section className={styles.overlay} aria-label={`${equipment.name} Part Editor`}>
@@ -133,16 +163,17 @@ export default function PartEditor({
             selectedPartId={selectedPartId}
             theme={theme}
             transformMode={transformMode}
+            moveAxisMode={moveAxisMode}
             gridSettings={gridSettings}
             gridScopeId={`PART:${equipment.id}`}
             onSelectPart={setSelectedPartId}
             onUpdatePart={(partId, changes) => onUpdatePart(equipment.id, partId, changes)}
           />
           <div className={styles.sceneToolbar}>
-            <button type="button" className={transformMode === TRANSFORM_MODES.TRANSLATE ? styles.activeTool : ""} disabled={!selectedPart} onClick={() => setTransformMode(TRANSFORM_MODES.TRANSLATE)}><MoveIcon size={16} /> 이동</button>
+            <button type="button" className={transformMode === TRANSFORM_MODES.TRANSLATE && moveAxisMode !== MOVE_AXIS_MODES.OFF ? styles.activeTool : ""} disabled={!selectedPart} aria-label={`이동: ${moveModeUi.label}`} title={`이동: ${moveModeUi.label} (W)`} onClick={cycleMoveTool}>{moveModeUi.icon} 이동 <small>{moveModeUi.badge}</small></button>
             <button type="button" className={transformMode === TRANSFORM_MODES.ROTATE ? styles.activeTool : ""} disabled={!selectedPart} onClick={() => setTransformMode(TRANSFORM_MODES.ROTATE)}><RotateIcon size={16} /> 회전</button>
-            <button type="button" role="switch" aria-checked={gridSettings.enabled} className={gridSettings.enabled ? styles.activeTool : ""} onClick={() => onGridSnapChange(!gridSettings.enabled)}><GridIcon size={16} /> Grid {gridSettings.enabled ? "ON" : "OFF"}</button>
-            <select aria-label="Part grid cell size" value={gridSettings.baseSize} disabled={!gridSettings.enabled} onChange={(event) => onGridSizeChange(Number(event.target.value))}>
+            <button type="button" role="switch" aria-checked={gridSettings.enabled} className={gridSettings.enabled ? styles.activeTool : ""} onClick={() => onGridSnapChange(!gridSettings.enabled)}><GridIcon size={16} /> 격자 {gridSettings.enabled ? "켜짐" : "꺼짐"}</button>
+            <select aria-label="부품 격자 간격" value={gridSettings.baseSize} disabled={!gridSettings.enabled} onChange={(event) => onGridSizeChange(Number(event.target.value))}>
               {GRID_CELL_SIZE_OPTIONS.map((size) => <option key={size} value={size}>{formatGridResolution(size)}</option>)}
             </select>
           </div>

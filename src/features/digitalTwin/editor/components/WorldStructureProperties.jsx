@@ -7,7 +7,7 @@ import {
 } from "@/features/digitalTwin/editor/constants/materialPresets";
 import { WORLD_STRUCTURE_TEMPLATE_MAP } from "@/features/digitalTwin/editor/constants/worldStructureTemplates";
 import { degreesToRadians, radiansToDegrees } from "@/features/digitalTwin/editor/utils/editorMath";
-import { getStairSegments } from "@/features/digitalTwin/editor/utils/stairStructure";
+import { getStairSegments, STAIR_SCOPES } from "@/features/digitalTwin/editor/utils/stairStructure";
 import { StructureIcon } from "@/components/icons";
 
 import NumericField from "./NumericField";
@@ -15,6 +15,37 @@ import MaterialAppearanceEditor from "./MaterialAppearanceEditor";
 import MaterialSlotEditor from "./MaterialSlotEditor";
 import PropertySection from "./PropertySection";
 import styles from "./WorldStructureProperties.module.css";
+
+const PARAMETER_LABELS = {
+  width: "너비",
+  depth: "깊이",
+  height: "높이",
+  length: "길이",
+  thickness: "두께",
+  diameter: "지름",
+  treadDepth: "디딤판 깊이",
+  riserHeight: "단높이",
+  landingDepth: "참 깊이",
+  openingWidth: "개구부 너비",
+  openingHeight: "개구부 높이",
+};
+
+const VARIANT_LABELS = {
+  SOLID: "막힘형",
+  GLASS: "유리형",
+  MESH: "메시형",
+  LOW_PARTITION: "낮은 파티션",
+  FENCE_PARTITION: "펜스형 파티션",
+  CUSTOM: "사용자 정의",
+  RECTANGULAR: "직사각형",
+  SQUARE: "정사각형",
+  CIRCULAR: "원형",
+  SAFETY_FENCE: "안전 펜스",
+  BOX: "박스형",
+  CYLINDER: "원통형",
+  PLANE: "평면형",
+  LINEAR_STRUCTURE: "선형 구조물",
+};
 
 export default function WorldStructureProperties({ structure, spaces, floors = [], currentFloorId, worldLocked, onChange }) {
   if (!structure) {
@@ -68,7 +99,7 @@ export default function WorldStructureProperties({ structure, spaces, floors = [
                   ? { materialPreset: "MESH", opacity: 0.8 }
                   : {},
             });
-          }}>{definition.variants.map((variant) => <option key={variant}>{variant}</option>)}</select></label>
+          }}>{definition.variants.map((variant) => <option key={variant} value={variant}>{VARIANT_LABELS[variant] ?? variant}</option>)}</select></label>
         )}
       </PropertySection>
 
@@ -76,7 +107,7 @@ export default function WorldStructureProperties({ structure, spaces, floors = [
         {definition.parameters.map((parameter) => (
           <NumericField
             key={parameter.key}
-            label={parameter.label}
+            label={PARAMETER_LABELS[parameter.key] ?? parameter.label}
             value={structure.parameters[parameter.key] ?? 0}
             min={parameter.min}
             step={parameter.step}
@@ -100,9 +131,9 @@ export default function WorldStructureProperties({ structure, spaces, floors = [
           </span>
         </label>
         <NumericField label="X" value={structure.position.x} step={0.1} unit="m" disabled={disabled} onChange={(x) => onChange({ position: { x } })} />
-        <NumericField label="Elevation (Y)" value={structure.position.y} step={0.1} unit="m" disabled={disabled || structure.groundSnap} onChange={(y) => onChange({ position: { y } })} />
+        <NumericField label="높이 (Y)" value={structure.position.y} step={0.1} unit="m" disabled={disabled || structure.groundSnap} onChange={(y) => onChange({ position: { y } })} />
         <NumericField label="Z" value={structure.position.z} step={0.1} unit="m" disabled={disabled} onChange={(z) => onChange({ position: { z } })} />
-        <NumericField label="Rotation Y" value={radiansToDegrees(structure.rotation.y)} step={1} unit="deg" disabled={disabled} onChange={(value) => onChange({ rotation: { y: degreesToRadians(value) } })} />
+        <NumericField label="Y축 회전" value={radiansToDegrees(structure.rotation.y)} step={1} unit="도" disabled={disabled} onChange={(value) => onChange({ rotation: { y: degreesToRadians(value) } })} />
         <label className={styles.textField}><span>상위 공간</span><select disabled={disabled} value={structure.spaceId} onChange={(event) => onChange({ spaceId: event.target.value })}>{spaces.map((space) => <option key={space.id} value={space.id}>{space.name}</option>)}</select></label>
       </PropertySection>
 
@@ -115,17 +146,20 @@ export default function WorldStructureProperties({ structure, spaces, floors = [
           ) : <label className={styles.textField}><span>진행 방향</span><select disabled={disabled} value={structure.direction ?? "UP"} onChange={(event) => onChange({ direction: event.target.value })}><option value="UP">상향</option><option value="DOWN">하향</option><option value="BOTH">상·하향</option></select></label>}
           <label className={styles.textField}>
             <span>적용 범위</span>
-            <select value={structure.type === "STAIR" ? "RANGE" : structure.applicationScope?.mode ?? "RANGE"} disabled={disabled || structure.type === "STAIR"} onChange={(event) => onChange({ applicationScope: { ...structure.applicationScope, mode: event.target.value } })}>
-              {structure.type !== "STAIR" ? <option value="CURRENT">현재 층</option> : null}
-              {structure.type !== "STAIR" ? <option value="SELECTED">선택 층</option> : null}
-              <option value="RANGE">층 범위</option>
+            <select value={structure.type === "STAIR" ? structure.scope ?? STAIR_SCOPES.CONNECTING : structure.applicationScope?.mode ?? "RANGE"} disabled={disabled} onChange={(event) => structure.type === "STAIR" ? onChange({ scope: event.target.value }) : onChange({ applicationScope: { ...structure.applicationScope, mode: event.target.value } })}>
+              {structure.type === "STAIR" ? <option value={STAIR_SCOPES.FLOOR}>현재 층에만 배치</option> : <option value="CURRENT">현재 층</option>}
+              {structure.type === "STAIR" ? <option value={STAIR_SCOPES.CONNECTING}>층간 연결</option> : <option value="SELECTED">선택 층</option>}
+              {structure.type === "STAIR" ? <option value={STAIR_SCOPES.ALL_FLOORS}>모든 층에 개별 배치</option> : <option value="RANGE">층 범위</option>}
               {structure.type !== "STAIR" ? <option value="ALL">전체 층</option> : null}
             </select>
           </label>
-          {structure.type === "STAIR" || (structure.applicationScope?.mode ?? "RANGE") === "RANGE" ? (
+          {structure.type === "STAIR" && structure.scope === STAIR_SCOPES.FLOOR ? (
+            <label className={styles.textField}><span>소속 층</span><select disabled={disabled} value={structure.floorId ?? currentFloorId ?? ""} onChange={(event) => onChange({ floorId: event.target.value, fromFloorId: event.target.value, toFloorId: event.target.value })}>{floors.map((floor) => <option key={floor.id} value={floor.id}>{floor.name}</option>)}</select></label>
+          ) : null}
+          {(structure.type === "STAIR" && structure.scope === STAIR_SCOPES.CONNECTING) || (structure.type !== "STAIR" && (structure.applicationScope?.mode ?? "RANGE") === "RANGE") ? (
             <>
-              <label className={styles.textField}><span>시작 층</span><select disabled={disabled} value={structure.applicationScope?.startFloorId ?? currentFloorId ?? ""} onChange={(event) => onChange({ applicationScope: { ...structure.applicationScope, startFloorId: event.target.value } })}>{floors.map((floor) => <option key={floor.id} value={floor.id}>{floor.name}</option>)}</select></label>
-              <label className={styles.textField}><span>종료 층</span><select disabled={disabled} value={structure.applicationScope?.endFloorId ?? floors.at(-1)?.id ?? currentFloorId ?? ""} onChange={(event) => onChange({ applicationScope: { ...structure.applicationScope, endFloorId: event.target.value } })}>{floors.map((floor) => <option key={floor.id} value={floor.id}>{floor.name}</option>)}</select></label>
+              <label className={styles.textField}><span>시작 층</span><select disabled={disabled} value={structure.type === "STAIR" ? structure.fromFloorId ?? currentFloorId ?? "" : structure.applicationScope?.startFloorId ?? currentFloorId ?? ""} onChange={(event) => structure.type === "STAIR" ? onChange({ fromFloorId: event.target.value, floorId: event.target.value }) : onChange({ applicationScope: { ...structure.applicationScope, startFloorId: event.target.value } })}>{floors.map((floor) => <option key={floor.id} value={floor.id}>{floor.name}</option>)}</select></label>
+              <label className={styles.textField}><span>종료 층</span><select disabled={disabled} value={structure.type === "STAIR" ? structure.toFloorId ?? floors.at(-1)?.id ?? "" : structure.applicationScope?.endFloorId ?? floors.at(-1)?.id ?? currentFloorId ?? ""} onChange={(event) => structure.type === "STAIR" ? onChange({ toFloorId: event.target.value }) : onChange({ applicationScope: { ...structure.applicationScope, endFloorId: event.target.value } })}>{floors.map((floor) => <option key={floor.id} value={floor.id}>{floor.name}</option>)}</select></label>
             </>
           ) : null}
           {(structure.applicationScope?.mode ?? "RANGE") === "SELECTED" ? (

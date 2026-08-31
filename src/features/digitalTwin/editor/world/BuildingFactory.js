@@ -2,6 +2,7 @@ import * as THREE from "three";
 
 import { createCustomBuildingGroup } from "@/features/customAssets/building/buildingRenderer";
 import { getRuntimeCustomAsset } from "@/features/customAssets/core/customAssetRegistry";
+import { BUILDING_FACADES, getBuildingFacadeOpenings } from "@/features/digitalTwin/editor/model/buildingOpenings";
 import { createPresetMaterial } from "@/features/digitalTwin/editor/three/presetMaterial";
 
 function createEdgeOverlay(geometry, color) {
@@ -156,6 +157,7 @@ export function getBuildingSignature(building, floorCount, selected, expanded, t
     customAssetExploded: building.customAssetExploded,
     parameters: building.parameters,
     variants: building.variants,
+    facadeOpenings: building.facadeOpenings,
     appearance: building.appearance,
     floorCount,
     selected,
@@ -163,6 +165,95 @@ export function getBuildingSignature(building, floorCount, selected, expanded, t
     viewerTranslucent,
     theme,
   });
+}
+
+function mergeIntervals(intervals) {
+  return intervals.sort((left, right) => left[0] - right[0]).reduce((merged, interval) => {
+    const previous = merged.at(-1);
+    if (previous && interval[0] <= previous[1] + 0.001) previous[1] = Math.max(previous[1], interval[1]);
+    else merged.push([...interval]);
+    return merged;
+  }, []);
+}
+
+function wallSpans(length, blocked) {
+  const merged = mergeIntervals(blocked.map(([start, end]) => [Math.max(-length / 2, start), Math.min(length / 2, end)]));
+  const spans = [];
+  let cursor = -length / 2;
+  merged.forEach(([start, end]) => {
+    if (start > cursor + 0.001) spans.push([cursor, start]);
+    cursor = Math.max(cursor, end);
+  });
+  if (cursor < length / 2 - 0.001) spans.push([cursor, length / 2]);
+  return spans;
+}
+
+function addWallPanel(group, facade, span, yRange, width, depth, material, buildingId, edgeColor) {
+  const thickness = 0.2;
+  const horizontalSize = span[1] - span[0];
+  const height = yRange[1] - yRange[0];
+  if (horizontalSize <= 0.001 || height <= 0.001) return;
+  const horizontalCenter = (span[0] + span[1]) / 2;
+  const y = (yRange[0] + yRange[1]) / 2;
+  if (facade === BUILDING_FACADES.FRONT || facade === BUILDING_FACADES.BACK) {
+    addMass(group, { x: horizontalSize, y: height, z: thickness }, { x: horizontalCenter, y, z: (facade === BUILDING_FACADES.FRONT ? 1 : -1) * (depth / 2 - thickness / 2) }, material, buildingId, edgeColor);
+  } else {
+    addMass(group, { x: thickness, y: height, z: horizontalSize }, { x: (facade === BUILDING_FACADES.RIGHT ? 1 : -1) * (width / 2 - thickness / 2), y, z: horizontalCenter }, material, buildingId, edgeColor);
+  }
+}
+
+function positionOnFacade(object, facade, horizontal, y, width, depth, normalOffset = 0) {
+  if (facade === BUILDING_FACADES.FRONT || facade === BUILDING_FACADES.BACK) {
+    object.position.set(horizontal, y, (facade === BUILDING_FACADES.FRONT ? 1 : -1) * (depth / 2 + normalOffset));
+  } else {
+    object.position.set((facade === BUILDING_FACADES.RIGHT ? 1 : -1) * (width / 2 + normalOffset), y, horizontal);
+    object.rotation.y = Math.PI / 2;
+  }
+}
+
+function addOpeningAppearance(group, building, opening, width, depth) {
+  const frameMaterial = createPresetMaterial(opening.frame);
+  const fillMaterial = createPresetMaterial(opening.fill, opening.kind === "WINDOW" ? { transparent: true, opacity: 0.72 } : {});
+  const frameWidth = Math.min(0.14, opening.width * 0.12);
+  const frameDepth = 0.1;
+  const centerY = opening.bottom + opening.height / 2;
+  const addPart = (partWidth, partHeight, horizontal, y, material, offset = 0.015) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(partWidth, partHeight, frameDepth), material);
+    positionOnFacade(mesh, opening.facade, horizontal, y, width, depth, offset);
+    mesh.userData.buildingId = building.id;
+    mesh.userData.facadeOpeningKind = opening.kind;
+    group.add(mesh);
+  };
+  addPart(frameWidth, opening.height + frameWidth * 2, opening.center - opening.width / 2, centerY, frameMaterial);
+  addPart(frameWidth, opening.height + frameWidth * 2, opening.center + opening.width / 2, centerY, frameMaterial);
+  addPart(opening.width, frameWidth, opening.center, opening.bottom + opening.height, frameMaterial);
+  if (opening.kind === "WINDOW") addPart(opening.width, frameWidth, opening.center, opening.bottom, frameMaterial);
+  addPart(Math.max(0.05, opening.width - frameWidth * 1.4), Math.max(0.05, opening.height - frameWidth * 1.4), opening.center, centerY, fillMaterial, 0.022);
+}
+
+function addFacadeShell(group, building, width, depth, totalHeight, floorHeight, openings, material, edgeColor) {
+  Object.values(BUILDING_FACADES).forEach((facade) => {
+    const length = [BUILDING_FACADES.FRONT, BUILDING_FACADES.BACK].includes(facade) ? width : depth;
+    const facadeOpenings = openings.filter((opening) => opening.facade === facade);
+    const floorCount = Math.max(1, Math.round(totalHeight / floorHeight));
+    for (let floor = 1; floor <= floorCount; floor += 1) {
+      const floorBottom = (floor - 1) * floorHeight;
+      const floorTop = Math.min(totalHeight, floor * floorHeight);
+      const floorOpenings = facadeOpenings.filter((opening) => opening.floor === floor);
+      const yCuts = [...new Set([floorBottom, floorTop, ...floorOpenings.flatMap((opening) => [opening.bottom, opening.bottom + opening.height])])].sort((left, right) => left - right);
+      for (let index = 0; index < yCuts.length - 1; index += 1) {
+        const yRange = [yCuts[index], yCuts[index + 1]];
+        const middleY = (yRange[0] + yRange[1]) / 2;
+        const blocked = floorOpenings
+          .filter((opening) => middleY > opening.bottom + 0.001 && middleY < opening.bottom + opening.height - 0.001)
+          .map((opening) => [opening.center - opening.width / 2, opening.center + opening.width / 2]);
+        wallSpans(length, blocked).forEach((span) => addWallPanel(group, facade, span, yRange, width, depth, material, building.id, edgeColor));
+      }
+    }
+  });
+  const slabThickness = 0.16;
+  addMass(group, { x: width, y: slabThickness, z: depth }, { x: 0, y: slabThickness / 2, z: 0 }, material, building.id, edgeColor);
+  openings.forEach((opening) => addOpeningAppearance(group, building, opening, width, depth));
 }
 
 function applyViewerTransparency(group, enabled) {
@@ -210,6 +301,7 @@ export function createBuildingObject(building, floors, visualState) {
   const depth = building.parameters.depth;
   const floorHeight = building.parameters.floorHeight;
   const totalHeight = floorCount * floorHeight;
+  const { openings } = getBuildingFacadeOpenings(building, floorCount);
   const customAsset = building.customAssetId
     ? building.customAssetAutoUpdate === false
       ? building.customAssetSnapshot
@@ -251,37 +343,10 @@ export function createBuildingObject(building, floors, visualState) {
     emissiveIntensity: visualState.selected ? 0.035 : 0,
     opacity: visualState.expanded ? 0.14 : 1,
   });
-  addBuildingMasses(group, building, width, depth, totalHeight, bodyMaterial, visualState.edgeColor);
-  if (!visualState.expanded) addFacadeWindows(group, building, width, depth, floorCount, floorHeight);
+  if (!visualState.expanded && building.facadeOpenings && openings.length) addFacadeShell(group, building, width, depth, totalHeight, floorHeight, openings, bodyMaterial, visualState.edgeColor);
+  else addBuildingMasses(group, building, width, depth, totalHeight, bodyMaterial, visualState.edgeColor);
+  if (!visualState.expanded && !building.facadeOpenings) addFacadeWindows(group, building, width, depth, floorCount, floorHeight);
   addIndustrialDetails(group, building, width, depth, totalHeight, bodyMaterial, visualState.edgeColor);
-
-  const entranceStyle = building.variants?.entranceStyle ?? "STANDARD";
-  const entranceCount = Math.min(12, Math.max(1, Math.round(building.parameters.entranceCount ?? 2)));
-  const isIndustrialEntrance = ["SHUTTER", "LOADING_DOCK", "VEHICLE_GATE"].includes(entranceStyle);
-  const entranceWidth = isIndustrialEntrance
-    ? Math.min(7, Math.max(3.4, width / (entranceCount * 2.4)))
-    : Math.min(2.4, Math.max(1.2, width / (entranceCount * 3.2)));
-  const entranceHeight = isIndustrialEntrance ? Math.min(5, floorHeight * 0.86) : Math.min(3.2, floorHeight * 0.72);
-  const entranceMaterial = new THREE.MeshStandardMaterial({ color: 0x374957, roughness: 0.42, metalness: 0.28 });
-  for (let index = 0; index < entranceCount; index += 1) {
-    const entrance = new THREE.Mesh(new THREE.BoxGeometry(entranceWidth, entranceHeight, 0.12), entranceMaterial);
-    entrance.position.set(
-      -width / 2 + width * (index + 1) / (entranceCount + 1),
-      entranceHeight / 2,
-      depth / 2 + 0.065,
-    );
-    entrance.userData.buildingId = building.id;
-    group.add(entrance);
-    if (entranceStyle === "LOADING_DOCK") {
-      const dock = new THREE.Mesh(
-        new THREE.BoxGeometry(entranceWidth * 1.18, 0.75, 2.2),
-        new THREE.MeshStandardMaterial({ color: 0x69757b, roughness: 0.88 }),
-      );
-      dock.position.set(entrance.position.x, 0.38, depth / 2 + 1.1);
-      dock.userData.buildingId = building.id;
-      group.add(dock);
-    }
-  }
 
   const stairCount = Math.min(8, Math.max(0, Math.round(building.parameters.stairCount ?? 1)));
   const stairMaterial = new THREE.MeshStandardMaterial({

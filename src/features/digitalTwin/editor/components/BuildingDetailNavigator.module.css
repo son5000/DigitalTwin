@@ -38,7 +38,7 @@
 
 .sequenceActions {
   display: grid;
-  grid-template-columns: 30px auto 30px;
+  grid-template-columns: repeat(2, 30px);
   gap: 4px;
 }
 
@@ -61,19 +61,7 @@
   background: var(--state-disabled-bg);
 }
 
-.sequenceActions .completeButton {
-  color: var(--color-primary-contrast);
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-}
-
-.sequenceActions .completedButton {
-  color: var(--color-positive);
-  border-color: rgb(var(--color-positive-rgb) / 40%);
-  background: rgb(var(--color-positive-rgb) / 9%);
-}
-
 @media (max-width: 480px) {
   .navigator { grid-template-columns: minmax(0, 1fr); }
-  .sequenceActions { grid-template-columns: 30px minmax(0, 1fr) 30px; }
+  .sequenceActions { justify-content: end; }
 }

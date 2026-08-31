@@ -5,6 +5,7 @@ import ObjectPreview from "./ObjectPreview";
 import styles from "./ObjectLibrary.module.css";
 
 export default function ObjectItem({ definition, active, onSelect }) {
+  const displayName = definition.nameKo ?? definition.name;
   function handleDragStart(event) {
     if (definition.type === "CUSTOM_ACTION") {
       event.preventDefault();
@@ -22,13 +23,13 @@ export default function ObjectItem({ definition, active, onSelect }) {
       className={`${styles.item} ${active ? styles.itemActive : ""}`}
       aria-pressed={active}
       draggable={definition.type !== "CUSTOM_ACTION"}
-      title={definition.type === "CUSTOM_ACTION" ? definition.name : `${definition.name} 배치 · 드래그 또는 클릭`}
+      title={definition.type === "CUSTOM_ACTION" ? displayName : `${displayName} 배치 · 드래그 또는 클릭`}
       onClick={() => onSelect(definition.id)}
       onDragStart={handleDragStart}
     >
       <ObjectPreview definition={definition} />
       <span className={styles.itemText}>
-        <strong>{definition.name}</strong>
+        <strong>{displayName}</strong>
       </span>
       <span className={styles.itemAction} aria-hidden="true">
         {active ? <CheckIcon size={15} /> : <AddIcon size={15} />}

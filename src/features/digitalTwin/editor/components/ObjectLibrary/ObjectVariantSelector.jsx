@@ -3,8 +3,8 @@ import styles from "./ObjectLibrary.module.css";
 export default function ObjectVariantSelector({ definition, value, onChange }) {
   if (!definition?.variantGroups?.length) return null;
   return (
-    <section className={styles.variants} aria-label={`${definition.name} Variant`}>
-      <header><span>Object Variant</span><strong>{definition.name}</strong></header>
+    <section className={styles.variants} aria-label={`${definition.nameKo ?? definition.name} 형태 세부 옵션`}>
+      <header><span>형태 세부 옵션</span><strong>{definition.nameKo ?? definition.name}</strong></header>
       <div className={styles.variantGrid}>
         {definition.variantGroups.map((group) => (
           <label key={group.id}>

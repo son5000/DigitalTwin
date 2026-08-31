@@ -10,6 +10,11 @@ import {
   VIEW_MODES,
 } from "@/features/digitalTwin/editor/constants/equipmentShapeTemplates";
 import {
+  cycleTransformMoveAxisMode,
+  DEFAULT_TRANSFORM_TOOLS,
+  normalizeTransformTools,
+} from "@/features/digitalTwin/editor/constants/transformTools";
+import {
   getDefaultObjectVariants,
   OBJECT_LIBRARY_DEFINITION_MAP,
 } from "@/features/digitalTwin/editor/constants/objectLibraryCatalog";
@@ -222,7 +227,6 @@ function mergeBuildingDefinition(building, changes) {
     rotation: changes.rotation ? { ...building.rotation, ...changes.rotation } : building.rotation,
     appearance: changes.appearance ? { ...building.appearance, ...changes.appearance } : building.appearance,
     variants: changes.variants ? { ...building.variants, ...changes.variants } : building.variants,
-    settingStatus: changes.settingStatus ?? building.settingStatus,
   };
 }
 
@@ -353,7 +357,7 @@ export default function useDigitalTwinEditorState() {
   const [activeTemplateId, setActiveTemplateId] = useState(null);
   const [viewMode, setViewMode] = useState(VIEW_MODES.VIEW_3D);
   const [transformMode, setTransformMode] = useState(TRANSFORM_MODES.TRANSLATE);
-  const [transformTools, setTransformTools] = useState({ translate: true, rotate: false });
+  const [transformTools, setTransformTools] = useState(DEFAULT_TRANSFORM_TOOLS);
   const [gridSettings, setGridSettings] = useState(createDefaultGridSettings);
   const [navigationContext, setNavigationContext] = useState(createInitialNavigationContext);
   const [historyAvailability, setHistoryAvailability] = useState({ canUndo: false, canRedo: false });
@@ -953,7 +957,7 @@ export default function useDigitalTwinEditorState() {
     setActiveTemplateId(null);
     setViewMode(VIEW_MODES.VIEW_3D);
     setTransformMode(TRANSFORM_MODES.TRANSLATE);
-    setTransformTools({ translate: true, rotate: false });
+    setTransformTools(DEFAULT_TRANSFORM_TOOLS);
     setGridSettings(createDefaultGridSettings());
     setNavigationContext(createInitialNavigationContext());
     resetWorldStructures();
@@ -1532,8 +1536,6 @@ export default function useDigitalTwinEditorState() {
         clone.parentId = idMap.get(node.parentId) ?? node.parentId;
         if (node.id === selectedBuilding.id) {
           clone.name = `${node.name} 복사본`;
-          clone.detailSettingStatus = "UNSET";
-          clone.settingStatus = "UNSET";
           const duplicatedPosition = {
             ...node.position,
             x: node.position.x + Math.max(2, gridSettings.baseSize * 2),
@@ -1998,7 +2000,11 @@ export default function useDigitalTwinEditorState() {
       clearSelection,
       setViewMode,
       setTransformMode,
-      toggleTransformTool: (tool) => setTransformTools((current) => ({ ...current, [tool]: !current[tool] })),
+      toggleTransformTool: (tool) => setTransformTools((current) => {
+        if (tool === "translate") return cycleTransformMoveAxisMode(current);
+        const normalized = normalizeTransformTools(current);
+        return { ...normalized, [tool]: !normalized[tool] };
+      }),
       setSnapSize,
       setGridSnapEnabled,
       addGridRegion,

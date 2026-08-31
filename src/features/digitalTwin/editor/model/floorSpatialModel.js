@@ -260,6 +260,21 @@ export function addFootprintHole(footprint, regionId, holePoints) {
   return next;
 }
 
+export function removeFootprintHole(footprint, regionId, holeIndex) {
+  const next = editableFootprint(footprint);
+  next.regions = next.regions.map((region) => region.id === regionId
+    ? { ...region, holes: region.holes.filter((_, index) => index !== holeIndex) }
+    : region);
+  return next;
+}
+
+export function replaceFootprintWithPolygon(footprint, outer) {
+  if (!Array.isArray(outer) || outer.length < 3) return footprint;
+  const next = editableFootprint(footprint);
+  next.regions = [normalizeRegion({ outer })];
+  return next;
+}
+
 function cross(origin, a, b) {
   return (a.x - origin.x) * (b.z - origin.z) - (a.z - origin.z) * (b.x - origin.x);
 }

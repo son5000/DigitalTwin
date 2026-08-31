@@ -22,6 +22,39 @@ const STATUS_LABELS = {
   MISSING_LOCAL_FILE: "로컬 파일 재등록 필요",
 };
 
+const EQUIPMENT_CATEGORY_LABELS = {
+  BASIC: "기본 도형",
+  CABINET: "전기·캐비닛",
+  MECHANICAL: "기계 설비",
+  PIPE: "배관·피팅",
+  DUCT: "덕트·공조",
+  TANK: "탱크·용기",
+  SAFETY: "안전 설비",
+  SENSOR: "센서",
+  UTILITY: "유틸리티",
+  CUSTOM: "사용자 정의",
+};
+
+const PARAMETER_LABELS = {
+  width: "너비",
+  depth: "깊이",
+  height: "높이",
+  length: "길이",
+  diameter: "지름",
+  bendRadius: "굽힘 반지름",
+  branchLength: "분기 길이",
+  endDiameter: "끝 지름",
+};
+
+const OPERATION_STATUS_LABELS = {
+  UNCOMMISSIONED: "미연결",
+  OFFLINE: "오프라인",
+  IDLE: "대기",
+  RUNNING: "운전 중",
+  FAULT: "고장",
+  MAINTENANCE: "점검 중",
+};
+
 function formatFileSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -97,12 +130,12 @@ export default function EquipmentProperties({
             onChange({ shapeTemplateId: model.id, sourceTemplateId: model.id, category: model.category });
           }}>
             {(compatibleModels.length ? compatibleModels : [template]).map((item) => (
-              <option key={item.id} value={item.id}>{item.nameKo} · {item.name}</option>
+              <option key={item.id} value={item.id}>{item.nameKo}</option>
             ))}
           </select>
         </label>
         <dl className={styles.metadata}>
-          <div><dt>카테고리</dt><dd>{template.category}</dd></div>
+          <div><dt>카테고리</dt><dd>{EQUIPMENT_CATEGORY_LABELS[template.category] ?? template.category}</dd></div>
         </dl>
       </PropertySection>
 
@@ -164,7 +197,7 @@ export default function EquipmentProperties({
         </PropertySection>
       ) : null}
 
-      {!placementOnly ? <PropertySection title="Sensor Data" summary={primaryBinding.endpoint || "연결 안 됨"} defaultOpen>
+      {!placementOnly ? <PropertySection title="센서 데이터" summary={primaryBinding.endpoint || "연결 안 됨"} defaultOpen>
         <label className={styles.textField}>
           <span>프로토콜</span>
           <select value={primaryBinding.protocol} onChange={(event) => updatePrimaryBinding({ protocol: event.target.value })}>
@@ -180,7 +213,7 @@ export default function EquipmentProperties({
         <label className={styles.textField}><span>단위</span><input type="text" value={primaryBinding.unit} placeholder="예: °C" onChange={(event) => updatePrimaryBinding({ unit: event.target.value })} /></label>
       </PropertySection> : null}
 
-      {!placementOnly ? <PropertySection title="Operation Status" summary={equipment.operationalState?.status ?? "UNCOMMISSIONED"} defaultOpen>
+      {!placementOnly ? <PropertySection title="운전 상태" summary={OPERATION_STATUS_LABELS[equipment.operationalState?.status ?? "UNCOMMISSIONED"]} defaultOpen>
         <label className={styles.textField}>
           <span>운전 상태</span>
           <select value={equipment.operationalState?.status ?? "UNCOMMISSIONED"} onChange={(event) => onChange({ operationalState: { status: event.target.value, lastUpdatedAt: new Date().toISOString() } })}>
@@ -203,7 +236,7 @@ export default function EquipmentProperties({
         </label>
       </PropertySection> : null}
 
-      {!placementOnly ? <PropertySection title="Control" summary={equipment.control?.enabled ? "제어 가능" : "모니터링 전용"} defaultOpen>
+      {!placementOnly ? <PropertySection title="제어" summary={equipment.control?.enabled ? "제어 가능" : "모니터링 전용"} defaultOpen>
         <label className={styles.checkField}><input type="checkbox" checked={equipment.control?.enabled ?? false} onChange={(event) => onChange({ control: { enabled: event.target.checked } })} /><span>원격 제어 허용</span></label>
         <label className={styles.textField}>
           <span>제어 모드</span>
@@ -220,7 +253,7 @@ export default function EquipmentProperties({
         {snapCandidate && (
           <div className={styles.snapNotice}>
             <span>연결점 후보 · {(snapCandidate.distance * 1000).toFixed(0)} mm</span>
-            <button type="button" onClick={onSnap}><SnapIcon size={15} /> Snap 연결</button>
+            <button type="button" onClick={onSnap}><SnapIcon size={15} /> 스냅 연결</button>
           </div>
         )}
         {template.parameterDefinitions.length > 0 ? (
@@ -231,7 +264,7 @@ export default function EquipmentProperties({
               return (
                 <NumericField
                   key={definition.key}
-                  label={definition.label}
+                  label={PARAMETER_LABELS[definition.key] ?? definition.label}
                   value={(equipment.parameters[definition.key] ?? 0) * scale}
                   min={definition.min}
                   step={definition.step}
@@ -247,7 +280,7 @@ export default function EquipmentProperties({
             {Object.entries(equipment.dimensions).map(([axis, value]) => (
               <NumericField
                 key={axis}
-                label={axis[0].toUpperCase() + axis.slice(1)}
+                label={PARAMETER_LABELS[axis] ?? axis.toUpperCase()}
                 value={value}
                 min={0.1}
                 step={0.01}
@@ -265,7 +298,7 @@ export default function EquipmentProperties({
         </div>
         <div className={styles.fieldGroup}>
           <h3>회전</h3>
-          <NumericField label="Y" value={radiansToDegrees(equipment.rotation.y)} step={1} unit="deg" onChange={(rotationY) => onChange({ rotation: { y: degreesToRadians(rotationY) } })} />
+          <NumericField label="Y축" value={radiansToDegrees(equipment.rotation.y)} step={1} unit="도" onChange={(rotationY) => onChange({ rotation: { y: degreesToRadians(rotationY) } })} />
         </div>
       </PropertySection>
 
@@ -289,7 +322,7 @@ export default function EquipmentProperties({
         </PropertySection>
       ) : null}
 
-      {!placementOnly ? <PropertySection title="Parts" summary={`${equipment.parts?.length ?? 0} Parts`} defaultOpen>
+      {!placementOnly ? <PropertySection title="부품" summary={`${equipment.parts?.length ?? 0}개 부품`} defaultOpen>
         <div className={styles.partSummary}>
           <div><span>설비</span><strong>{equipment.name}</strong></div>
           <div><span>파트 노드</span><strong>{equipment.parts?.length ?? 0}</strong></div>
@@ -297,7 +330,7 @@ export default function EquipmentProperties({
         <button type="button" className={styles.partEditorButton} onClick={onOpenPartEditor}><ComponentIcon size={16} /> 파트 편집기 열기</button>
       </PropertySection> : null}
 
-      {!placementOnly ? <PropertySection title="3D Scan" summary={detailAsset ? STATUS_LABELS[detailAsset.status] : "미등록"}>
+      {!placementOnly ? <PropertySection title="3D 스캔" summary={detailAsset ? STATUS_LABELS[detailAsset.status] : "미등록"}>
         {detailAsset ? (
           <div className={styles.assetCard}>
             <div><strong>{detailAsset.originalFileName}</strong><span>{detailAsset.originalFormat} · {formatFileSize(detailAsset.fileSize)}</span></div>
@@ -335,12 +368,12 @@ export default function EquipmentProperties({
         {calibration ? (
           <div className={styles.fieldGroup}>
             <h3>상세 모델 보정</h3>
-            <NumericField label="Scale" value={calibration.scale} min={0.001} step={0.01} unit="×" onChange={(scale) => onUpdateAsset({ calibration: { scale } })} />
+            <NumericField label="크기 비율" value={calibration.scale} min={0.001} step={0.01} unit="×" onChange={(scale) => onUpdateAsset({ calibration: { scale } })} />
             {["X", "Y", "Z"].map((axis) => (
-              <NumericField key={`position${axis}`} label={`Position ${axis}`} value={calibration[`position${axis}`]} step={0.01} unit="m" onChange={(value) => onUpdateAsset({ calibration: { [`position${axis}`]: value } })} />
+              <NumericField key={`position${axis}`} label={`위치 ${axis}`} value={calibration[`position${axis}`]} step={0.01} unit="m" onChange={(value) => onUpdateAsset({ calibration: { [`position${axis}`]: value } })} />
             ))}
             {["X", "Y", "Z"].map((axis) => (
-              <NumericField key={`rotation${axis}`} label={`Rotation ${axis}`} value={calibration[`rotation${axis}`]} step={1} unit="deg" onChange={(value) => onUpdateAsset({ calibration: { [`rotation${axis}`]: value } })} />
+              <NumericField key={`rotation${axis}`} label={`회전 ${axis}`} value={calibration[`rotation${axis}`]} step={1} unit="도" onChange={(value) => onUpdateAsset({ calibration: { [`rotation${axis}`]: value } })} />
             ))}
           </div>
         ) : null}

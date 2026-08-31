@@ -8,6 +8,7 @@
 .section { display: grid; gap: 9px; }
 .canvas { width: 100%; aspect-ratio: 1.35; min-height: 190px; border: 1px solid var(--color-border); border-radius: 8px; touch-action: none; }
 .canvasBackground { fill: var(--color-canvas-base); }
+.drawingLine { fill: none; stroke: var(--color-accent); stroke-width: 2; stroke-dasharray: 6 4; pointer-events: none; }
 .region, .regionSelected { fill: rgb(var(--color-primary-rgb) / 15%); stroke: var(--color-border-strong); stroke-width: 2; vector-effect: non-scaling-stroke; cursor: pointer; }
 .regionSelected { fill: rgb(var(--color-primary-rgb) / 25%); stroke: var(--color-accent); }
 .hole { fill: var(--color-canvas-base); stroke: var(--color-warning); stroke-width: 1.5; stroke-dasharray: 5 3; vector-effect: non-scaling-stroke; }

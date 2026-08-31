@@ -31,7 +31,7 @@ function pathData(points, transform) {
   return `${commands.join(" ")} Z`;
 }
 
-function FootprintCanvas({ footprint, selectedRegionId, selectedVertexIndex, onSelectRegion, onSelectVertex, onVertexChange }) {
+function FootprintCanvas({ footprint, selectedRegionId, selectedVertexIndex, drawPoints = null, onDrawPoint, onSelectRegion, onSelectVertex, onVertexChange }) {
   const svgRef = useRef(null);
   const dragRef = useRef(null);
   const transform = useMemo(() => {
@@ -57,7 +57,15 @@ function FootprintCanvas({ footprint, selectedRegionId, selectedVertexIndex, onS
     onVertexChange(dragRef.current.regionId, dragRef.current.index, { x, z });
   }
 
-  return <svg ref={svgRef} className={styles.canvas} viewBox={`0 0 ${VIEW_SIZE} ${VIEW_SIZE}`} role="application" aria-label="자유형 층 바닥 꼭짓점 편집기" onPointerMove={move} onPointerUp={() => { dragRef.current = null; }} onPointerLeave={() => { dragRef.current = null; }}>
+  function draw(event) {
+    if (!drawPoints || !svgRef.current) return;
+    const bounds = svgRef.current.getBoundingClientRect();
+    const x = Math.round(transform.inverseX((event.clientX - bounds.left) * VIEW_SIZE / bounds.width) * 10) / 10;
+    const z = Math.round(transform.inverseZ((event.clientY - bounds.top) * VIEW_SIZE / bounds.height) * 10) / 10;
+    onDrawPoint({ x, z });
+  }
+
+  return <svg ref={svgRef} className={styles.canvas} viewBox={`0 0 ${VIEW_SIZE} ${VIEW_SIZE}`} role="application" aria-label="자유형 층 바닥 꼭짓점 편집기" onPointerDown={draw} onPointerMove={move} onPointerUp={() => { dragRef.current = null; }} onPointerLeave={() => { dragRef.current = null; }}>
     <rect width={VIEW_SIZE} height={VIEW_SIZE} className={styles.canvasBackground} />
     {footprint.regions.map((region) => <g key={region.id} onPointerDown={() => onSelectRegion(region.id)}>
       <path d={pathData(region.outer, transform)} className={region.id === selectedRegionId ? styles.regionSelected : styles.region} />
@@ -67,28 +75,44 @@ function FootprintCanvas({ footprint, selectedRegionId, selectedVertexIndex, onS
         cx={transform.x(item.x)} cy={transform.z(item.z)} r={index === selectedVertexIndex ? 7 : 5}
         className={index === selectedVertexIndex ? styles.vertexSelected : styles.vertex}
         role="button" tabIndex="0" aria-label={`바닥 꼭짓점 ${index + 1}`}
-        onPointerDown={(event) => { event.stopPropagation(); event.currentTarget.setPointerCapture(event.pointerId); dragRef.current = { regionId: region.id, index }; onSelectVertex(index); }}
+        onPointerDown={(event) => { event.stopPropagation(); if (drawPoints) { onDrawPoint({ x: item.x, z: item.z }); return; } event.currentTarget.setPointerCapture(event.pointerId); dragRef.current = { regionId: region.id, index }; onSelectVertex(index); }}
         onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") onSelectVertex(index); }}
       />) : null}
     </g>)}
+    {drawPoints?.length ? <><polyline points={drawPoints.map((item) => `${transform.x(item.x)},${transform.z(item.z)}`).join(" ")} className={styles.drawingLine} />{drawPoints.map((item, index) => <circle key={`${item.x}-${item.z}-${index}`} cx={transform.x(item.x)} cy={transform.z(item.z)} r="5" className={styles.vertexSelected} />)}</> : null}
   </svg>;
 }
 
 function FootprintSection({ plan, building, actions }) {
   const [selectedRegionId, setSelectedRegionId] = useState(plan.floorFootprint.regions[0]?.id ?? null);
   const [selectedVertexIndex, setSelectedVertexIndex] = useState(0);
+  const [drawMode, setDrawMode] = useState(null);
+  const [drawPoints, setDrawPoints] = useState([]);
+  const [exclusion, setExclusion] = useState({ x: 0, z: 0, width: 2, depth: 2 });
   const selectedRegion = plan.floorFootprint.regions.find((region) => region.id === selectedRegionId) ?? plan.floorFootprint.regions[0];
   const selectedVertex = selectedRegion?.outer[selectedVertexIndex] ?? selectedRegion?.outer[0];
   const nextVertex = selectedRegion?.outer[(selectedVertexIndex + 1) % (selectedRegion?.outer.length || 1)];
   const regionIds = plan.floorFootprint.regions.map((region) => region.id);
+  const beginDrawing = (mode) => { setDrawMode(mode); setDrawPoints([]); };
+  const finishDrawing = () => {
+    if (drawPoints.length < 3) return;
+    if (drawMode === "FLOOR") actions.drawFloorFootprintPolygon(drawPoints);
+    else if (selectedRegion) actions.appendFloorFootprintHole(selectedRegion.id, [...drawPoints].reverse());
+    setDrawMode(null); setDrawPoints([]);
+  };
+  const rectanglePoints = (width = exclusion.width, depth = exclusion.depth, x = exclusion.x, z = exclusion.z) => [
+    { x: x - width / 2, z: z - depth / 2 }, { x: x + width / 2, z: z - depth / 2 },
+    { x: x + width / 2, z: z + depth / 2 }, { x: x - width / 2, z: z + depth / 2 },
+  ].reverse();
   return <section className={styles.section}>
     <div className={styles.segmented} role="group" aria-label="바닥 외형 모드">
       <button type="button" aria-pressed={plan.floorFootprint.mode === FLOOR_FOOTPRINT_MODES.INHERIT_BUILDING} onClick={() => actions.setFloorFootprintMode(FLOOR_FOOTPRINT_MODES.INHERIT_BUILDING)}>건물 외형 상속</button>
       <button type="button" aria-pressed={plan.floorFootprint.mode === FLOOR_FOOTPRINT_MODES.CUSTOM} onClick={() => actions.setFloorFootprintMode(FLOOR_FOOTPRINT_MODES.CUSTOM)}>자유형</button>
     </div>
-    <FootprintCanvas footprint={plan.floorFootprint} selectedRegionId={selectedRegion?.id} selectedVertexIndex={selectedVertexIndex} onSelectRegion={(id) => { setSelectedRegionId(id); setSelectedVertexIndex(0); }} onSelectVertex={setSelectedVertexIndex} onVertexChange={(regionId, index, next) => actions.updateFloorFootprintVertex(regionId, "OUTER", 0, index, next)} />
+    <FootprintCanvas footprint={plan.floorFootprint} selectedRegionId={selectedRegion?.id} selectedVertexIndex={selectedVertexIndex} drawPoints={drawMode ? drawPoints : null} onDrawPoint={(next) => setDrawPoints((current) => [...current, next])} onSelectRegion={(id) => { setSelectedRegionId(id); setSelectedVertexIndex(0); }} onSelectVertex={setSelectedVertexIndex} onVertexChange={(regionId, index, next) => actions.updateFloorFootprintVertex(regionId, "OUTER", 0, index, next)} />
     {selectedVertex ? <div className={styles.grid}><NumericInput label={`꼭짓점 ${selectedVertexIndex + 1} X`} value={selectedVertex.x} onChange={(x) => actions.updateFloorFootprintVertex(selectedRegion.id, "OUTER", 0, selectedVertexIndex, { ...selectedVertex, x })} /><NumericInput label="Z" value={selectedVertex.z} onChange={(z) => actions.updateFloorFootprintVertex(selectedRegion.id, "OUTER", 0, selectedVertexIndex, { ...selectedVertex, z })} /></div> : null}
     <div className={styles.actions}>
+      <button type="button" onClick={() => beginDrawing("FLOOR")}>자유형 바닥 그리기</button>
       <button type="button" onClick={() => actions.appendFloorFootprintVertex(selectedRegion?.id)}>꼭짓점 추가</button>
       <button type="button" disabled={!selectedRegion || selectedRegion.outer.length <= 3} onClick={() => actions.deleteFloorFootprintVertex(selectedRegion.id, selectedVertexIndex)}>꼭짓점 삭제</button>
       <button type="button" disabled={!selectedVertex || !nextVertex} onClick={() => actions.updateFloorFootprintVertex(selectedRegion.id, "OUTER", 0, selectedVertexIndex, {
@@ -100,6 +124,13 @@ function FootprintSection({ plan, building, actions }) {
       <button type="button" disabled={regionIds.length < 2} onClick={() => actions.combineFloorFootprintRegions(regionIds)}>전체 영역 합치기</button>
       <button type="button" disabled={regionIds.length < 2} onClick={() => actions.subtractFloorFootprintRegions(regionIds[0], regionIds[1])}>2번 영역 빼기</button>
       <button type="button" onClick={() => actions.setFloorFootprintMode(FLOOR_FOOTPRINT_MODES.INHERIT_BUILDING)}>{building?.name ?? "건축물"} 외형 복원</button>
+    </div>
+    {drawMode ? <div className={styles.detailBox}><p>{drawMode === "FLOOR" ? "바닥 외곽" : "비사용 영역"} 꼭짓점을 순서대로 찍으세요.</p><div className={styles.actions}><button type="button" disabled={drawPoints.length < 3} onClick={finishDrawing}>외곽선 닫기</button><button type="button" disabled={!drawPoints.length} onClick={() => setDrawPoints((current) => current.slice(0, -1))}>마지막 점 취소</button><button type="button" onClick={() => { setDrawMode(null); setDrawPoints([]); }}>취소</button></div></div> : null}
+    <div className={styles.detailBox}>
+      <strong>비사용 영역</strong>
+      <div className={styles.grid}><NumericInput label="중심 X" value={exclusion.x} onChange={(x) => setExclusion((current) => ({ ...current, x }))} /><NumericInput label="중심 Z" value={exclusion.z} onChange={(z) => setExclusion((current) => ({ ...current, z }))} /><NumericInput label="너비 m" value={exclusion.width} min={0.2} onChange={(width) => setExclusion((current) => ({ ...current, width }))} /><NumericInput label="깊이 m" value={exclusion.depth} min={0.2} onChange={(depth) => setExclusion((current) => ({ ...current, depth }))} /></div>
+      <div className={styles.actions}><button type="button" disabled={!selectedRegion} onClick={() => actions.appendFloorFootprintHole(selectedRegion.id, rectanglePoints())}>사각형 제외</button><button type="button" disabled={!selectedRegion} onClick={() => actions.appendFloorFootprintHole(selectedRegion.id, rectanglePoints(1, 1, Math.round(exclusion.x), Math.round(exclusion.z)))}>1m 격자 셀 제외</button><button type="button" disabled={!selectedRegion} onClick={() => beginDrawing("EXCLUSION")}>자유형 제외</button></div>
+      {selectedRegion?.holes.length ? <div className={styles.list}>{selectedRegion.holes.map((hole, index) => <button key={index} type="button" onClick={() => actions.deleteFloorFootprintHole(selectedRegion.id, index)}><span>비사용 영역 {index + 1}</span><strong>{hole.length}점 · 재활성화</strong></button>)}</div> : <p className={styles.empty}>지정된 비사용 영역이 없습니다.</p>}
     </div>
   </section>;
 }

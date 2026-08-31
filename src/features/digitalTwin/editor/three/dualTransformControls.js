@@ -1,7 +1,14 @@
 import * as THREE from "three";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
+import {
+  DEFAULT_TRANSFORM_TOOLS,
+  getMoveAxisConfiguration,
+} from "@/features/digitalTwin/editor/constants/transformTools";
 
-export const DEFAULT_TRANSFORM_TOOLS = Object.freeze({ translate: true, rotate: false });
+export {
+  DEFAULT_TRANSFORM_TOOLS,
+  DISABLED_TRANSFORM_TOOLS,
+} from "@/features/digitalTwin/editor/constants/transformTools";
 
 export function createDualTransformControls(camera, domElement, scene, { rotationSnap = 5, translationSnap = 0.1 } = {}) {
   const translate = new TransformControls(camera, domElement);
@@ -17,23 +24,20 @@ export function createDualTransformControls(camera, domElement, scene, { rotatio
   return { translate, rotate };
 }
 
-export function configureDualTransformControls(controls, tools, {
-  camera,
-  allowVerticalTranslation = false,
-} = {}) {
-  const translateEnabled = Boolean(tools?.translate);
+export function configureDualTransformControls(controls, tools = DEFAULT_TRANSFORM_TOOLS, { camera } = {}) {
+  const moveAxes = getMoveAxisConfiguration(tools);
   const rotateEnabled = Boolean(tools?.rotate);
   if (camera) {
     controls.translate.camera = camera;
     controls.rotate.camera = camera;
   }
-  controls.translate.enabled = translateEnabled;
+  controls.translate.enabled = moveAxes.enabled;
   controls.rotate.enabled = rotateEnabled;
-  controls.translate.getHelper().visible = translateEnabled && Boolean(controls.translate.object);
+  controls.translate.getHelper().visible = moveAxes.enabled && Boolean(controls.translate.object);
   controls.rotate.getHelper().visible = rotateEnabled && Boolean(controls.rotate.object);
-  controls.translate.showX = true;
-  controls.translate.showY = allowVerticalTranslation;
-  controls.translate.showZ = true;
+  controls.translate.showX = moveAxes.showX;
+  controls.translate.showY = moveAxes.showY;
+  controls.translate.showZ = moveAxes.showZ;
   controls.rotate.showX = false;
   controls.rotate.showY = true;
   controls.rotate.showZ = false;
@@ -59,7 +63,10 @@ export function dualTransformIsActive(controls) {
 
 export function setDualTransformDragging(controls, activeControl, dragging, tools) {
   const other = activeControl === controls.translate ? controls.rotate : controls.translate;
-  other.enabled = dragging ? false : Boolean(activeControl === controls.translate ? tools?.rotate : tools?.translate);
+  const otherEnabled = activeControl === controls.translate
+    ? Boolean(tools?.rotate)
+    : getMoveAxisConfiguration(tools).enabled;
+  other.enabled = dragging ? false : otherEnabled;
 }
 
 export function disposeDualTransformControls(controls) {

@@ -10,6 +10,8 @@ import { clampDimension } from "@/features/digitalTwin/editor/utils/editorMath";
 import { getBuildingFootprint } from "@/features/digitalTwin/editor/utils/buildingFootprint";
 import {
   getOrderedBuildingFloors,
+  normalizeStairOwnership,
+  STAIR_SCOPES,
   getStairServedFloorIds,
   getStairValues,
   validateStairStructure,
@@ -26,7 +28,9 @@ import {
   mergeFootprintRegions,
   normalizeFloorSpatialPlan,
   removeDoor,
+  removeFootprintHole,
   removeFootprintVertex,
+  replaceFootprintWithPolygon,
   restoreInheritedFloorFootprint,
   splitElevationZone,
   subtractFootprintRegion,
@@ -76,6 +80,10 @@ function normalizeStructure(structure) {
   return {
     ...normalized,
     stairType: structure.stairType ?? "STRAIGHT",
+    scope: structure.scope,
+    floorId: structure.floorId ?? structure.fromFloorId ?? structure.startFloorId ?? structure.applicationScope?.startFloorId ?? null,
+    fromFloorId: structure.fromFloorId ?? structure.startFloorId ?? structure.applicationScope?.startFloorId ?? null,
+    toFloorId: structure.toFloorId ?? structure.endFloorId ?? structure.applicationScope?.endFloorId ?? null,
     startFloorId: structure.startFloorId ?? structure.applicationScope?.startFloorId ?? null,
     endFloorId: structure.endFloorId ?? structure.applicationScope?.endFloorId ?? null,
     servedFloorIds: structure.servedFloorIds ?? structure.applicationScope?.connectedFloorIds ?? [],
@@ -142,27 +150,25 @@ function mergeStructure(structure, changes) {
 }
 
 function synchronizeVerticalStructure(structure, scopedFloors, currentFloorId) {
+  if (structure.type === "STAIR") {
+    const normalized = normalizeStairOwnership(structure, scopedFloors, currentFloorId);
+    const values = getStairValues(normalized);
+    return {
+      ...normalized,
+      stairType: normalized.stairType ?? "STRAIGHT",
+      servedFloorIds: getStairServedFloorIds(normalized, scopedFloors),
+      width: values.width,
+      treadDepth: values.treadDepth,
+      riserHeight: values.riserHeight,
+      landingDepth: values.landingDepth,
+    };
+  }
   const connectedFloorIds = resolveConnectedFloorIds(structure.applicationScope, scopedFloors, currentFloorId);
   const synchronized = {
     ...structure,
     applicationScope: { ...structure.applicationScope, connectedFloorIds },
   };
-  if (structure.type !== "STAIR") return synchronized;
-  const values = getStairValues(synchronized);
-  const stairForScope = {
-    ...synchronized,
-    startFloorId: synchronized.applicationScope.startFloorId,
-    endFloorId: synchronized.applicationScope.endFloorId,
-  };
-  return {
-    ...stairForScope,
-    stairType: synchronized.stairType ?? "STRAIGHT",
-    servedFloorIds: getStairServedFloorIds(stairForScope, scopedFloors),
-    width: values.width,
-    treadDepth: values.treadDepth,
-    riserHeight: values.riserHeight,
-    landingDepth: values.landingDepth,
-  };
+  return synchronized;
 }
 
 function constrainStructure(structure, building, gridSize) {
@@ -287,8 +293,10 @@ export default function useFloorPlanState({ buildings, floors, currentBuilding, 
   ), [commitSpatialPlan]);
   const appendFloorFootprintVertex = useCallback((regionId) => commitSpatialPlan((plan) => ({ ...plan, floorFootprint: addFootprintVertex(plan.floorFootprint, regionId) })), [commitSpatialPlan]);
   const deleteFloorFootprintVertex = useCallback((regionId, vertexIndex) => commitSpatialPlan((plan) => ({ ...plan, floorFootprint: removeFootprintVertex(plan.floorFootprint, regionId, vertexIndex) })), [commitSpatialPlan]);
-  const appendFloorFootprintRegion = useCallback(() => commitSpatialPlan((plan) => ({ ...plan, floorFootprint: addFootprintRegion(plan.floorFootprint) })), [commitSpatialPlan]);
-  const appendFloorFootprintHole = useCallback((regionId) => commitSpatialPlan((plan) => ({ ...plan, floorFootprint: addFootprintHole(plan.floorFootprint, regionId) })), [commitSpatialPlan]);
+  const appendFloorFootprintRegion = useCallback((area) => commitSpatialPlan((plan) => ({ ...plan, floorFootprint: addFootprintRegion(plan.floorFootprint, area) })), [commitSpatialPlan]);
+  const appendFloorFootprintHole = useCallback((regionId, points) => commitSpatialPlan((plan) => ({ ...plan, floorFootprint: addFootprintHole(plan.floorFootprint, regionId, points) })), [commitSpatialPlan]);
+  const deleteFloorFootprintHole = useCallback((regionId, holeIndex) => commitSpatialPlan((plan) => ({ ...plan, floorFootprint: removeFootprintHole(plan.floorFootprint, regionId, holeIndex) })), [commitSpatialPlan]);
+  const drawFloorFootprintPolygon = useCallback((points) => commitSpatialPlan((plan) => ({ ...plan, floorFootprint: replaceFootprintWithPolygon(plan.floorFootprint, points) })), [commitSpatialPlan]);
   const combineFloorFootprintRegions = useCallback((regionIds) => commitSpatialPlan((plan) => ({ ...plan, floorFootprint: mergeFootprintRegions(plan.floorFootprint, regionIds) })), [commitSpatialPlan]);
   const subtractFloorFootprintRegions = useCallback((targetRegionId, subtractingRegionId) => commitSpatialPlan((plan) => ({ ...plan, floorFootprint: subtractFootprintRegion(plan.floorFootprint, targetRegionId, subtractingRegionId) })), [commitSpatialPlan]);
 
@@ -336,10 +344,12 @@ export default function useFloorPlanState({ buildings, floors, currentBuilding, 
     const sequence = activeStructures.filter((structure) => structure.type === templateId).length + 1;
     const id = createId();
     if (definition.isVertical) {
+      const nextFloor = targetBuildingFloors[targetBuildingFloors.findIndex((floor) => floor.id === targetFloor.id) + 1];
+      const stairScope = nextFloor ? STAIR_SCOPES.CONNECTING : STAIR_SCOPES.FLOOR;
       const scope = {
-        mode: "RANGE",
+        mode: templateId === "STAIR" && !nextFloor ? "CURRENT" : "RANGE",
         startFloorId: targetFloor.id,
-        endFloorId: targetBuildingFloors.at(-1)?.id ?? targetFloor.id,
+        endFloorId: templateId === "STAIR" ? nextFloor?.id ?? targetFloor.id : targetBuildingFloors.at(-1)?.id ?? targetFloor.id,
         floorIds: [],
       };
       let structure = constrainStructure(normalizeStructure({
@@ -351,6 +361,10 @@ export default function useFloorPlanState({ buildings, floors, currentBuilding, 
         structureType: templateId,
         position,
         stairType: templateId === "STAIR" ? "STRAIGHT" : undefined,
+        scope: templateId === "STAIR" ? stairScope : undefined,
+        floorId: templateId === "STAIR" ? targetFloor.id : undefined,
+        fromFloorId: templateId === "STAIR" ? targetFloor.id : undefined,
+        toFloorId: templateId === "STAIR" ? nextFloor?.id ?? targetFloor.id : undefined,
         startFloorId: templateId === "STAIR" ? scope.startFloorId : undefined,
         endFloorId: templateId === "STAIR" ? scope.endFloorId : undefined,
         applicationScope: {
@@ -624,6 +638,8 @@ export default function useFloorPlanState({ buildings, floors, currentBuilding, 
       deleteFloorFootprintVertex,
       appendFloorFootprintRegion,
       appendFloorFootprintHole,
+      deleteFloorFootprintHole,
+      drawFloorFootprintPolygon,
       combineFloorFootprintRegions,
       subtractFloorFootprintRegions,
       createElevationZone,

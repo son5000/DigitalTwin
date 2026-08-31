@@ -22,19 +22,21 @@ import ViewModeToggle from "@/features/digitalTwin/editor/components/ViewModeTog
 import WorldHierarchyPanel from "@/features/digitalTwin/editor/components/WorldHierarchyPanel";
 import WorldStructureProperties from "@/features/digitalTwin/editor/components/WorldStructureProperties";
 import WorldWorkspaceNavigation from "@/features/digitalTwin/editor/components/WorldWorkspaceNavigation";
-import {
-  BUILDING_SETTING_STATUS,
-  getOverallBuildingSettingStatus,
-} from "@/features/digitalTwin/editor/constants/buildingDetail";
 import { VIEW_MODES } from "@/features/digitalTwin/editor/constants/equipmentShapeTemplates";
 import { EDITOR_THEMES } from "@/features/digitalTwin/editor/constants/sceneThemes";
 import { getDefaultObjectVariants, OBJECT_LIBRARY_DEFINITION_MAP } from "@/features/digitalTwin/editor/constants/objectLibraryCatalog";
+import {
+  formatFloorOptionLabel,
+  normalizeFloorDisplayGap,
+  sortFloorsByLevel,
+} from "@/features/digitalTwin/editor/model/floorDisplay";
 import { SITE_INTERACTION_MODES } from "@/features/digitalTwin/editor/constants/siteEnvironmentTemplates";
 import { intersectAreaWithSite } from "@/features/digitalTwin/editor/constants/siteEnvironmentSettings";
 import { WORLD_PANEL_IDS } from "@/features/digitalTwin/editor/constants/worldPanel";
 import { ENVIRONMENT_TEMPLATE_IDS, getWizardStepIndex, WORLD_WIZARD_STEP_IDS, WORLD_WIZARD_STEPS } from "@/features/digitalTwin/editor/constants/worldWizard";
 import { EDITOR_MODES, WORLD_STRUCTURE_TEMPLATES } from "@/features/digitalTwin/editor/constants/worldStructureTemplates";
 import useDigitalTwinEditorState from "@/features/digitalTwin/editor/store/useDigitalTwinEditorState";
+import useEditorPreferences from "@/features/digitalTwin/editor/store/useEditorPreferences";
 import useEditorTheme from "@/features/digitalTwin/editor/store/useEditorTheme";
 import FloorPlan3DScene from "@/features/digitalTwin/editor/three/FloorPlan3DScene";
 import FloorPlanScene from "@/features/digitalTwin/editor/three/FloorPlanScene";
@@ -60,6 +62,7 @@ function isFormTarget(target) {
 export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
   const editor = useDigitalTwinEditorState();
   const { theme, toggleTheme } = useEditorTheme();
+  const { editorPreferences, setShadowEnabled } = useEditorPreferences();
   const [wizardStepId, setWizardStepId] = useState(WORLD_WIZARD_STEP_IDS.COMPOSITION);
   const [saveStatus, setSaveStatus] = useState("");
   const [activeFloatingPanelId, setActiveFloatingPanelId] = useState(null);
@@ -71,12 +74,13 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
   const [terrainBrush, setTerrainBrush] = useState(DEFAULT_TERRAIN_BRUSH);
   const [isSaving, setIsSaving] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [buildingFocusMode, setBuildingFocusMode] = useState(false);
+  const [showOnlySelectedBuilding, setShowOnlySelectedBuilding] = useState(false);
   const [showFloorReference, setShowFloorReference] = useState(false);
   const [referenceFloorId, setReferenceFloorId] = useState(null);
   const [workspaceView, setWorkspaceView] = useState(WORKSPACE_VIEWS.PLAN_2D);
   const [workspaceMode, setWorkspaceMode] = useState(WORKSPACE_MODES.PLAN);
   const [viewScope, setViewScope] = useState(VIEW_SCOPES.FLOOR);
+  const [floorDisplayGap, setFloorDisplayGap] = useState(0);
   const [equipmentTargetFloorIds, setEquipmentTargetFloorIds] = useState([]);
   const [buildingsTranslucent, setBuildingsTranslucent] = useState(false);
   const [equipmentTranslucent, setEquipmentTranslucent] = useState(true);
@@ -96,7 +100,8 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     copyFloorPlanFromFloor, applyFloorPlanToFloors, applyFloorStyleToFloors, toggleFloorPlanVisibilityFilter,
     selectSpatialEntity, setFloorFootprintMode, updateFloorFootprintVertex,
     appendFloorFootprintVertex, deleteFloorFootprintVertex, appendFloorFootprintRegion,
-    appendFloorFootprintHole, combineFloorFootprintRegions, subtractFloorFootprintRegions,
+    appendFloorFootprintHole, deleteFloorFootprintHole, drawFloorFootprintPolygon,
+    combineFloorFootprintRegions, subtractFloorFootprintRegions,
     createElevationZone, changeElevationZone, divideElevationZone,
     createRoom, changeRoom, changeSharedWall, createDoor, changeDoor, deleteDoor,
     selectFloorEquipmentTemplate, addFloorEquipment, updateFloorEquipment, selectFloorEquipment,
@@ -116,7 +121,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
   const focusedBuilding = editor.selectedBuilding ?? editor.currentBuilding ?? editor.buildings[0] ?? null;
   const selectedBuildingId = focusedBuilding?.id ?? null;
   const buildingFloors = useMemo(
-    () => editor.floors.filter((floor) => floor.parentId === focusedBuilding?.id).sort((a, b) => (a.level ?? 0) - (b.level ?? 0)),
+    () => sortFloorsByLevel(editor.floors.filter((floor) => floor.parentId === focusedBuilding?.id)),
     [editor.floors, focusedBuilding?.id],
   );
   const selectedFloor = editor.currentFloor?.parentId === focusedBuilding?.id ? editor.currentFloor : buildingFloors[0] ?? null;
@@ -141,14 +146,14 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     return [...floorStructures, ...verticalStructures];
   }, [buildingFloors, editor.floorPlansById, editor.verticalStructuresByBuildingId, focusedBuilding?.id]);
   const environmentSiteObjects = useMemo(() => editor.siteObjects.filter((item) => ENVIRONMENT_TEMPLATE_IDS.includes(item.type)), [editor.siteObjects]);
-  const buildingSettingStatusById = useMemo(
-    () => Object.fromEntries(editor.buildings.map((building) => [building.id, getOverallBuildingSettingStatus(building)])),
-    [editor.buildings],
-  );
-  const selectedBuildingStatus = getOverallBuildingSettingStatus(focusedBuilding);
-  const incompleteBuildingCount = editor.buildings.filter((building) => buildingSettingStatusById[building.id] !== BUILDING_SETTING_STATUS.COMPLETE).length;
   const hasSiteSelection = Boolean(editor.selectedBuilding || editor.selectedSiteObject);
   const activeWorkspaceSelection = workspaceMode === WORKSPACE_MODES.PLAN ? editor.selectedFloorPlanStructure : editor.selectedFloorEquipment;
+  const hasTransformSelection = isCompositionStep ? hasSiteSelection : Boolean(isFloorWorkspaceStep && activeWorkspaceSelection);
+  const handleFloorDisplayGapChange = useCallback((value) => {
+    const nextGap = normalizeFloorDisplayGap(value);
+    setFloorDisplayGap(nextGap);
+    if (nextGap > 0) setViewScope(VIEW_SCOPES.BUILDING);
+  }, []);
   const sitePlacementPlan = useMemo(() => {
     const definition = OBJECT_LIBRARY_DEFINITION_MAP[activeSiteTemplateId];
     if (!siteAreaSelection || !definition) return null;
@@ -249,7 +254,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     resetSiteInteraction();
     selectBuilding(null);
     selectSiteObject(null);
-    setBuildingFocusMode(false);
+    setShowOnlySelectedBuilding(false);
   }, [resetSiteInteraction, selectBuilding, selectSiteObject]);
   const clearFloorPlacement = useCallback(() => {
     selectFloorPlanTemplate(null);
@@ -264,7 +269,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     resetSiteInteraction(mode);
     selectBuilding(null);
     selectSiteObject(null);
-    setBuildingFocusMode(false);
+    setShowOnlySelectedBuilding(false);
     setActiveFloatingPanelId(null);
   }, [resetSiteInteraction, selectBuilding, selectSiteObject]);
   const handleFloatingPanelChange = useCallback((panelId) => {
@@ -273,7 +278,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
       resetSiteInteraction(SITE_INTERACTION_MODES.EDIT_TERRAIN);
       selectBuilding(null);
       selectSiteObject(null);
-      setBuildingFocusMode(false);
+      setShowOnlySelectedBuilding(false);
     } else if (isCompositionStep && siteInteractionMode === SITE_INTERACTION_MODES.EDIT_TERRAIN) {
       resetSiteInteraction();
     }
@@ -310,14 +315,14 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     setSitePlacementNotice("");
     selectBuilding(null);
     selectSiteObject(null);
-    setBuildingFocusMode(false);
+    setShowOnlySelectedBuilding(false);
   }, [activeSiteTemplateId, selectBuilding, selectSiteObject, siteInteractionMode]);
   const handleSiteTemplatePlace = useCallback((templateId, area, variants = activeSiteVariants) => {
     const id = templateId && area ? addSiteObjectFromArea(templateId, area, variants) : null;
     if (!id) return;
     selectBuilding(null);
     selectSiteObject(null);
-    setBuildingFocusMode(false);
+    setShowOnlySelectedBuilding(false);
     setSitePlacementNotice("오브젝트 1개를 배치했습니다.");
   }, [activeSiteVariants, addSiteObjectFromArea, selectBuilding, selectSiteObject]);
   const completeAreaPlacement = useCallback((templateId, area, variants = activeSiteVariants) => {
@@ -327,7 +332,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     if (result.canPlace) {
       selectBuilding(null);
       selectSiteObject(null);
-      setBuildingFocusMode(false);
+      setShowOnlySelectedBuilding(false);
       setSiteAreaSelection(null);
     }
     return result;
@@ -335,23 +340,18 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
   const handleSiteBuildingSelect = useCallback((buildingId) => {
     resetSiteInteraction();
     selectBuilding(buildingId);
-    setBuildingFocusMode(Boolean(buildingId));
+    if (!buildingId) setShowOnlySelectedBuilding(false);
     setActiveFloatingPanelId(buildingId ? WORLD_PANEL_IDS.DETAILS : null);
   }, [resetSiteInteraction, selectBuilding]);
   const handleSiteObjectSelect = useCallback((objectId) => {
     resetSiteInteraction();
     selectSiteObject(objectId);
-    setBuildingFocusMode(false);
+    setShowOnlySelectedBuilding(false);
     setActiveFloatingPanelId(objectId ? WORLD_PANEL_IDS.DETAILS : null);
   }, [resetSiteInteraction, selectSiteObject]);
   const handleBuildingChange = useCallback((changes) => {
     if (!selectedBuildingId) return;
-    updateBuilding(selectedBuildingId, { ...changes, settingStatus: BUILDING_SETTING_STATUS.IN_PROGRESS });
-    setHasUnsavedChanges(true);
-  }, [selectedBuildingId, updateBuilding]);
-  const handleBuildingComplete = useCallback(() => {
-    if (!selectedBuildingId) return;
-    updateBuilding(selectedBuildingId, { settingStatus: BUILDING_SETTING_STATUS.COMPLETE });
+    updateBuilding(selectedBuildingId, changes);
     setHasUnsavedChanges(true);
   }, [selectedBuildingId, updateBuilding]);
   const handleAdjacentBuilding = useCallback((offset) => {
@@ -362,7 +362,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
   const handleDeleteSiteSelection = useCallback(() => {
     if (editor.selectedSiteObject) removeSelectedSiteObject();
     else if (editor.selectedBuilding) deleteHierarchyNode(editor.selectedBuilding.id);
-    setBuildingFocusMode(false);
+    setShowOnlySelectedBuilding(false);
     setActiveFloatingPanelId(null);
   }, [deleteHierarchyNode, editor.selectedBuilding, editor.selectedSiteObject, removeSelectedSiteObject]);
 
@@ -419,7 +419,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     if (stepId === WORLD_WIZARD_STEP_IDS.MONITORING && editor.selectedFloorEquipment) ensureEquipmentDetail(editor.selectedFloorEquipment);
     setWizardStepId(stepId);
     resetSiteInteraction();
-    setBuildingFocusMode(false);
+    setShowOnlySelectedBuilding(false);
     if (stepId === WORLD_WIZARD_STEP_IDS.COMPOSITION) {
       navigateToSite();
       setActiveFloatingPanelId(null);
@@ -431,7 +431,6 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
   }, [editor.floors, editor.selectedFloorEquipment, ensureEquipmentDetail, focusedBuilding?.id, navigateToFloor, navigateToSite, resetSiteInteraction, selectedFloor]);
   const handlePrimaryAction = useCallback(() => {
     if (isCompositionStep) {
-      if (incompleteBuildingCount > 0 && !window.confirm(`설정이 완료되지 않은 건축물이 ${incompleteBuildingCount}개 있습니다. 그래도 이동하시겠습니까?`)) return;
       enterStep(WORLD_WIZARD_STEP_IDS.FLOOR_AND_EQUIPMENT);
     } else if (isFloorWorkspaceStep) {
       enterStep(WORLD_WIZARD_STEP_IDS.MONITORING);
@@ -443,7 +442,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
         setSaveStatus("저장하지 못했습니다");
       }
     }
-  }, [editor.layoutDocument, enterStep, incompleteBuildingCount, isCompositionStep, isFloorWorkspaceStep]);
+  }, [editor.layoutDocument, enterStep, isCompositionStep, isFloorWorkspaceStep]);
   const handleLoad = useCallback(() => {
     const saved = loadLayout();
     setSaveStatus(saved && hydrateLayout(saved) ? "저장된 월드를 불러왔습니다" : "저장된 배치가 없습니다");
@@ -484,12 +483,12 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
         else if (workspaceMode === WORKSPACE_MODES.PLAN) duplicateSelectedFloorPlanStructure();
         else duplicateSelectedFloorEquipment();
       }
-      if (event.key.toLowerCase() === "w") toggleTransformTool("translate");
-      if (event.key.toLowerCase() === "e") toggleTransformTool("rotate");
+      if (hasTransformSelection && event.key.toLowerCase() === "w") toggleTransformTool("translate");
+      if (hasTransformSelection && event.key.toLowerCase() === "e") toggleTransformTool("rotate");
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [clearFloorPlacement, clearSelection, clearSitePlacement, duplicateSelectedFloorEquipment, duplicateSelectedFloorPlanStructure, duplicateSelectedSiteEntity, handleDeleteSiteSelection, handleRedo, handleUndo, isCompositionStep, isFloorWorkspaceStep, removeSelectedFloorEquipment, removeSelectedFloorPlanStructure, selectFloorEquipment, selectFloorPlanStructure, toggleTransformTool, workspaceMode]);
+  }, [clearFloorPlacement, clearSelection, clearSitePlacement, duplicateSelectedFloorEquipment, duplicateSelectedFloorPlanStructure, duplicateSelectedSiteEntity, handleDeleteSiteSelection, handleRedo, handleUndo, hasTransformSelection, isCompositionStep, isFloorWorkspaceStep, removeSelectedFloorEquipment, removeSelectedFloorPlanStructure, selectFloorEquipment, selectFloorPlanStructure, toggleTransformTool, workspaceMode]);
 
   const primaryDisabled = (isCompositionStep && editor.buildings.length === 0) || ((isFloorWorkspaceStep || isMonitoringStep) && !selectedFloor);
   const stageContext = isCompositionStep
@@ -535,6 +534,8 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
         deleteFloorFootprintVertex,
         appendFloorFootprintRegion,
         appendFloorFootprintHole,
+        deleteFloorFootprintHole,
+        drawFloorFootprintPolygon,
         combineFloorFootprintRegions,
         subtractFloorFootprintRegions,
         createElevationZone,
@@ -589,9 +590,37 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
             <section className={styles.stageGuide} aria-label="현재 화면 작업"><button type="button" disabled={primaryDisabled} title={primaryDisabled ? "건축물과 층을 먼저 선택하세요" : wizardStep.primaryLabel} onClick={handlePrimaryAction}>{isMonitoringStep ? <SaveIcon size={16} /> : <ArrowRightIcon size={16} />}<span>{isMonitoringStep ? "저장" : "다음"}</span></button></section>
           </div>
 
-          {isFloorWorkspaceStep && workspaceView === WORKSPACE_VIEWS.SPACE_3D ? (
+          {isFloorWorkspaceStep ? (
             <div className={styles.workspaceControls} data-camera-safe-ui>
-              <div role="group" aria-label="3D 표시 범위"><button type="button" className={viewScope === VIEW_SCOPES.FLOOR ? styles.activeControl : ""} onClick={() => setViewScope(VIEW_SCOPES.FLOOR)}>현재 층</button><button type="button" className={viewScope === VIEW_SCOPES.BUILDING ? styles.activeControl : ""} onClick={() => setViewScope(VIEW_SCOPES.BUILDING)}>전체 건축물</button></div>
+              <label className={styles.floorSelectControl}>
+                <span>층 이동</span>
+                <select
+                  value={selectedFloor?.id ?? ""}
+                  disabled={!focusedBuilding || buildingFloors.length === 0}
+                  aria-label="편집할 층 선택"
+                  onChange={(event) => navigateToFloor(event.target.value)}
+                >
+                  {!selectedFloor ? <option value="">층을 선택하세요</option> : null}
+                  {buildingFloors.map((floor, index) => (
+                    <option key={floor.id} value={floor.id}>{formatFloorOptionLabel(floor, index + 1)}</option>
+                  ))}
+                </select>
+              </label>
+              {workspaceView === WORKSPACE_VIEWS.SPACE_3D ? (
+                <div className={styles.workspaceControlGroup} role="group" aria-label="3D 표시 범위">
+                  <button type="button" className={viewScope === VIEW_SCOPES.FLOOR ? styles.activeControl : ""} onClick={() => setViewScope(VIEW_SCOPES.FLOOR)}>현재 층</button>
+                  <button type="button" className={viewScope === VIEW_SCOPES.BUILDING ? styles.activeControl : ""} onClick={() => setViewScope(VIEW_SCOPES.BUILDING)}>전체 건축물</button>
+                </div>
+              ) : null}
+              <div className={styles.workspaceControlGroup} role="group" aria-label="층 표시 간격 설정">
+                <label className={styles.spreadControl}>
+                  <span>층 간격</span>
+                  <input type="range" min="0" max="12" step="0.5" value={floorDisplayGap} onChange={(event) => handleFloorDisplayGapChange(event.target.value)} />
+                  <input type="number" min="0" max="12" step="0.5" value={floorDisplayGap} aria-label="층 표시 간격 미터" onChange={(event) => handleFloorDisplayGapChange(event.target.value)} />
+                  <output>{floorDisplayGap.toFixed(1)} m</output>
+                </label>
+                <button type="button" disabled={floorDisplayGap === 0} onClick={() => handleFloorDisplayGapChange(0)}>초기화</button>
+              </div>
             </div>
           ) : null}
 
@@ -602,7 +631,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                 selectedBuildingId={editor.selectedBuilding?.id ?? null} selectedSiteObjectId={editor.selectedSiteObjectId}
                 selectedFloorId={null}
                 interiorBuildingId={null}
-                focusRequestKey={editor.navigationContext.transitionId} focusMode={buildingFocusMode} cameraStateRef={siteWorldCameraStateRef}
+                focusRequestKey={editor.navigationContext.transitionId} focusMode={showOnlySelectedBuilding} cameraStateRef={siteWorldCameraStateRef}
                 buildingsTranslucent={buildingsTranslucent}
                 interactionMode={siteInteractionMode} placementTemplateId={activeSiteTemplateId} placementVariants={activeSiteVariants}
                 areaSelection={siteAreaSelection} theme={theme} viewMode={editor.viewMode} transformTools={editor.transformTools}
@@ -610,7 +639,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                 onSelectBuilding={handleSiteBuildingSelect} onSelectSiteObject={handleSiteObjectSelect}
                 onUpdateBuilding={(id, changes) => id === selectedBuildingId ? handleBuildingChange(changes) : updateBuilding(id, changes)}
                 onUpdateSiteObject={updateSiteObject} onEnterBuilding={handleSiteBuildingSelect} onSelectFloor={selectFloorInBuilding}
-                onEnterFloor={(floorId) => { navigateToFloor(floorId); setWizardStepId(WORLD_WIZARD_STEP_IDS.FLOOR_AND_EQUIPMENT); setBuildingFocusMode(false); resetSiteInteraction(); setActiveFloatingPanelId(WORLD_PANEL_IDS.OBJECTS); }}
+                onEnterFloor={(floorId) => { navigateToFloor(floorId); setWizardStepId(WORLD_WIZARD_STEP_IDS.FLOOR_AND_EQUIPMENT); setShowOnlySelectedBuilding(false); resetSiteInteraction(); setActiveFloatingPanelId(WORLD_PANEL_IDS.OBJECTS); }}
                 onAreaSelectionChange={setSiteAreaSelection} onPlaceTemplate={handleSiteTemplatePlace} onPlaceTemplateArea={completeAreaPlacement} onCancelPlacement={clearSitePlacement}
                 terrainBrush={terrainBrush} onTerrainChange={(terrain) => updateSiteEnvironment({ terrain })}
               />
@@ -632,6 +661,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                 onEquipmentAdd={handleFloorEquipmentAdd} onEquipmentSelect={handleFloorEquipmentSelect} onEquipmentTransform={updateFloorEquipment}
                 onCancelPlacement={clearFloorPlacement}
                 externalStatus={editor.floorPlanValidationMessage}
+                shadowEnabled={editorPreferences.shadowEnabled}
               />
             ) : isMonitoringStep ? (
               <EquipmentDetailWorkspace
@@ -648,6 +678,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                   equipmentTranslucent theme={theme} observationPoints={editor.observationPoints}
                   monitoringDevices={editor.sensorBindings} monitoringBindings={editor.serverBindings} monitoringMode
                   transformTools={editor.transformTools} onEquipmentSelect={handleFloorEquipmentSelect} onObservationPointAdd={addObservationPoint}
+                  shadowEnabled={editorPreferences.shadowEnabled}
                 />}
               />
             ) : (
@@ -655,6 +686,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                 building={focusedBuilding} floors={buildingFloors} currentFloor={selectedFloor}
                 floorPlansById={editor.floorPlansById} verticalStructures={editor.verticalStructuresByBuildingId[focusedBuilding?.id] ?? []}
                 equipmentByFloorId={editor.equipmentByFloorId} viewScope={isMonitoringStep ? VIEW_SCOPES.BUILDING : viewScope}
+                floorDisplayGap={isFloorWorkspaceStep && viewScope === VIEW_SCOPES.BUILDING ? floorDisplayGap : 0} onFloorSelect={navigateToFloor}
                 editMode={workspaceMode} activePlanTemplateId={isFloorWorkspaceStep && workspaceMode === WORKSPACE_MODES.PLAN ? editor.activeFloorPlanTemplateId : null}
                 activeEquipmentTemplateId={isFloorWorkspaceStep && workspaceMode === WORKSPACE_MODES.EQUIPMENT ? editor.activeFloorEquipmentTemplateId : null}
                 selectedStructureId={editor.selectedFloorPlanStructureId} selectedEquipmentId={editor.selectedFloorEquipmentId}
@@ -668,6 +700,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                 onPlanSelect={handlePlanSelect} onEquipmentSelect={handleFloorEquipmentSelect} onObservationPointAdd={addObservationPoint}
                 onCancelPlacement={clearFloorPlacement}
                 externalStatus={editor.floorPlanValidationMessage}
+                shadowEnabled={editorPreferences.shadowEnabled}
               />
             )}
           </div>
@@ -682,6 +715,16 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
               : `설비 반투명 보기 ${equipmentTranslucent ? "끄기" : "켜기"}`}
             onViewerTransparencyChange={isCompositionStep ? setBuildingsTranslucent : setEquipmentTranslucent}
             showSelectionActions={!isMonitoringStep} showSiteInteractionTools={isCompositionStep}
+            showBuildingIsolationToggle={isCompositionStep}
+            buildingIsolationEnabled={showOnlySelectedBuilding}
+            buildingIsolationAvailable={Boolean(editor.selectedBuilding)}
+            showShadowToggle={isFloorWorkspaceStep || isMonitoringStep}
+            shadowEnabled={editorPreferences.shadowEnabled}
+            onShadowEnabledChange={setShadowEnabled}
+            onBuildingIsolationChange={(enabled) => {
+              resetSiteInteraction();
+              setShowOnlySelectedBuilding(Boolean(enabled && editor.selectedBuilding));
+            }}
             siteInteractionMode={siteInteractionMode} editorMode={workspaceMode === WORKSPACE_MODES.PLAN ? EDITOR_MODES.WORLD : EDITOR_MODES.EQUIPMENT}
             viewMode={isCompositionStep ? editor.viewMode : workspaceView === WORKSPACE_VIEWS.PLAN_2D ? VIEW_MODES.LAYOUT_2D : VIEW_MODES.VIEW_3D}
             transformTools={editor.transformTools} snapSize={editor.snapSize} gridSnapEnabled={editor.gridSettings.enabled}
@@ -718,7 +761,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
               <WorldHierarchyPanel buildings={editor.buildings} siteObjects={editor.siteObjects} selectedBuildingId={editor.selectedBuilding?.id ?? null} selectedSiteObjectId={editor.selectedSiteObjectId} onSelectBuilding={handleSiteBuildingSelect} onSelectSiteObject={handleSiteObjectSelect} />
             ) : isCompositionStep ? (
               <>
-                {editor.selectedBuilding ? <BuildingDetailNavigator buildings={editor.buildings} selectedBuildingId={editor.selectedBuilding.id} statusById={buildingSettingStatusById} selectedStatus={selectedBuildingStatus} isSaving={isSaving} hasUnsavedChanges={hasUnsavedChanges} onPrevious={() => handleAdjacentBuilding(-1)} onNext={() => handleAdjacentBuilding(1)} onComplete={handleBuildingComplete} /> : null}
+                {editor.selectedBuilding ? <BuildingDetailNavigator buildings={editor.buildings} selectedBuildingId={editor.selectedBuilding.id} isSaving={isSaving} hasUnsavedChanges={hasUnsavedChanges} onPrevious={() => handleAdjacentBuilding(-1)} onNext={() => handleAdjacentBuilding(1)} /> : null}
                 <ObjectDetailPanel building={editor.selectedBuilding} siteObject={editor.selectedSiteObject} siteEnvironment={editor.siteEnvironment} siteObjects={editor.siteObjects} floorCount={buildingFloors.length} floorPlanSummary={editor.floorPlanSummaryByBuildingId[focusedBuilding?.id]} onBuildingChange={handleBuildingChange} onOpenFloorPlans={() => enterStep(WORLD_WIZARD_STEP_IDS.FLOOR_AND_EQUIPMENT)} onSiteObjectChange={(changes) => editor.selectedSiteObjectId && updateSiteObject(editor.selectedSiteObjectId, changes)} onDeleteSiteObject={handleDeleteSiteSelection} />
               </>
             ) : isFloorWorkspaceStep && activeFloatingPanelId === WORLD_PANEL_IDS.OBJECTS ? (

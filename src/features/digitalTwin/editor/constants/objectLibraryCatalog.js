@@ -51,33 +51,33 @@ export const OBJECT_LIBRARY_CATEGORIES = Object.freeze(CATEGORY_SOURCE.map(([id,
 export const BUILDING_VARIANT_GROUPS = Object.freeze([
   {
     id: "roofStyle",
-    label: "Roof",
+    label: "지붕 형태",
     options: [
-      ["FLAT", "Flat"], ["GABLE", "Gable"], ["SAWTOOTH", "Sawtooth"], ["INDUSTRIAL_VENT", "Industrial Vent"],
+      ["FLAT", "평지붕"], ["GABLE", "박공지붕"], ["SAWTOOTH", "톱니지붕"], ["INDUSTRIAL_VENT", "산업용 환기 지붕"],
     ].map(([id, label]) => ({ id, label })),
   },
   {
     id: "facadeStyle",
-    label: "Facade",
+    label: "외벽 마감",
     options: [
-      ["CONCRETE", "Concrete"], ["BRICK", "Brick"], ["METAL_PANEL", "Metal Panel"], ["GLASS", "Glass"],
-      ["INDUSTRIAL_PANEL", "Industrial Panel"], ["MIXED", "Glass + Concrete"], ["SANDWICH_PANEL", "Sandwich Panel"],
+      ["CONCRETE", "콘크리트"], ["BRICK", "벽돌"], ["METAL_PANEL", "금속 패널"], ["GLASS", "유리"],
+      ["INDUSTRIAL_PANEL", "산업용 패널"], ["MIXED", "유리·콘크리트 혼합"], ["SANDWICH_PANEL", "샌드위치 패널"],
     ].map(([id, label]) => ({ id, label })),
   },
   {
     id: "windowStyle",
-    label: "Window Style",
+    label: "창호 형태",
     options: [
-      ["FULL_GLASS", "Full Glass"], ["CURTAIN_WALL", "Curtain Wall"], ["GRID", "Grid Window"],
-      ["HORIZONTAL", "Horizontal Window"], ["VERTICAL", "Vertical Window"], ["SMALL_INDUSTRIAL", "Small Industrial"],
-      ["LARGE_FACTORY", "Large Factory"], ["VILLA", "Villa Window"],
+      ["FULL_GLASS", "전면 유리"], ["CURTAIN_WALL", "커튼월"], ["GRID", "격자창"],
+      ["HORIZONTAL", "수평창"], ["VERTICAL", "수직창"], ["SMALL_INDUSTRIAL", "소형 산업창"],
+      ["LARGE_FACTORY", "대형 공장창"], ["VILLA", "주거형 창호"],
     ].map(([id, label]) => ({ id, label })),
   },
   {
     id: "entranceStyle",
-    label: "Entrance",
+    label: "출입구 형태",
     options: [
-      ["STANDARD", "일반 출입문"], ["SHUTTER", "산업용 셔터"], ["LOADING_DOCK", "Loading Dock"],
+      ["STANDARD", "일반 출입문"], ["SHUTTER", "산업용 셔터"], ["LOADING_DOCK", "상하역장"],
       ["VEHICLE_GATE", "차량 출입구"], ["DOUBLE", "이중 출입구"],
     ].map(([id, label]) => ({ id, label })),
   },
@@ -144,25 +144,37 @@ const INDUSTRIAL_BUILDINGS = [
   ["FACTORY_FOOD", "식품 생산 공장", "위생 패널과 분리 출입구를 가진 공장", "PROCESS", "INDUSTRIAL_FOOD", 48, 28, 2, "GABLE", "SANDWICH_PANEL", "HORIZONTAL", "DOUBLE", ["LOUVERS"]],
   ["FACTORY_CHEMICAL", "화학 플랜트형 건물", "Pipe Rack과 Vent Stack이 결합된 공정동", "PROCESS", "INDUSTRIAL_CHEMICAL", 44, 30, 3, "FLAT", "CONCRETE", "SMALL_INDUSTRIAL", "VEHICLE_GATE", ["PIPE_RACK", "STACK"]],
   ["FACTORY_POWER", "발전 설비동", "높은 Turbine Hall과 환기 Louver", "UTILITY", "INDUSTRIAL_POWER", 52, 32, 2, "GABLE", "METAL_PANEL", "VERTICAL", "SHUTTER", ["LOUVERS", "STACK"]],
-  ["FACTORY_UTILITY", "기계실 / Utility Building", "옥상 기계와 Louver가 있는 설비동", "UTILITY", "INDUSTRIAL_UTILITY", 34, 22, 2, "INDUSTRIAL_VENT", "CONCRETE", "SMALL_INDUSTRIAL", "DOUBLE", ["ROOFTOP_UNITS"]],
-  ["FACTORY_SUBSTATION", "전기실 / Substation Building", "Cable Trench와 환기구를 갖춘 전기실", "UTILITY", "INDUSTRIAL_SUBSTATION", 30, 18, 1, "FLAT", "CONCRETE", "SMALL_INDUSTRIAL", "DOUBLE", ["LOUVERS"]],
-  ["FACTORY_MAINTENANCE", "정비동 / Maintenance Building", "복수 정비 Bay와 셔터를 가진 정비동", "FACTORY", "INDUSTRIAL_MAINTENANCE", 44, 24, 1, "GABLE", "METAL_PANEL", "LARGE_FACTORY", "SHUTTER", ["SHUTTERS"]],
-  ["FACTORY_ASSEMBLY", "조립동 / Assembly Building", "넓은 Span과 연속 채광창", "FACTORY", "INDUSTRIAL_ASSEMBLY", 60, 34, 1, "SAWTOOTH", "INDUSTRIAL_PANEL", "LARGE_FACTORY", "VEHICLE_GATE"],
-  ["FACTORY_INSPECTION", "검사동 / Inspection Building", "정밀 검사실과 수직창이 있는 동", "FACTORY", "INDUSTRIAL_INSPECTION", 32, 20, 2, "FLAT", "MIXED", "VERTICAL", "DOUBLE"],
+  ["FACTORY_UTILITY", "기계 설비동", "옥상 기계와 루버가 있는 설비동", "UTILITY", "INDUSTRIAL_UTILITY", 34, 22, 2, "INDUSTRIAL_VENT", "CONCRETE", "SMALL_INDUSTRIAL", "DOUBLE", ["ROOFTOP_UNITS"]],
+  ["FACTORY_SUBSTATION", "전기 설비동", "케이블 트렌치와 환기구를 갖춘 전기실", "UTILITY", "INDUSTRIAL_SUBSTATION", 30, 18, 1, "FLAT", "CONCRETE", "SMALL_INDUSTRIAL", "DOUBLE", ["LOUVERS"]],
+  ["FACTORY_MAINTENANCE", "정비동", "복수 정비 구역과 셔터를 가진 정비동", "FACTORY", "INDUSTRIAL_MAINTENANCE", 44, 24, 1, "GABLE", "METAL_PANEL", "LARGE_FACTORY", "SHUTTER", ["SHUTTERS"]],
+  ["FACTORY_ASSEMBLY", "조립동", "넓은 경간과 연속 채광창", "FACTORY", "INDUSTRIAL_ASSEMBLY", 60, 34, 1, "SAWTOOTH", "INDUSTRIAL_PANEL", "LARGE_FACTORY", "VEHICLE_GATE"],
+  ["FACTORY_INSPECTION", "검사동", "정밀 검사실과 수직창이 있는 동", "FACTORY", "INDUSTRIAL_INSPECTION", 32, 20, 2, "FLAT", "MIXED", "VERTICAL", "DOUBLE"],
   ["WAREHOUSE_RAW", "원자재 창고", "깊은 처마와 대형 셔터 창고", "WAREHOUSE", "INDUSTRIAL_RAW", 46, 30, 1, "GABLE", "METAL_PANEL", "SMALL_INDUSTRIAL", "SHUTTER", ["CANOPY"]],
   ["WAREHOUSE_FINISHED", "완제품 창고", "높은 적재고와 Dock을 가진 창고", "WAREHOUSE", "INDUSTRIAL_FINISHED", 52, 34, 1, "FLAT", "SANDWICH_PANEL", "SMALL_INDUSTRIAL", "LOADING_DOCK", ["DOCKS"]],
-  ["WAREHOUSE_LOADING", "Loading Dock 물류동", "Dock Leveler와 Canopy가 반복되는 물류동", "WAREHOUSE", "INDUSTRIAL_LOADING", 64, 32, 1, "FLAT", "METAL_PANEL", "HORIZONTAL", "LOADING_DOCK", ["DOCKS", "CANOPY"]],
+  ["WAREHOUSE_LOADING", "상하역 물류동", "도크 레벨러와 차양이 반복되는 물류동", "WAREHOUSE", "INDUSTRIAL_LOADING", 64, 32, 1, "FLAT", "METAL_PANEL", "HORIZONTAL", "LOADING_DOCK", ["DOCKS", "CANOPY"]],
   ["FACTORY_STACK", "굴뚝 산업 건물", "높은 굴뚝과 Boiler Annex", "PROCESS", "INDUSTRIAL_STACK", 40, 26, 2, "GABLE", "BRICK", "SMALL_INDUSTRIAL", "SHUTTER", ["STACK"]],
   ["FACTORY_VENT", "대형 환기 공장", "대형 Roof Fan과 Vent Tower", "PROCESS", "INDUSTRIAL_VENT", 50, 30, 1, "INDUSTRIAL_VENT", "INDUSTRIAL_PANEL", "LARGE_FACTORY", "SHUTTER", ["ROOFTOP_UNITS", "VENTS"]],
-  ["FACTORY_SAWTOOTH", "Sawtooth Roof 공장", "북향 채광 Sawtooth Roof 생산동", "FACTORY", "INDUSTRIAL_SAWTOOTH", 56, 30, 1, "SAWTOOTH", "BRICK", "LARGE_FACTORY", "SHUTTER"],
+  ["FACTORY_SAWTOOTH", "톱니형 지붕 공장", "북향 채광용 톱니형 지붕 생산동", "FACTORY", "INDUSTRIAL_SAWTOOTH", 56, 30, 1, "SAWTOOTH", "BRICK", "LARGE_FACTORY", "SHUTTER"],
   ["FACTORY_SHUTTER", "대형 셔터 공장", "전면 다중 산업용 셔터가 특징인 공장", "FACTORY", "INDUSTRIAL_SHUTTER", 48, 26, 1, "GABLE", "METAL_PANEL", "SMALL_INDUSTRIAL", "SHUTTER", ["SHUTTERS"]],
-  ["FACTORY_COMPLEX", "연결형 Factory Complex", "브리지로 연결된 생산·유틸리티 복합동", "FACTORY", "INDUSTRIAL_COMPLEX", 76, 46, 2, "INDUSTRIAL_VENT", "MIXED", "GRID", "VEHICLE_GATE", ["MULTI_WING", "PIPE_RACK"]],
+  ["FACTORY_COMPLEX", "연결형 공장 복합동", "브리지로 연결된 생산·유틸리티 복합동", "FACTORY", "INDUSTRIAL_COMPLEX", 76, 46, 2, "INDUSTRIAL_VENT", "MIXED", "GRID", "VEHICLE_GATE", ["MULTI_WING", "PIPE_RACK"]],
 ].map(building);
+
+const SITE_OBJECT_DISPLAY_NAMES = Object.freeze({
+  SITE_MOTOR: "전동기", SITE_PUMP: "펌프", SITE_COMPRESSOR: "압축기", SITE_FAN: "송풍기",
+  SITE_GENERATOR: "발전기", SITE_PROCESS_TANK: "공정 탱크", SITE_CONVEYOR: "컨베이어",
+  SITE_VALVE: "밸브", SITE_MIXER: "교반기", SITE_HEAT_EXCHANGER: "열교환기",
+  SITE_TRANSFORMER: "변압기", SITE_ELECTRICAL_PANEL: "전기 패널", SITE_SWITCHGEAR: "수배전반",
+  SITE_MCC: "모터 제어반", SITE_UPS: "무정전 전원장치", SITE_BATTERY_BANK: "배터리 뱅크",
+  SITE_CONTROL_DESK: "제어 콘솔", PALLET: "팔레트", PALLET_RACK: "팔레트 랙",
+  SHIPPING_CONTAINER: "화물 컨테이너", LOADING_DOCK: "상하역장", ROLLER_CONVEYOR: "롤러 컨베이어",
+  GANTRY_CRANE: "갠트리 크레인", MOBILE_RAMP: "이동식 경사로", GUARDRAIL: "보호 난간",
+  PIPE_ELBOW: "엘보 배관", PIPE_RACK: "배관 랙", SILO_SITE: "사일로", IBC_TANK: "IBC 탱크",
+});
 
 function site([id, categoryId, subcategoryId, name, description, assetKind, profile, width, depth, height, color, material = "PAINTED", geometryMode = SITE_OBJECT_GEOMETRY_MODES.POINT, parameters = {}]) {
   const category = OBJECT_LIBRARY_CATEGORIES.find((item) => item.id === categoryId);
   return {
-    id, categoryId, subcategoryId, name,
+    id, categoryId, subcategoryId, name, nameKo: SITE_OBJECT_DISPLAY_NAMES[id] ?? name,
     nameEn: id.replaceAll("_", " ").toLocaleLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()),
     description, type: "SITE_OBJECT", assetKind, profile, geometryMode,
     iconKey: category?.iconKey ?? "environment", width, depth, height, color, material,

@@ -4,17 +4,22 @@ import { MoonIcon, SunIcon } from "@/components/icons";
 import EditorToolbar from "@/features/digitalTwin/editor/components/EditorToolbar";
 import FloatingPanel from "@/features/digitalTwin/editor/components/FloatingPanel";
 import { VIEW_MODES } from "@/features/digitalTwin/editor/constants/equipmentShapeTemplates";
+import {
+  cycleTransformMoveAxisMode,
+  DEFAULT_TRANSFORM_TOOLS,
+  normalizeTransformTools,
+} from "@/features/digitalTwin/editor/constants/transformTools";
 import { EDITOR_THEMES } from "@/features/digitalTwin/editor/constants/sceneThemes";
 import { WORLD_PANEL_IDS } from "@/features/digitalTwin/editor/constants/worldPanel";
 import { EDITOR_MODES } from "@/features/digitalTwin/editor/constants/worldStructureTemplates";
 import { MATERIAL_PRESET_MAP, WALL_MATERIAL_PRESET_IDS } from "@/features/digitalTwin/editor/constants/materialPresets";
 import useEditorTheme from "@/features/digitalTwin/editor/store/useEditorTheme";
-import { DEFAULT_TRANSFORM_TOOLS } from "@/features/digitalTwin/editor/three/dualTransformControls";
 import { getCustomBuildingEditPath, navigateTo } from "../core/customAssetNavigation";
 import { customBuildingTemplateId, CUSTOM_ASSET_STATUS } from "../core/customAssetTypes";
 import { validateCustomAsset } from "../core/customAssetValidation";
 import { useCustomAssets } from "../components/customAssetContext";
 import AssemblyPlanEditor2D from "./AssemblyPlanEditor2D";
+import BlockGridEditor2D from "./BlockGridEditor2D";
 import {
   BUILDING_ENTITY_TYPES,
   BUILDING_VIEW_MODES,
@@ -25,12 +30,23 @@ import {
   createUniformLevels,
 } from "./buildingAssembly";
 import { createComplexTowerCustomBuilding, createDefaultCustomBuilding } from "./buildingDefaults";
+import {
+  BLOCK_EDIT_TOOLS,
+  CUSTOM_BUILDING_AUTHORING_MODES,
+  createDefaultBlockGrid,
+  deriveBlockBuildingAsset,
+  duplicateBlockLevel,
+  fillBlockRange,
+  mirrorBlockLevel,
+  transformBlockCells,
+} from "./blockBuildingModel";
 import { footprintArea, PYEONG_IN_SQUARE_METERS, recalculateBuildingAsset } from "./buildingMetrics";
 import { createBuildingThumbnail } from "./buildingThumbnail";
 import { BUILDING_FOOTPRINT_TEMPLATES, createBuildingFootprint, resizeBuildingFootprint } from "./buildingTemplates";
 import "./buildingValidator";
 import CustomBuildingPreview from "./CustomBuildingPreview";
 import FootprintEditor2D from "./FootprintEditor2D";
+import OutlineDrawingEditor2D from "./OutlineDrawingEditor2D";
 import styles from "./CustomBuildingEditor.module.css";
 
 const EDITOR_WORKSPACES = Object.freeze({ BASIC: "BASIC", ADVANCED: "ADVANCED", OBSERVE: "OBSERVE" });
@@ -110,6 +126,10 @@ export default function CustomBuildingEditorPage({ assetId = null }) {
   const [cameraFocusKey, setCameraFocusKey] = useState(0);
   const [autoLevels, setAutoLevels] = useState({ count: 10, height: 3.6 });
   const [connectorDraft, setConnectorDraft] = useState({ fromId: "", toId: "", levelId: "", type: "glass-bridge", pathType: "straight", width: 3.2, height: 3 });
+  const [blockLevel, setBlockLevel] = useState(0);
+  const [blockTool, setBlockTool] = useState(BLOCK_EDIT_TOOLS.ADD);
+  const [blockRange, setBlockRange] = useState({ minX: -2, maxX: 2, minZ: -2, maxZ: 2 });
+  const [outlineDraft, setOutlineDraft] = useState(null);
   const assetRef = useRef(null);
   const pastRef = useRef([]);
   const futureRef = useRef([]);
@@ -198,12 +218,17 @@ export default function CustomBuildingEditorPage({ assetId = null }) {
       }
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement || event.target?.isContentEditable) return;
       if (key !== "w" && key !== "e") return;
+      if (view !== "3D" || !selectedMass || selectedMass.locked || explode) return;
       event.preventDefault();
-      setTransformTools((current) => ({ ...current, [key === "w" ? "translate" : "rotate"]: true }));
+      setTransformTools((current) => {
+        if (key === "w") return cycleTransformMoveAxisMode(current);
+        const normalized = normalizeTransformTools(current);
+        return { ...normalized, rotate: !normalized.rotate };
+      });
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [restoreHistory]);
+  }, [explode, restoreHistory, selectedMass, view]);
 
   function commit(updater, { history = true } = {}) {
     const current = assetRef.current;
@@ -219,6 +244,20 @@ export default function CustomBuildingEditorPage({ assetId = null }) {
     commit((current) => ({ ...current, entities: current.entities.map((entity) => entity.id === entityId ? updater(entity) : entity) }));
   }
 
+  function updateBlockGrid(blockGrid) {
+    commit((current) => deriveBlockBuildingAsset({ ...current, blockGrid }));
+  }
+
+  function setAuthoringMode(authoringMode) {
+    if (authoringMode === asset.authoringMode) return;
+    if (authoringMode === CUSTOM_BUILDING_AUTHORING_MODES.BLOCK) {
+      commit((current) => deriveBlockBuildingAsset({ ...current, authoringMode, blockGrid: current.blockGrid ?? createDefaultBlockGrid({ floorCount: current.levels.length, levelHeight: current.levels[0]?.height }) }));
+      setSelectedEntityIds([]);
+    } else commit((current) => ({ ...current, authoringMode }));
+    setView("2D");
+    setActivePanelId(WORLD_PANEL_IDS.OBJECTS);
+  }
+
   function selectEntity(entityId, toggle = false) {
     setSelectedEntityIds((current) => toggle ? (current.includes(entityId) ? current.filter((id) => id !== entityId) : [...current, entityId]) : [entityId]);
     setSelectedVertexIndex(0);
@@ -226,7 +265,11 @@ export default function CustomBuildingEditorPage({ assetId = null }) {
   }
 
   function toggleTransformTool(tool) {
-    setTransformTools((current) => ({ ...current, [tool]: !current[tool] }));
+    setTransformTools((current) => {
+      if (tool === "translate") return cycleTransformMoveAxisMode(current);
+      const normalized = normalizeTransformTools(current);
+      return { ...normalized, [tool]: !normalized[tool] };
+    });
   }
 
   function transformEntity(entityId, changes) {
@@ -246,6 +289,16 @@ export default function CustomBuildingEditorPage({ assetId = null }) {
     const mass = createBuildingMassEntity({ name: `매스 ${masses.length + 1}`, footprint, topElevation, position: { x: masses.length * 3, y: 0, z: masses.length * 3 } });
     commit((current) => ({ ...current, entities: [...current.entities, mass] }));
     setSelectedEntityIds([mass.id]); setWorkspace(EDITOR_WORKSPACES.ADVANCED);
+    setActivePanelId(WORLD_PANEL_IDS.DETAILS);
+  }
+
+  function addOutlineMass(points) {
+    const topElevation = asset.levels.at(-1)?.topElevation ?? 18;
+    const mass = createBuildingMassEntity({ name: `외곽선 매스 ${masses.length + 1}`, footprint: { templateId: "FREE_POLYGON", points, holes: [] }, topElevation });
+    commit((current) => ({ ...current, authoringMode: CUSTOM_BUILDING_AUTHORING_MODES.OUTLINE, entities: [...current.entities, mass] }));
+    setSelectedEntityIds([mass.id]);
+    setOutlineDraft(null);
+    setFootprintDetail(true);
     setActivePanelId(WORLD_PANEL_IDS.DETAILS);
   }
 
@@ -383,6 +436,10 @@ export default function CustomBuildingEditorPage({ assetId = null }) {
         <div className={styles.workspaceTabs} role="navigation" aria-label="매스 편집 모드">
           {[[EDITOR_WORKSPACES.BASIC, "기본"], [EDITOR_WORKSPACES.ADVANCED, "고급"], [EDITOR_WORKSPACES.OBSERVE, "관측"]].map(([id, label]) => <button key={id} type="button" aria-pressed={workspace === id} onClick={() => setWorkspace(id)}>{label}</button>)}
         </div>
+        <div className={styles.workspaceTabs} role="group" aria-label="건축물 생성 방식">
+          <button type="button" aria-pressed={asset.authoringMode === CUSTOM_BUILDING_AUTHORING_MODES.BLOCK} onClick={() => setAuthoringMode(CUSTOM_BUILDING_AUTHORING_MODES.BLOCK)}>블록 쌓기</button>
+          <button type="button" aria-pressed={asset.authoringMode !== CUSTOM_BUILDING_AUTHORING_MODES.BLOCK} onClick={() => setAuthoringMode(CUSTOM_BUILDING_AUTHORING_MODES.OUTLINE)}>외곽선 그리기</button>
+        </div>
         <div className={styles.toolbarSpacer} />
         <button type="button" className={styles.themeToggle} onClick={toggleTheme} aria-label={`${theme === EDITOR_THEMES.DARK ? "라이트" : "다크"} 테마로 전환`} title={`${theme === EDITOR_THEMES.DARK ? "라이트" : "다크"} 테마로 전환`}><span aria-hidden="true">{theme === EDITOR_THEMES.DARK ? <MoonIcon size={17} /> : <SunIcon size={17} />}</span></button>
         <button type="button" className={styles.primaryButton} onClick={() => persist({ useInPlan: true })}>저장하고 도면에서 사용</button>
@@ -391,9 +448,13 @@ export default function CustomBuildingEditorPage({ assetId = null }) {
       <div className={styles.editorLayout}>
         {[WORLD_PANEL_IDS.OBJECTS, WORLD_PANEL_IDS.OBJECT_LIST].includes(activePanelId) ? <FloatingPanel open title={PANEL_TITLES[activePanelId]} topAligned onClose={() => setActivePanelId(null)}>
           <div className={`${styles.toolPanel} ${styles.floatingPanelContent}`}>
-          {activePanelId === WORLD_PANEL_IDS.OBJECTS && workspace !== EDITOR_WORKSPACES.OBSERVE ? <>
+          {activePanelId === WORLD_PANEL_IDS.OBJECTS && workspace !== EDITOR_WORKSPACES.OBSERVE && asset.authoringMode === CUSTOM_BUILDING_AUTHORING_MODES.BLOCK ? <>
+            <section><header><strong>블록 편집</strong><small>{blockLevel + 1}층</small></header><div className={styles.inlineActions}><button type="button" aria-pressed={blockTool === BLOCK_EDIT_TOOLS.ADD} onClick={() => setBlockTool(BLOCK_EDIT_TOOLS.ADD)}>블록 추가</button><button type="button" aria-pressed={blockTool === BLOCK_EDIT_TOOLS.REMOVE} onClick={() => setBlockTool(BLOCK_EDIT_TOOLS.REMOVE)}>블록 제거</button></div><div className={styles.fieldGrid}><NumericInput label="편집 층" value={blockLevel + 1} min={1} step={1} onChange={(value) => setBlockLevel(Math.max(0, Math.round(value) - 1))} /><NumericInput label="셀 크기 m" value={asset.blockGrid.cellSize} min={0.5} onChange={(cellSize) => updateBlockGrid({ ...asset.blockGrid, cellSize })} /><NumericInput label="층고 m" value={asset.blockGrid.levelHeight} min={2} onChange={(levelHeight) => updateBlockGrid({ ...asset.blockGrid, levelHeight })} /></div></section>
+            <section><header><strong>범위·층 도구</strong></header><div className={styles.fieldGrid}>{[["minX", "시작 X"], ["maxX", "종료 X"], ["minZ", "시작 Z"], ["maxZ", "종료 Z"]].map(([key, label]) => <NumericInput key={key} label={label} value={blockRange[key]} step={1} onChange={(value) => setBlockRange((current) => ({ ...current, [key]: Math.round(value) }))} />)}</div><div className={styles.inlineActions}><button type="button" onClick={() => updateBlockGrid(fillBlockRange(asset.blockGrid, { x: blockRange.minX, z: blockRange.minZ, level: blockLevel }, { x: blockRange.maxX, z: blockRange.maxZ, level: blockLevel }, true))}>범위 채우기</button><button type="button" onClick={() => updateBlockGrid(fillBlockRange(asset.blockGrid, { x: blockRange.minX, z: blockRange.minZ, level: blockLevel }, { x: blockRange.maxX, z: blockRange.maxZ, level: blockLevel }, false))}>범위 비우기</button></div><div className={styles.inlineActions}><button type="button" onClick={() => updateBlockGrid(transformBlockCells(asset.blockGrid, (cell) => cell.level === blockLevel, (cell) => ({ ...cell, x: cell.x + 1 })))}>층 이동 +X</button><button type="button" onClick={() => updateBlockGrid(transformBlockCells(asset.blockGrid, (cell) => cell.level === blockLevel, (cell) => ({ ...cell, x: cell.x + 1 }), { copy: true }))}>층 복사 +X</button><button type="button" onClick={() => updateBlockGrid(duplicateBlockLevel(asset.blockGrid, blockLevel))}>위층 복제</button><button type="button" onClick={() => updateBlockGrid(mirrorBlockLevel(asset.blockGrid, blockLevel, "X"))}>X 대칭</button><button type="button" onClick={() => updateBlockGrid(mirrorBlockLevel(asset.blockGrid, blockLevel, "Z"))}>Z 대칭</button></div></section>
+          </> : null}
+          {activePanelId === WORLD_PANEL_IDS.OBJECTS && workspace !== EDITOR_WORKSPACES.OBSERVE && asset.authoringMode !== CUSTOM_BUILDING_AUTHORING_MODES.BLOCK ? <>
             <section><header><strong>매스 시작</strong></header><button type="button" className={styles.sampleButton} onClick={applyComplexSample}>복합 연결 타워 샘플</button><div className={styles.templateGrid}>{BUILDING_FOOTPRINT_TEMPLATES.filter((template) => !["PODIUM_TOWER", "STEPPED"].includes(template.id)).map((template) => <button key={template.id} type="button" title={template.description} onClick={() => applyTemplate(template.id)}>{template.name}</button>)}</div></section>
-            <section><header><strong>블록 추가</strong></header><div className={styles.inlineActions}><button type="button" onClick={() => addMass("RECTANGLE")}>사각</button><button type="button" onClick={() => addMass("CIRCLE")}>원형</button><button type="button" onClick={() => addMass("FREE_POLYGON")}>자유 폴리곤</button></div><div className={styles.inlineActions}><button type="button" disabled={!selectedEntityIds.length} onClick={duplicateSelected}>복제</button><button type="button" disabled={!selectedEntityIds.length || masses.length <= 1} onClick={deleteSelected}>삭제</button></div></section>
+            <section><header><strong>외곽선 매스</strong></header><div className={styles.inlineActions}><button type="button" onClick={() => addMass("RECTANGLE")}>사각</button><button type="button" onClick={() => addMass("CIRCLE")}>원형</button><button type="button" onClick={() => { setOutlineDraft([]); setView("2D"); setActivePanelId(null); }}>외곽선 그리기</button></div><div className={styles.inlineActions}><button type="button" disabled={!selectedEntityIds.length} onClick={duplicateSelected}>복제</button><button type="button" disabled={!selectedEntityIds.length || masses.length <= 1} onClick={deleteSelected}>삭제</button></div></section>
           </> : null}
           {activePanelId === WORLD_PANEL_IDS.OBJECT_LIST ? <section><header><strong>물리 요소</strong><small>{masses.length} 매스 · {connectors.length} 연결부</small></header><div className={styles.entityList}>{asset.entities.map((entity) => <button key={entity.id} type="button" className={selectedEntityIds.includes(entity.id) ? styles.active : ""} onClick={(event) => selectEntity(entity.id, event.ctrlKey || event.metaKey)}><span>{entity.entityType === BUILDING_ENTITY_TYPES.MASS ? "▰" : "↔"}</span><strong>{entity.name}</strong><small>{entity.visible === false ? "숨김" : entity.locked ? "잠금" : entity.entityType === BUILDING_ENTITY_TYPES.MASS ? `${entity.levelIds.length}개 층` : CONNECTOR_LABELS[entity.connectorType]}</small></button>)}</div></section> : null}
           {activePanelId === WORLD_PANEL_IDS.OBJECTS && workspace === EDITOR_WORKSPACES.ADVANCED ? <section><header><strong>연결 통로 생성</strong></header><label className={styles.field}><span>시작 매스</span><select value={connectorDraft.fromId} onChange={(event) => setConnectorDraft((draft) => ({ ...draft, fromId: event.target.value }))}><option value="">선택</option>{masses.map((mass) => <option key={mass.id} value={mass.id}>{mass.name}</option>)}</select></label><label className={styles.field}><span>종료 매스</span><select value={connectorDraft.toId} onChange={(event) => setConnectorDraft((draft) => ({ ...draft, toId: event.target.value }))}><option value="">선택</option>{masses.map((mass) => <option key={mass.id} value={mass.id}>{mass.name}</option>)}</select></label><label className={styles.field}><span>연결 층</span><select value={connectorDraft.levelId} onChange={(event) => setConnectorDraft((draft) => ({ ...draft, levelId: event.target.value }))}><option value="">선택</option>{asset.levels.map((level) => <option key={level.id} value={level.id}>{level.name} · {level.baseElevation.toFixed(1)}~{level.topElevation.toFixed(1)}m</option>)}</select></label><div className={styles.fieldGrid}><label className={styles.field}><span>형태</span><select value={connectorDraft.pathType} onChange={(event) => setConnectorDraft((draft) => ({ ...draft, pathType: event.target.value }))}><option value="straight">직선형</option><option value="L">L자형</option><option value="U">U자형</option></select></label><label className={styles.field}><span>유형</span><select value={connectorDraft.type} onChange={(event) => setConnectorDraft((draft) => ({ ...draft, type: event.target.value }))}>{CONNECTOR_TYPES.map((id) => <option key={id} value={id}>{CONNECTOR_LABELS[id]}</option>)}</select></label><NumericInput label="폭 m" value={connectorDraft.width} min={0.8} onChange={(width) => setConnectorDraft((draft) => ({ ...draft, width }))} /><NumericInput label="높이 m" value={connectorDraft.height} min={2} onChange={(height) => setConnectorDraft((draft) => ({ ...draft, height }))} /></div><button type="button" className={styles.primaryInline} disabled={!connectorDraft.fromId || !connectorDraft.toId || connectorDraft.fromId === connectorDraft.toId || !connectorDraft.levelId} onClick={addConnector}>연결 통로 생성</button></section> : null}
@@ -404,7 +465,7 @@ export default function CustomBuildingEditorPage({ assetId = null }) {
 
         <section className={styles.viewport}>
           <div className={styles.viewTabs} role="group" aria-label="편집 화면 보기"><button type="button" aria-pressed={view === "2D"} onClick={() => setView("2D")}>2D 평면</button><button type="button" aria-pressed={view === "3D"} onClick={() => setView("3D")}>3D 미리보기</button>{view === "2D" && selectedMass && workspace === EDITOR_WORKSPACES.ADVANCED ? <button type="button" aria-pressed={footprintDetail} onClick={() => setFootprintDetail((value) => !value)}>{footprintDetail ? "전체 매스" : "꼭짓점"}</button> : null}</div>
-          {view === "2D" ? footprintDetail && selectedMass ? <FootprintEditor2D footprint={selectedMass.footprint} selectedVertexIndex={selectedVertexIndex} snapEnabled={snapEnabled} orthogonalEnabled={false} onSelectVertex={setSelectedVertexIndex} onChange={(footprint) => updateEntity(selectedMass.id, (mass) => ({ ...mass, footprint }))} /> : <AssemblyPlanEditor2D asset={asset} selectedEntityIds={selectedEntityIds} activeViewGroupId={activeViewGroupId} viewMode={viewMode} snapEnabled={snapEnabled} onSelectEntity={selectEntity} onMoveMass={(entityId, position) => updateEntity(entityId, (mass) => ({ ...mass, transform: { ...mass.transform, position: { ...mass.transform.position, ...position } } }))} /> : <CustomBuildingPreview asset={asset} selectedEntityId={selectedEntityIds[0]} theme={theme} viewGroupId={activeViewGroupId} viewMode={viewMode} explode={explode} minVisibleElevation={heightCut.min} maxVisibleElevation={heightCut.max} cameraFocusKey={cameraFocusKey} transformTools={transformTools} snapEnabled={snapEnabled} snapSize={snapSize} transformEnabled={Boolean(selectedMass && !selectedMass.locked)} onSelectEntity={selectEntity} onTransformEntity={transformEntity} />}
+          {view === "2D" ? outlineDraft ? <OutlineDrawingEditor2D points={outlineDraft} snapEnabled={snapEnabled} onChange={setOutlineDraft} onComplete={addOutlineMass} onCancel={() => setOutlineDraft(null)} /> : asset.authoringMode === CUSTOM_BUILDING_AUTHORING_MODES.BLOCK ? <BlockGridEditor2D grid={asset.blockGrid} level={blockLevel} tool={blockTool} onChange={updateBlockGrid} /> : footprintDetail && selectedMass ? <FootprintEditor2D footprint={selectedMass.footprint} selectedVertexIndex={selectedVertexIndex} snapEnabled={snapEnabled} orthogonalEnabled={false} onSelectVertex={setSelectedVertexIndex} onChange={(footprint) => updateEntity(selectedMass.id, (mass) => ({ ...mass, footprint }))} /> : <AssemblyPlanEditor2D asset={asset} selectedEntityIds={selectedEntityIds} activeViewGroupId={activeViewGroupId} viewMode={viewMode} snapEnabled={snapEnabled} onSelectEntity={selectEntity} onMoveMass={(entityId, position) => updateEntity(entityId, (mass) => ({ ...mass, transform: { ...mass.transform, position: { ...mass.transform.position, ...position } } }))} /> : <CustomBuildingPreview asset={asset} selectedEntityId={selectedEntityIds[0]} theme={theme} viewGroupId={activeViewGroupId} viewMode={viewMode} explode={explode} minVisibleElevation={heightCut.min} maxVisibleElevation={heightCut.max} cameraFocusKey={cameraFocusKey} transformTools={transformTools} snapEnabled={snapEnabled} snapSize={snapSize} transformEnabled={Boolean(selectedMass && !selectedMass.locked)} onSelectEntity={selectEntity} onTransformEntity={transformEntity} />}
           <EditorToolbar focusedScope hierarchyScopeLabel="커스텀 건축물 편집" panelMode="CUSTOM_BUILDING" activePanelId={activePanelId} onPanelChange={setActivePanelId} editorMode={EDITOR_MODES.WORLD} viewMode={view === "2D" ? VIEW_MODES.LAYOUT_2D : VIEW_MODES.VIEW_3D} transformTools={transformTools} snapSize={snapSize} gridSnapEnabled={snapEnabled} hasSelection={Boolean(selectedEntity)} hasTransformSelection={Boolean(view === "3D" && selectedMass && !selectedMass.locked && !explode)} worldLocked={false} saveStatus={saveState} canUndo={historyState.canUndo} canRedo={historyState.canRedo} showSelectionActions onEditorModeChange={() => {}} onViewModeChange={() => {}} onTransformToolToggle={toggleTransformTool} onSnapSizeChange={setSnapSize} onGridSnapChange={setSnapEnabled} onToggleWorldLock={() => {}} onDuplicate={duplicateSelected} onDelete={deleteSelected} onReset={resetBuilding} onLoad={() => navigateTo("/custom/buildings")} onSave={() => persist()} onUndo={() => restoreHistory(false)} onRedo={() => restoreHistory(true)} />
         </section>
 

@@ -9,7 +9,7 @@ export default function DetailView({ equipment, asset, onClose }) {
       <header>
         <button type="button" onClick={onClose}><ArrowLeftIcon size={17} /> 편집기로 돌아가기</button>
         <div>
-          <span>DETAIL VIEW / {asset.originalFormat}</span>
+          <span>상세 보기 / {asset.originalFormat}</span>
           <h2>{equipment.name}</h2>
         </div>
         <dl>

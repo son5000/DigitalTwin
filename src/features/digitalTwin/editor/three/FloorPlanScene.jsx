@@ -21,6 +21,7 @@ import {
   configureDualTransformControls,
   createDualTransformControls,
   detachDualTransformControls,
+  DISABLED_TRANSFORM_TOOLS,
   disposeDualTransformControls,
   dualTransformIsActive,
   setDualTransformDragging,
@@ -207,6 +208,7 @@ export default function FloorPlanScene({
   onSpatialSelect,
   onCancelPlacement,
   externalStatus = "",
+  shadowEnabled = true,
 }) {
   const containerRef = useRef(null);
   const runtimeRef = useRef(null);
@@ -286,9 +288,9 @@ export default function FloorPlanScene({
     scene.add(keyLight);
 
     const runtime = {
-      container, scene, renderer, camera, orbitControls, transformControls, transformTools: { translate: false, rotate: false },
+      container, scene, renderer, camera, orbitControls, transformControls, transformTools: DISABLED_TRANSFORM_TOOLS,
       floorRoot, structureRoot, equipmentRoot, referenceRoot, placementRoot, placementPreview: null,
-      structureObjects: new Map(), equipmentObjects: new Map(), floorSurface: null,
+      structureObjects: new Map(), equipmentObjects: new Map(), floorSurface: null, keyLight,
     };
     runtimeRef.current = runtime;
     const raycaster = new THREE.Raycaster();
@@ -469,6 +471,13 @@ export default function FloorPlanScene({
       runtimeRef.current = null;
     };
   }, [theme]);
+
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
+    runtime.renderer.shadowMap.enabled = shadowEnabled;
+    runtime.keyLight.castShadow = shadowEnabled;
+  }, [shadowEnabled]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;

@@ -8,6 +8,7 @@ import {
 import { ObjectLibrarySearch } from "@/features/digitalTwin/editor/components/ObjectLibrary";
 import { EQUIPMENT_SHAPE_TEMPLATE_MAP } from "@/features/digitalTwin/editor/constants/equipmentShapeTemplates";
 import { WORLD_STRUCTURE_TEMPLATE_MAP } from "@/features/digitalTwin/editor/constants/worldStructureTemplates";
+import { STAIR_SCOPES } from "@/features/digitalTwin/editor/utils/stairStructure";
 
 import objectStyles from "./ObjectLibrary/ObjectLibrary.module.css";
 import styles from "./FloorObjectList.module.css";
@@ -28,6 +29,13 @@ const FILTER_LABELS = {
 function includesQuery(item, query) {
   if (!query) return true;
   return [item.name, item.type, item.shapeTemplateId].filter(Boolean).join(" ").toLocaleLowerCase("ko-KR").includes(query);
+}
+
+function getStructureFloorLabel(structure, floorNameById) {
+  if (structure.type !== "STAIR") return structure.floorId ? floorNameById[structure.floorId] : "다층";
+  if (structure.scope === STAIR_SCOPES.ALL_FLOORS) return "모든 층 · 층별 인스턴스";
+  if (structure.scope === STAIR_SCOPES.CONNECTING) return `${floorNameById[structure.fromFloorId] ?? "시작층"} → ${floorNameById[structure.toFloorId] ?? "종료층"}`;
+  return floorNameById[structure.floorId] ?? "층 미지정";
 }
 
 export default function FloorObjectList({
@@ -59,7 +67,7 @@ export default function FloorObjectList({
             <button key={structure.id} type="button" className={selectedStructureId === structure.id ? styles.active : ""} aria-pressed={selectedStructureId === structure.id} onClick={() => onSelectStructure(structure)}>
               <span className={styles.icon}><WorldStructureTypeIcon definition={WORLD_STRUCTURE_TEMPLATE_MAP[structure.type]} size={17} /></span>
               <span>{structure.name}</span>
-              <small>{structure.floorId ? floorNameById[structure.floorId] : "다층"}</small>
+              <small>{getStructureFloorLabel(structure, floorNameById)}</small>
             </button>
           ))}
           {!visibleStructures.length ? <p>구조 오브젝트 없음</p> : null}

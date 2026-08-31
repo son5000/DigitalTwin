@@ -2,6 +2,7 @@ import { CUSTOM_ASSET_SCHEMA_VERSION, CUSTOM_ASSET_STATUS, CUSTOM_ASSET_TYPES, c
 import { createComplexTowerAssembly } from "./buildingAssembly.js";
 import { createBuildingFootprint } from "./buildingTemplates.js";
 import { recalculateBuildingAsset } from "./buildingMetrics.js";
+import { CUSTOM_BUILDING_AUTHORING_MODES, createDefaultBlockGrid, deriveBlockBuildingAsset } from "./blockBuildingModel.js";
 
 function createSection({ startFloor, endFloor, width, depth, templateId, offset = { x: 0, z: 0 }, color = "#87979D" }) {
   return {
@@ -17,9 +18,11 @@ function createSection({ startFloor, endFloor, width, depth, templateId, offset 
   };
 }
 
-export function createDefaultCustomBuilding(templateId = "RECTANGLE") {
+export function createDefaultCustomBuilding(templateId = "BLOCK") {
   const timestamp = new Date().toISOString();
-  const sections = templateId === "PODIUM_TOWER"
+  const sections = templateId === "BLOCK"
+    ? []
+    : templateId === "PODIUM_TOWER"
     ? [
       createSection({ startFloor: 1, endFloor: 4, width: 30, depth: 22, templateId: "RECTANGLE" }),
       createSection({ startFloor: 5, endFloor: 10, width: 18, depth: 16, templateId: "RECTANGLE", offset: { x: 2, z: 0 }, color: "#6F8793" }),
@@ -30,7 +33,7 @@ export function createDefaultCustomBuilding(templateId = "RECTANGLE") {
         createSection({ startFloor: 5, endFloor: 8, width: 20, depth: 15, templateId: "RECTANGLE", offset: { x: -2, z: -1 } }),
       ]
       : [createSection({ startFloor: 1, endFloor: 5, width: 24, depth: 16, templateId })];
-  return recalculateBuildingAsset({
+  const building = {
     id: createCustomAssetId(),
     type: CUSTOM_ASSET_TYPES.BUILDING,
     schemaVersion: CUSTOM_ASSET_SCHEMA_VERSION,
@@ -52,7 +55,10 @@ export function createDefaultCustomBuilding(templateId = "RECTANGLE") {
     ],
     bounds: { width: 0, depth: 0, height: 0 },
     metrics: { totalFloorAreaM2: 0, totalFloorAreaPyeong: 0, buildingAreaM2: 0, floorCount: 0 },
-  });
+    authoringMode: templateId === "BLOCK" ? CUSTOM_BUILDING_AUTHORING_MODES.BLOCK : CUSTOM_BUILDING_AUTHORING_MODES.OUTLINE,
+    ...(templateId === "BLOCK" ? { blockGrid: createDefaultBlockGrid() } : {}),
+  };
+  return recalculateBuildingAsset(templateId === "BLOCK" ? deriveBlockBuildingAsset(building) : building);
 }
 
 export function createComplexTowerCustomBuilding() {

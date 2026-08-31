@@ -3,9 +3,15 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
 import { SCENE_THEMES } from "@/features/digitalTwin/editor/constants/sceneThemes";
+import {
+  createFloorDisplayOffsets,
+  sortFloorsByLevel,
+} from "@/features/digitalTwin/editor/model/floorDisplay";
+import { isFloorShadowEnabled } from "@/features/digitalTwin/editor/model/shadowPolicy";
+import { createTextSprite } from "@/features/digitalTwin/editor/objects/createTextSprite";
 import { getBuildingFootprint } from "@/features/digitalTwin/editor/utils/buildingFootprint";
-import { getVerticalStructureOpeningForFloor } from "@/features/digitalTwin/editor/utils/stairStructure";
-import { createStairAssemblyObject } from "@/features/digitalTwin/editor/world/StairFactory";
+import { getStairRenderInstances, getVerticalStructureOpeningForFloor, STAIR_SCOPES } from "@/features/digitalTwin/editor/utils/stairStructure";
+import { createStairRenderObject } from "@/features/digitalTwin/editor/world/StairFactory";
 import { createWorldStructureObject, getWorldStructureDimensions } from "@/features/digitalTwin/editor/world/WorldStructureFactory";
 
 import { disposeObject3D } from "./disposeObject3D";
@@ -16,6 +22,7 @@ import {
   configureDualTransformControls,
   createDualTransformControls,
   detachDualTransformControls,
+  DISABLED_TRANSFORM_TOOLS,
   disposeDualTransformControls,
   dualTransformIsActive,
   setDualTransformDragging,
@@ -57,6 +64,76 @@ function findEquipmentRoot(object, root) {
     current = current.parent;
   }
   return object;
+}
+
+function createFloorRenderGroup(floor, displayOffsetY = 0) {
+  const group = new THREE.Group();
+  group.name = `FloorRenderGroup:${floor.name}`;
+  group.position.y = displayOffsetY;
+  group.userData.floorId = floor.id;
+  group.userData.renderFloorId = floor.id;
+  group.userData.isFloorRenderGroup = true;
+  const layers = Object.fromEntries([
+    ["slab", "FloorSlab"],
+    ["structures", "RoomsWallsDoors"],
+    ["equipment", "Equipment"],
+    ["vertical", "VerticalStructures"],
+    ["stairs", "Stairs"],
+    ["sensors", "FloorSensors"],
+    ["labels", "FloorLabels"],
+  ].map(([key, name]) => {
+    const layer = new THREE.Group();
+    layer.name = name;
+    layer.userData.floorId = floor.id;
+    layer.userData.renderFloorId = floor.id;
+    group.add(layer);
+    return [key, layer];
+  }));
+  return { group, layers };
+}
+
+function markRenderFloor(object, floorId) {
+  object.userData.floorId = floorId;
+  object.userData.renderFloorId = floorId;
+  return object;
+}
+
+function applyShadowPolicy(runtime) {
+  runtime.renderer.shadowMap.enabled = runtime.shadowEnabled;
+  runtime.light.castShadow = runtime.shadowEnabled;
+  runtime.floorGroups.forEach((group, floorId) => {
+    const enabled = isFloorShadowEnabled({
+      shadowEnabled: runtime.shadowEnabled,
+      floorDisplayGap: runtime.floorDisplayGap,
+      selectedFloorId: runtime.selectedFloorId,
+      floorId,
+    });
+    group.traverse((object) => {
+      if (!object.isMesh) return;
+      if (object.userData.defaultCastShadow === undefined) object.userData.defaultCastShadow = object.castShadow;
+      if (object.userData.defaultReceiveShadow === undefined) object.userData.defaultReceiveShadow = object.receiveShadow;
+      object.castShadow = enabled && object.userData.defaultCastShadow;
+      object.receiveShadow = enabled && object.userData.defaultReceiveShadow;
+    });
+  });
+}
+
+function collectFloorLabelObjects(floorGroups) {
+  const labels = [];
+  floorGroups.forEach((group) => group.traverse((object) => {
+    if (object.userData.floorLabel) labels.push(object);
+  }));
+  return labels;
+}
+
+function getStoredFloorLocalPosition(object) {
+  // FloorRenderGroup.position.y는 부모의 표시 전용 오프셋이므로 로컬 좌표에는 포함되지 않는다.
+  const floorBaseY = object.userData.floorBaseY ?? 0;
+  return {
+    x: object.position.x,
+    y: Math.max(0, object.position.y - floorBaseY),
+    z: object.position.z,
+  };
 }
 
 function addHole(shape, opening) {
@@ -108,12 +185,14 @@ export default function FloorPlan3DScene({
   transformTools, onPlanAdd, onEquipmentAdd, onPlanSelect, onEquipmentSelect,
   onPlanTransform, onEquipmentTransform, onObservationPointAdd, onCancelPlacement, externalStatus = "",
   onSpatialSelect,
+  floorDisplayGap = 0, onFloorSelect,
+  shadowEnabled = true,
 }) {
   const containerRef = useRef(null);
   const runtimeRef = useRef(null);
-  const handlersRef = useRef({ onPlanAdd, onEquipmentAdd, onPlanSelect, onEquipmentSelect, onPlanTransform, onEquipmentTransform, onObservationPointAdd, onSpatialSelect, onCancelPlacement });
+  const handlersRef = useRef({ onPlanAdd, onEquipmentAdd, onPlanSelect, onEquipmentSelect, onPlanTransform, onEquipmentTransform, onObservationPointAdd, onSpatialSelect, onCancelPlacement, onFloorSelect });
   const stateRef = useRef({ editMode, activePlanTemplateId, activeEquipmentTemplateId, currentFloor, selectedEquipmentId, monitoringMode, verticalStructures, floorPlansById });
-  useEffect(() => { handlersRef.current = { onPlanAdd, onEquipmentAdd, onPlanSelect, onEquipmentSelect, onPlanTransform, onEquipmentTransform, onObservationPointAdd, onSpatialSelect, onCancelPlacement }; }, [onCancelPlacement, onEquipmentAdd, onEquipmentSelect, onEquipmentTransform, onObservationPointAdd, onPlanAdd, onPlanSelect, onPlanTransform, onSpatialSelect]);
+  useEffect(() => { handlersRef.current = { onPlanAdd, onEquipmentAdd, onPlanSelect, onEquipmentSelect, onPlanTransform, onEquipmentTransform, onObservationPointAdd, onSpatialSelect, onCancelPlacement, onFloorSelect }; }, [onCancelPlacement, onEquipmentAdd, onEquipmentSelect, onEquipmentTransform, onFloorSelect, onObservationPointAdd, onPlanAdd, onPlanSelect, onPlanTransform, onSpatialSelect]);
   useEffect(() => { stateRef.current = { editMode, activePlanTemplateId, activeEquipmentTemplateId, currentFloor, selectedEquipmentId, monitoringMode, verticalStructures, floorPlansById }; }, [activeEquipmentTemplateId, activePlanTemplateId, currentFloor, editMode, floorPlansById, monitoringMode, selectedEquipmentId, verticalStructures]);
 
   useEffect(() => {
@@ -153,7 +232,7 @@ export default function FloorPlan3DScene({
     light.shadow.camera.top = 40;
     light.shadow.camera.bottom = -40;
     scene.add(light);
-    const runtime = { container, scene, renderer, camera, controls, transformControls, transformTools: { translate: false, rotate: false }, contentRoot, helperRoot, placementRoot, placementPreview: null, floorPickers: [] };
+    const runtime = { container, scene, renderer, camera, controls, transformControls, transformTools: DISABLED_TRANSFORM_TOOLS, contentRoot, helperRoot, placementRoot, placementPreview: null, floorPickers: [], floorGroups: new Map(), floorLayers: new Map(), floorOffsetTargets: new Map(), floorGuides: [], stairFloorGuides: [], monitoringFloorGuides: [], light, shadowEnabled: true, floorDisplayGap: 0, selectedFloorId: null };
     runtimeRef.current = runtime;
     const raycaster = new THREE.Raycaster();
     const start = new THREE.Vector2();
@@ -175,9 +254,9 @@ export default function FloorPlan3DScene({
         preview.visible = false;
         return null;
       }
-      const baseY = floorHit.object.position.y;
+      const displayBaseY = floorHit.object.getWorldPosition(new THREE.Vector3()).y;
       const placementElevation = preview.userData.placementElevation ?? 0;
-      preview.position.set(floorHit.point.x, baseY + placementElevation + 0.04, floorHit.point.z);
+      preview.position.set(floorHit.point.x, displayBaseY + placementElevation + 0.04, floorHit.point.z);
       preview.visible = true;
       return { x: floorHit.point.x, y: placementElevation, z: floorHit.point.z };
     };
@@ -204,6 +283,15 @@ export default function FloorPlan3DScene({
         else handlersRef.current.onPlanSelect?.(domain.id);
         return;
       }
+      const [floorLabelHit] = raycaster.intersectObjects(collectFloorLabelObjects(runtime.floorGroups), true);
+      if (floorLabelHit?.object.userData.floorId) {
+        const focus = floorLabelHit.object.getWorldPosition(new THREE.Vector3());
+        const deltaY = focus.y - runtime.controls.target.y;
+        runtime.controls.target.set(0, focus.y, 0);
+        runtime.camera.position.y += deltaY;
+        handlersRef.current.onFloorSelect?.(floorLabelHit.object.userData.floorId);
+        return;
+      }
       if (placementTemplateId) {
         const position = updatePlacementPreview(event);
         if (!position) {
@@ -221,17 +309,16 @@ export default function FloorPlan3DScene({
     const handleObjectChange = (activeControl) => {
       const object = activeControl.object;
       if (!object) return;
-      const baseY = object.userData.floorBaseY ?? 0;
       if (object.userData.equipmentId) {
         handlersRef.current.onEquipmentTransform?.(object.userData.equipmentId, {
-          position: { x: object.position.x, y: Math.max(0, object.position.y - baseY), z: object.position.z },
+          position: getStoredFloorLocalPosition(object),
           rotation: { x: object.rotation.x, y: object.rotation.y, z: object.rotation.z },
         });
       } else if (object.userData.worldStructureId) {
         const structure = stateRef.current.verticalStructures.find((item) => item.id === object.userData.worldStructureId)
           ?? Object.values(stateRef.current.floorPlansById).flatMap((plan) => plan.structures ?? []).find((item) => item.id === object.userData.worldStructureId);
         const applied = handlersRef.current.onPlanTransform?.(object.userData.worldStructureId, {
-          position: { x: object.position.x, y: Math.max(0, object.position.y - baseY), z: object.position.z },
+          position: getStoredFloorLocalPosition(object),
           rotation: { x: 0, y: object.rotation.y, z: 0 },
         });
         if (applied === false) {
@@ -261,7 +348,42 @@ export default function FloorPlan3DScene({
     transformControls.rotate.addEventListener("dragging-changed", handleRotateDragging);
     const observer = new ResizeObserver(() => resize(runtime)); observer.observe(container); resize(runtime);
     let frame;
-    const render = () => { controls.update(); renderer.render(scene, camera); frame = requestAnimationFrame(render); }; render();
+    const render = () => {
+      runtime.floorGroups.forEach((group, floorId) => {
+        const target = runtime.floorOffsetTargets.get(floorId) ?? 0;
+        group.position.y = THREE.MathUtils.lerp(group.position.y, target, 0.14);
+        if (Math.abs(group.position.y - target) < 0.001) group.position.y = target;
+      });
+      runtime.floorGuides.forEach(({ line, lowerFloor, upperFloor }) => {
+        const lowerY = (lowerFloor.elevation ?? 0) + (runtime.floorGroups.get(lowerFloor.id)?.position.y ?? 0);
+        const upperY = (upperFloor.elevation ?? 0) + (runtime.floorGroups.get(upperFloor.id)?.position.y ?? 0);
+        line.visible = Math.abs((runtime.floorGroups.get(upperFloor.id)?.position.y ?? 0) - (runtime.floorGroups.get(lowerFloor.id)?.position.y ?? 0)) > 0.01;
+        line.geometry.setFromPoints([new THREE.Vector3(0, lowerY, 0), new THREE.Vector3(0, upperY, 0)]);
+        line.computeLineDistances();
+      });
+      runtime.monitoringFloorGuides.forEach(({ line, sourcePosition, targetPosition, sourceFloorId, targetFloorId }) => {
+        const sourceOffset = runtime.floorGroups.get(sourceFloorId)?.position.y ?? 0;
+        const targetOffset = runtime.floorGroups.get(targetFloorId)?.position.y ?? 0;
+        line.geometry.setFromPoints([
+          sourcePosition.clone().add(new THREE.Vector3(0, sourceOffset, 0)),
+          targetPosition.clone().add(new THREE.Vector3(0, targetOffset, 0)),
+        ]);
+        line.computeLineDistances();
+      });
+      runtime.stairFloorGuides.forEach(({ line, structure, fromFloor, toFloor }) => {
+        const fromOffset = runtime.floorGroups.get(fromFloor.id)?.position.y ?? 0;
+        const toOffset = runtime.floorGroups.get(toFloor.id)?.position.y ?? 0;
+        const topY = (toFloor.elevation ?? 0) + fromOffset;
+        const targetY = (toFloor.elevation ?? 0) + toOffset;
+        line.visible = Math.abs(targetY - topY) > 0.01;
+        line.geometry.setFromPoints([
+          new THREE.Vector3(structure.position.x, topY, structure.position.z),
+          new THREE.Vector3(structure.position.x, targetY, structure.position.z),
+        ]);
+        line.computeLineDistances();
+      });
+      controls.update(); renderer.render(scene, camera); frame = requestAnimationFrame(render);
+    }; render();
     return () => {
       cancelAnimationFrame(frame); observer.disconnect(); renderer.domElement.removeEventListener("pointerdown", onDown); renderer.domElement.removeEventListener("pointerup", onUp); renderer.domElement.removeEventListener("pointermove", updatePlacementPreview); renderer.domElement.removeEventListener("pointerleave", onLeave);
       transformControls.translate.removeEventListener("mouseUp", handleTranslateCommit);
@@ -306,15 +428,27 @@ export default function FloorPlan3DScene({
   useEffect(() => {
     const runtime = runtimeRef.current;
     if (!runtime || !building || !currentFloor) return;
+    const previousFloorOffsets = new Map([...runtime.floorGroups].map(([floorId, group]) => [floorId, group.position.y]));
     detachDualTransformControls(runtime.transformControls);
     disposeObject3D(runtime.contentRoot); runtime.scene.remove(runtime.contentRoot); runtime.contentRoot = new THREE.Group(); runtime.scene.add(runtime.contentRoot);
     disposeObject3D(runtime.helperRoot); runtime.scene.remove(runtime.helperRoot); runtime.helperRoot = new THREE.Group(); runtime.scene.add(runtime.helperRoot);
     runtime.floorPickers = [];
+    runtime.floorGroups = new Map();
+    runtime.floorLayers = new Map();
+    runtime.floorGuides = [];
+    runtime.stairFloorGuides = [];
+    runtime.monitoringFloorGuides = [];
     const visibleFloors = viewScope === "BUILDING" ? floors : [currentFloor];
-    const visibleEquipmentEntries = [];
+    const orderedFloors = sortFloorsByLevel(floors);
     visibleFloors.forEach((floor) => {
       const baseY = viewScope === "BUILDING" ? floor.elevation ?? 0 : 0;
-      const connectedVertical = verticalStructures.filter((item) => item.applicationScope?.connectedFloorIds?.includes(floor.id));
+      const { group: floorGroup, layers } = createFloorRenderGroup(
+        floor,
+        previousFloorOffsets.get(floor.id) ?? runtime.floorOffsetTargets.get(floor.id) ?? 0,
+      );
+      runtime.floorGroups.set(floor.id, floorGroup);
+      runtime.floorLayers.set(floor.id, layers);
+      runtime.contentRoot.add(floorGroup);
       const openings = verticalStructures
         .map((structure) => getVerticalStructureOpeningForFloor(
           structure,
@@ -331,67 +465,130 @@ export default function FloorPlan3DScene({
           openings,
         });
         spatialObject.position.y = baseY;
-        spatialObject.userData.floorMeshes.forEach((mesh) => { mesh.userData.floorId = floor.id; runtime.floorPickers.push(mesh); });
-        runtime.contentRoot.add(spatialObject);
+        markRenderFloor(spatialObject, floor.id);
+        spatialObject.userData.floorMeshes.forEach((mesh) => { markRenderFloor(mesh, floor.id); runtime.floorPickers.push(mesh); });
+        layers.slab.add(spatialObject);
       } else {
         const floorMesh = createFloor(building, openings, floorPlan?.floorStyle);
         floorMesh.position.y = baseY;
-        floorMesh.userData.floorId = floor.id;
+        markRenderFloor(floorMesh, floor.id);
         runtime.floorPickers.push(floorMesh);
-        runtime.contentRoot.add(floorMesh);
+        layers.slab.add(floorMesh);
       }
-      const structures = [
-        ...(floorPlansById[floor.id]?.structures ?? []),
-        ...connectedVertical.filter((structure) => structure.type !== "STAIR"),
-      ];
+      const structures = floorPlansById[floor.id]?.structures ?? [];
       structures.forEach((structure) => {
         const object = createWorldStructureObject(structure, { selected: structure.id === selectedStructureId, theme, sceneTheme: SCENE_THEMES[theme] });
         object.position.y += baseY;
         object.userData.floorBaseY = baseY;
-        runtime.contentRoot.add(object);
+        markRenderFloor(object, floor.id);
+        layers.structures.add(object);
       });
-      (equipmentByFloorId[floor.id] ?? []).forEach((equipment) => visibleEquipmentEntries.push({ equipment, baseY }));
+      createEquipmentRenderObjects((equipmentByFloorId[floor.id] ?? []).map((equipment) => ({ equipment, baseY })), {
+        selectedEquipmentId,
+        theme,
+        viewerTranslucent: equipmentTranslucent,
+        disableInstancing: monitoringMode,
+      }).forEach((object) => {
+        markRenderFloor(object, floor.id);
+        layers.equipment.add(object);
+      });
+      if (viewScope === "BUILDING") {
+        const label = createTextSprite(floor.name, { background: "rgba(19, 34, 42, 0.9)", border: "#69b6c9", color: "#eefcff", scale: { x: 2.2, y: 0.55 } });
+        label.position.set(-(building.parameters?.width ?? 20) / 2 - 1.6, baseY + 0.5, 0);
+        label.userData.floorLabel = true;
+        label.userData.floorId = floor.id;
+        layers.labels.add(label);
+      }
     });
-    createEquipmentRenderObjects(visibleEquipmentEntries, {
-      selectedEquipmentId,
-      theme,
-      viewerTranslucent: equipmentTranslucent,
-      disableInstancing: monitoringMode,
-    }).forEach((object) => runtime.contentRoot.add(object));
-    verticalStructures.filter((structure) => structure.type === "STAIR").forEach((stair) => {
-      const object = createStairAssemblyObject(stair, floors, {
-        selected: stair.id === selectedStructureId,
-        sceneTheme: SCENE_THEMES[theme],
-        currentFloorId: viewScope === "FLOOR" ? currentFloor.id : null,
-        baseElevation: viewScope === "FLOOR" ? currentFloor.elevation ?? 0 : 0,
+    if (viewScope === "BUILDING") {
+      const orderedVisibleFloors = sortFloorsByLevel(visibleFloors);
+      orderedVisibleFloors.slice(0, -1).forEach((lowerFloor, index) => {
+        const upperFloor = orderedVisibleFloors[index + 1];
+        const line = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineDashedMaterial({ color: 0x69b6c9, transparent: true, opacity: 0.32, dashSize: 0.5, gapSize: 0.35 }));
+        line.userData.floorSpreadGuide = true;
+        runtime.floorGuides.push({ line, lowerFloor, upperFloor });
+        runtime.helperRoot.add(line);
       });
-      object.userData.floorBaseY = 0;
-      runtime.contentRoot.add(object);
+    }
+    verticalStructures.forEach((structure) => {
+      const connectedFloorIds = structure.applicationScope?.connectedFloorIds ?? structure.servedFloorIds ?? [];
+      if (viewScope === "FLOOR" && connectedFloorIds.length && !connectedFloorIds.includes(currentFloor.id)) return;
+      if (structure.type === "STAIR") {
+        getStairRenderInstances(structure, floors).filter((instance) => (
+          viewScope === "BUILDING" || instance.renderFloorId === currentFloor.id
+        )).forEach((instance) => {
+          const ownerLayers = runtime.floorLayers.get(instance.renderFloorId);
+          if (!ownerLayers) return;
+          const object = createStairRenderObject(structure, instance, {
+            selected: structure.id === selectedStructureId,
+            sceneTheme: SCENE_THEMES[theme],
+            baseElevation: viewScope === "FLOOR" ? currentFloor.elevation ?? 0 : 0,
+          });
+          markRenderFloor(object, instance.renderFloorId);
+          object.userData.floorBaseY = 0;
+          ownerLayers.stairs.add(object);
+        });
+        if (viewScope === "BUILDING" && structure.scope === STAIR_SCOPES.CONNECTING) {
+          const fromFloor = orderedFloors.find((floor) => floor.id === structure.fromFloorId);
+          const toFloor = orderedFloors.find((floor) => floor.id === structure.toFloorId);
+          if (fromFloor && toFloor) {
+            const line = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineDashedMaterial({ color: 0xf2b84b, transparent: true, opacity: 0.55, dashSize: 0.28, gapSize: 0.18 }));
+            runtime.stairFloorGuides.push({ line, structure, fromFloor, toFloor });
+            runtime.helperRoot.add(line);
+          }
+        }
+        return;
+      }
+      const ownerFloorId = structure.fromFloorId ?? structure.applicationScope?.startFloorId ?? structure.floorId ?? currentFloor.id;
+      const ownerFloor = floors.find((floor) => floor.id === ownerFloorId);
+      const ownerLayers = runtime.floorLayers.get(ownerFloorId);
+      if (!ownerLayers) return;
+      const object = createWorldStructureObject(structure, {
+        selected: structure.id === selectedStructureId,
+        sceneTheme: SCENE_THEMES[theme],
+        theme,
+      });
+      const baseY = viewScope === "BUILDING" ? ownerFloor?.elevation ?? 0 : 0;
+      object.position.y += baseY;
+      markRenderFloor(object, ownerFloorId);
+      object.userData.floorBaseY = baseY;
+      ownerLayers.vertical.add(object);
     });
 
     const equipmentMap = new Map();
     Object.entries(equipmentByFloorId).forEach(([floorId, items]) => {
       const floor = floors.find((item) => item.id === floorId);
-      items.forEach((item) => equipmentMap.set(item.id, { equipment: item, baseY: viewScope === "BUILDING" ? floor?.elevation ?? 0 : 0 }));
+      items.forEach((item) => equipmentMap.set(item.id, { equipment: item, floorId, baseY: viewScope === "BUILDING" ? floor?.elevation ?? 0 : 0 }));
     });
     const sensorWorldPosition = (device) => {
       const mounted = device.mountMode === "EQUIPMENT" ? equipmentMap.get(device.equipmentIds?.[0]) : null;
-      return new THREE.Vector3(
-        (mounted?.equipment.position.x ?? 0) + device.position.x,
-        (mounted ? mounted.baseY + mounted.equipment.position.y : 0) + device.position.y,
-        (mounted?.equipment.position.z ?? 0) + device.position.z,
-      );
+      return {
+        floorId: mounted?.floorId ?? device.floorId ?? device.parentFloorId ?? currentFloor.id,
+        position: new THREE.Vector3(
+          (mounted?.equipment.position.x ?? 0) + device.position.x,
+          (mounted ? mounted.baseY + mounted.equipment.position.y : 0) + device.position.y,
+          (mounted?.equipment.position.z ?? 0) + device.position.z,
+        ),
+      };
     };
     observationPoints.forEach((point) => {
       const target = equipmentMap.get(point.equipmentId);
       if (!target) return;
       const position = new THREE.Vector3(target.equipment.position.x + point.localPosition.x, target.baseY + target.equipment.position.y + point.localPosition.y, target.equipment.position.z + point.localPosition.z);
-      const marker = new THREE.Mesh(new THREE.SphereGeometry(0.14, 14, 10), new THREE.MeshBasicMaterial({ color: 0xffc14d })); marker.position.copy(position); runtime.helperRoot.add(marker); marker.userData.observationPointId = point.id;
+      const marker = new THREE.Mesh(new THREE.SphereGeometry(0.14, 14, 10), new THREE.MeshBasicMaterial({ color: 0xffc14d }));
+      marker.position.copy(position);
+      marker.userData.observationPointId = point.id;
+      markRenderFloor(marker, target.floorId);
+      (runtime.floorLayers.get(target.floorId)?.sensors ?? runtime.helperRoot).add(marker);
     });
     monitoringDevices.forEach((device) => {
+      const sensorLocation = sensorWorldPosition(device);
       const geometry = device.sourceType === "CAMERA" ? new THREE.ConeGeometry(0.28, 0.7, 12) : new THREE.SphereGeometry(0.22, 12, 8);
       const marker = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: device.sourceType === "CAMERA" ? 0x4da8ff : 0x4de0a8, wireframe: device.sourceType === "CAMERA" }));
-      marker.position.copy(sensorWorldPosition(device)); marker.rotation.set(device.rotation.x, device.rotation.y, device.rotation.z); runtime.helperRoot.add(marker);
+      marker.position.copy(sensorLocation.position);
+      marker.rotation.set(device.rotation.x, device.rotation.y, device.rotation.z);
+      markRenderFloor(marker, sensorLocation.floorId);
+      (runtime.floorLayers.get(sensorLocation.floorId)?.sensors ?? runtime.helperRoot).add(marker);
       if (device.sourceType === "CAMERA") {
         const length = Math.max(1, device.far ?? device.range ?? 10); const radius = Math.tan(THREE.MathUtils.degToRad(device.fieldOfView ?? device.fov ?? 50) / 2) * length;
         const frustum = new THREE.Mesh(new THREE.ConeGeometry(radius, length, 18, 1, true), new THREE.MeshBasicMaterial({ color: 0x4da8ff, transparent: true, opacity: 0.09, wireframe: true }));
@@ -403,28 +600,54 @@ export default function FloorPlan3DScene({
       const point = observationPoints.find((item) => item.id === binding.observationPointId);
       const target = point ? equipmentMap.get(point.equipmentId) : null;
       if (!device || !point || !target) return;
+      const source = sensorWorldPosition(device);
       const targetPosition = new THREE.Vector3(target.equipment.position.x + point.localPosition.x, target.baseY + target.equipment.position.y + point.localPosition.y, target.equipment.position.z + point.localPosition.z);
-      const geometry = new THREE.BufferGeometry().setFromPoints([sensorWorldPosition(device), targetPosition]);
+      const geometry = new THREE.BufferGeometry().setFromPoints([source.position, targetPosition]);
       const line = new THREE.Line(geometry, new THREE.LineDashedMaterial({ color: 0x68d4ff, dashSize: 0.3, gapSize: 0.18 }));
       line.computeLineDistances();
-      runtime.helperRoot.add(line);
+      if (source.floorId === target.floorId && runtime.floorLayers.has(target.floorId)) {
+        runtime.floorLayers.get(target.floorId).sensors.add(line);
+      } else {
+        runtime.monitoringFloorGuides.push({ line, sourcePosition: source.position, targetPosition, sourceFloorId: source.floorId, targetFloorId: target.floorId });
+        runtime.helperRoot.add(line);
+      }
     });
-    const selectedObject = editMode === "EQUIPMENT"
-      ? [...runtime.contentRoot.children].find((object) => object.userData.equipmentId === selectedEquipmentId)
-      : [...runtime.contentRoot.children].find((object) => object.userData.worldStructureId === selectedStructureId);
+    let selectedObject = null;
+    runtime.contentRoot.traverse((object) => {
+      if (selectedObject) return;
+      if (editMode === "EQUIPMENT" && object.userData.equipmentId === selectedEquipmentId) selectedObject = object;
+      if (editMode !== "EQUIPMENT" && object.userData.worldStructureId === selectedStructureId) selectedObject = object;
+    });
     if (!monitoringMode && selectedObject) {
       attachDualTransformControls(runtime.transformControls, selectedObject, runtime.transformTools, {
         camera: runtime.camera,
         allowVerticalTranslation: editMode === "EQUIPMENT",
       });
     }
+    applyShadowPolicy(runtime);
   }, [building, currentFloor, editMode, equipmentByFloorId, equipmentTranslucent, floors, monitoringBindings, monitoringDevices, monitoringMode, observationPoints, selectedEquipmentId, selectedSpatialEntity, selectedStructureId, floorPlansById, theme, verticalStructures, viewScope]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
     if (!runtime) return;
+    runtime.floorOffsetTargets = createFloorDisplayOffsets(floors, floorDisplayGap);
+    runtime.floorDisplayGap = floorDisplayGap;
+    applyShadowPolicy(runtime);
+  }, [floorDisplayGap, floors]);
+
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
+    runtime.shadowEnabled = shadowEnabled;
+    runtime.selectedFloorId = currentFloor?.id ?? null;
+    applyShadowPolicy(runtime);
+  }, [currentFloor?.id, shadowEnabled]);
+
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
     runtime.transformTools = transformTools;
-    configureDualTransformControls(runtime.transformControls, monitoringMode ? { translate: false, rotate: false } : transformTools, {
+    configureDualTransformControls(runtime.transformControls, monitoringMode ? DISABLED_TRANSFORM_TOOLS : transformTools, {
       camera: runtime.camera,
       allowVerticalTranslation: editMode === "EQUIPMENT",
     });

@@ -18,16 +18,16 @@ import {
 import styles from "./WorldStructureLibrary.module.css";
 
 const FILTER_LABELS = {
-  FLOOR: "Floor",
-  WALL: "Wall",
-  OPENING: "Opening",
-  PARTITION: "Partition",
-  COLUMN: "Column",
-  PLATFORM: "Platform",
-  BOUNDARY: "Railing / Fence",
-  VERTICAL: "Stair / Elevator / Shaft",
-  OTHER: "Other World",
-  EQUIPMENT: "Equipment",
+  FLOOR: "바닥",
+  WALL: "벽",
+  OPENING: "개구부",
+  PARTITION: "칸막이",
+  COLUMN: "기둥",
+  PLATFORM: "플랫폼",
+  BOUNDARY: "난간 / 펜스",
+  VERTICAL: "계단 / 엘리베이터 / 샤프트",
+  OTHER: "기타 구조물",
+  EQUIPMENT: "설비",
 };
 
 export default function WorldStructureLibrary({
@@ -77,7 +77,7 @@ export default function WorldStructureLibrary({
         <span>도구 그룹</span>
         <select value={activeGroup} onChange={(event) => setActiveGroup(event.target.value)}>
           {availableGroups.map((group) => (
-            <option key={group.id} value={group.id}>{group.nameKo} · {group.name}</option>
+            <option key={group.id} value={group.id}>{group.nameKo}</option>
           ))}
         </select>
       </label>
@@ -90,12 +90,12 @@ export default function WorldStructureLibrary({
               className={activeTemplateId === definition.id ? styles.activeTool : ""}
               aria-pressed={activeTemplateId === definition.id}
               disabled={worldLocked}
-              title={`${definition.nameKo} (${definition.name}) 배치`}
+              title={`${definition.nameKo} 배치`}
               onClick={() => onSelectTemplate(definition.id)}
             >
               <span aria-hidden="true"><WorldStructureTypeIcon definition={definition} size={25} /></span>
               <strong>{definition.nameKo}</strong>
-              <small>{definition.name}</small>
+              <small>{definition.placement ?? "구조물"}</small>
             </button>
         ))}
       </div>
@@ -118,7 +118,7 @@ export default function WorldStructureLibrary({
         onClick={() => onToggleWorldLock(!worldLocked)}
       >
         {worldLocked ? <LockIcon size={17} /> : <UnlockIcon size={17} />}
-        {worldLocked ? "World Structure 잠금 해제" : "World Structure 전체 잠금"}
+        {worldLocked ? "월드 구조물 잠금 해제" : "월드 구조물 전체 잠금"}
       </button> : null}
 
       <div className={styles.tree}>
@@ -135,7 +135,7 @@ export default function WorldStructureLibrary({
                 onClick={() => onSelectStructure(structure.id)}
               >
                 <span><WorldStructureTypeIcon definition={WORLD_STRUCTURE_TEMPLATE_MAP[structure.type]} size={17} /> {structure.name}</span>
-                <small>{structure.locked ? "LOCKED" : structure.type}</small>
+                <small>{structure.locked ? "잠김" : WORLD_STRUCTURE_TEMPLATE_MAP[structure.type]?.nameKo ?? "구조물"}</small>
               </button>
           ))}
         </section>
@@ -144,7 +144,7 @@ export default function WorldStructureLibrary({
           {equipment.length === 0 ? (
             <p>배치된 설비가 없습니다.</p>
           ) : equipment.map((item) => (
-            <button key={item.id} type="button" title="Equipment Edit Mode에서 선택 가능" onClick={() => onSelectEquipment(item.id)}>
+            <button key={item.id} type="button" title="설비 편집 모드에서 선택할 수 있습니다" onClick={() => onSelectEquipment(item.id)}>
               <span><EquipmentIcon size={17} /> {item.name}</span><small>설비</small>
             </button>
           ))}

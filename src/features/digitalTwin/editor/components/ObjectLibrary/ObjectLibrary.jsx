@@ -42,13 +42,13 @@ export default function ObjectLibrary({ definitions, activeTemplateId, activeVar
   }
 
   return (
-    <section className={styles.library} aria-label="Object Library">
+    <section className={styles.library} aria-label="오브젝트 라이브러리">
       <ObjectLibrarySearch value={query} resultCount={filteredDefinitions.length} onChange={setQuery} />
 
       {activeDefinition ? (
         <div className={styles.activeObject}>
           <ObjectPreview definition={activeDefinition} compact />
-          <span><small>현재 배치</small><strong>{activeDefinition.name}</strong></span>
+          <span><small>현재 배치</small><strong>{activeDefinition.nameKo ?? activeDefinition.name}</strong></span>
           <kbd>ESC</kbd>
         </div>
       ) : null}

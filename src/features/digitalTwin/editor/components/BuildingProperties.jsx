@@ -4,6 +4,7 @@ import { getRuntimeCustomAsset } from "@/features/customAssets/core/customAssetR
 import { BUILDING_VIEW_MODES } from "@/features/customAssets/building/buildingAssembly";
 import { getDefaultObjectVariants, OBJECT_LIBRARY_DEFINITION_MAP } from "@/features/digitalTwin/editor/constants/objectLibraryCatalog";
 import { BUILDING_TEMPLATES } from "@/features/digitalTwin/editor/model/digitalTwinHierarchy";
+import { BUILDING_FACADES, normalizeBuildingOpenings } from "@/features/digitalTwin/editor/model/buildingOpenings";
 
 import NumericField from "./NumericField";
 import MaterialAppearanceEditor from "./MaterialAppearanceEditor";
@@ -15,6 +16,14 @@ const ROOF_OPTIONS = [
   { id: "GABLE", label: "박공지붕" },
   { id: "SAWTOOTH", label: "톱니지붕" },
 ];
+
+const FACADE_OPTIONS = Object.freeze([
+  [BUILDING_FACADES.FRONT, "정면"], [BUILDING_FACADES.BACK, "후면"],
+  [BUILDING_FACADES.LEFT, "좌측면"], [BUILDING_FACADES.RIGHT, "우측면"],
+]);
+const APPEARANCE_MATERIAL_OPTIONS = Object.freeze([
+  ["PAINTED_METAL", "도장 금속"], ["STEEL", "강재"], ["WOOD", "목재"], ["GLASS", "유리"],
+]);
 
 function SettingsGroup({ title, summary, defaultOpen = false, children }) {
   return (
@@ -41,6 +50,9 @@ export default function BuildingProperties({ building, floorCount, floorPlanSumm
   const buildingDefinition = OBJECT_LIBRARY_DEFINITION_MAP[building.templateId];
   const isCustomBuilding = Boolean(building.customAssetId);
   const customAsset = isCustomBuilding ? getRuntimeCustomAsset(building.customAssetId) ?? building.customAssetSnapshot : null;
+  const facadeOpenings = normalizeBuildingOpenings(building.facadeOpenings, floorCount);
+  const updateOpening = (kind, changes) => onChange({ facadeOpenings: { ...facadeOpenings, [kind]: { ...facadeOpenings[kind], ...changes } } });
+  const updateOpeningAppearance = (kind, slot, changes) => updateOpening(kind, { [slot]: { ...facadeOpenings[kind][slot], ...changes } });
 
   return (
     <section className={styles.panel}>
@@ -105,6 +117,39 @@ export default function BuildingProperties({ building, floorCount, floorPlanSumm
 
       {!isCustomBuilding ? <SettingsGroup title="형태 세부 옵션" summary="지붕 · 외벽 · 창문 · 출입구">
         <ObjectVariantSelector definition={buildingDefinition} value={building.variants} onChange={(variants) => onChange({ variants, parameters: { roofType: variants.roofStyle ?? building.parameters.roofType } })} />
+      </SettingsGroup> : null}
+
+      {!isCustomBuilding ? <SettingsGroup title="출입문" summary={facadeOpenings.doors.enabled ? `${facadeOpenings.doors.count}개 · ${FACADE_OPTIONS.find(([id]) => id === facadeOpenings.doors.facade)?.[1]}` : "사용 안 함"}>
+        <div className={styles.elementChecks}><label><input type="checkbox" checked={facadeOpenings.doors.enabled} onChange={(event) => updateOpening("doors", { enabled: event.target.checked })} /><span>출입문 사용</span></label></div>
+        <div className={styles.inlineGrid}>
+          <NumericField label="개수" value={facadeOpenings.doors.count} min={1} max={12} step={1} unit="개" disabled={!facadeOpenings.doors.enabled} onChange={(count) => updateOpening("doors", { count })} />
+          <label className={styles.selectField}><span>배치 외벽</span><select disabled={!facadeOpenings.doors.enabled} value={facadeOpenings.doors.facade} onChange={(event) => updateOpening("doors", { facade: event.target.value })}>{FACADE_OPTIONS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
+          <label className={styles.selectField}><span>종류</span><select disabled={!facadeOpenings.doors.enabled} value={facadeOpenings.doors.type} onChange={(event) => updateOpening("doors", { type: event.target.value })}><option value="STANDARD">일반문</option><option value="DOUBLE">양개문</option><option value="SLIDING">미닫이문</option><option value="SHUTTER">셔터</option><option value="VEHICLE_GATE">차량 출입문</option></select></label>
+          <NumericField label="너비" value={facadeOpenings.doors.width} min={0.7} unit="m" disabled={!facadeOpenings.doors.enabled} onChange={(width) => updateOpening("doors", { width })} />
+          <NumericField label="높이" value={facadeOpenings.doors.height} min={1.8} unit="m" disabled={!facadeOpenings.doors.enabled} onChange={(height) => updateOpening("doors", { height })} />
+          <NumericField label="간격" value={facadeOpenings.doors.spacing} min={0.2} unit="m" disabled={!facadeOpenings.doors.enabled} onChange={(spacing) => updateOpening("doors", { spacing })} />
+          <NumericField label="중심 오프셋" value={facadeOpenings.doors.offset} unit="m" disabled={!facadeOpenings.doors.enabled} onChange={(offset) => updateOpening("doors", { offset })} />
+          <NumericField label="시작 층" value={facadeOpenings.doors.startFloor} min={1} max={floorCount} step={1} unit="층" disabled={!facadeOpenings.doors.enabled} onChange={(startFloor) => updateOpening("doors", { startFloor })} />
+          <NumericField label="종료 층" value={facadeOpenings.doors.endFloor} min={facadeOpenings.doors.startFloor} max={floorCount} step={1} unit="층" disabled={!facadeOpenings.doors.enabled} onChange={(endFloor) => updateOpening("doors", { endFloor })} />
+        </div>
+        <div className={styles.inlineGrid}>{[["frame", "문틀"], ["leaf", "문짝"]].map(([slot, label]) => <div key={slot}><label className={styles.selectField}><span>{label} 재질</span><select disabled={!facadeOpenings.doors.enabled} value={facadeOpenings.doors[slot].materialPreset} onChange={(event) => updateOpeningAppearance("doors", slot, { materialPreset: event.target.value })}>{APPEARANCE_MATERIAL_OPTIONS.map(([id, text]) => <option key={id} value={id}>{text}</option>)}</select></label><label className={styles.colorField}><span>{label} 색상</span><span><input type="color" disabled={!facadeOpenings.doors.enabled} value={facadeOpenings.doors[slot].color} onChange={(event) => updateOpeningAppearance("doors", slot, { color: event.target.value })} /><code>{facadeOpenings.doors[slot].color}</code></span></label></div>)}</div>
+      </SettingsGroup> : null}
+
+      {!isCustomBuilding ? <SettingsGroup title="창문" summary={facadeOpenings.windows.enabled ? `외벽당 ${facadeOpenings.windows.count}개 · ${facadeOpenings.windows.startFloor}~${facadeOpenings.windows.endFloor}층` : "사용 안 함"}>
+        <div className={styles.elementChecks}><label><input type="checkbox" checked={facadeOpenings.windows.enabled} onChange={(event) => updateOpening("windows", { enabled: event.target.checked })} /><span>창문 사용</span></label></div>
+        <div className={styles.inlineGrid}>
+          <NumericField label="외벽당 개수" value={facadeOpenings.windows.count} min={1} max={24} step={1} unit="개" disabled={!facadeOpenings.windows.enabled} onChange={(count) => updateOpening("windows", { count })} />
+          <label className={styles.selectField}><span>종류</span><select disabled={!facadeOpenings.windows.enabled} value={facadeOpenings.windows.type} onChange={(event) => updateOpening("windows", { type: event.target.value })}><option value="FIXED">고정창</option><option value="SLIDING">미닫이창</option><option value="CASEMENT">여닫이창</option><option value="CURTAIN_WALL">커튼월</option><option value="LOUVER">루버</option></select></label>
+          <NumericField label="너비" value={facadeOpenings.windows.width} min={0.3} unit="m" disabled={!facadeOpenings.windows.enabled} onChange={(width) => updateOpening("windows", { width })} />
+          <NumericField label="높이" value={facadeOpenings.windows.height} min={0.3} unit="m" disabled={!facadeOpenings.windows.enabled} onChange={(height) => updateOpening("windows", { height })} />
+          <NumericField label="창턱 높이" value={facadeOpenings.windows.sillHeight} min={0.1} unit="m" disabled={!facadeOpenings.windows.enabled} onChange={(sillHeight) => updateOpening("windows", { sillHeight })} />
+          <NumericField label="간격" value={facadeOpenings.windows.spacing} min={0.1} unit="m" disabled={!facadeOpenings.windows.enabled} onChange={(spacing) => updateOpening("windows", { spacing })} />
+          <NumericField label="중심 오프셋" value={facadeOpenings.windows.offset} unit="m" disabled={!facadeOpenings.windows.enabled} onChange={(offset) => updateOpening("windows", { offset })} />
+          <NumericField label="시작 층" value={facadeOpenings.windows.startFloor} min={1} max={floorCount} step={1} unit="층" disabled={!facadeOpenings.windows.enabled} onChange={(startFloor) => updateOpening("windows", { startFloor })} />
+          <NumericField label="종료 층" value={facadeOpenings.windows.endFloor} min={facadeOpenings.windows.startFloor} max={floorCount} step={1} unit="층" disabled={!facadeOpenings.windows.enabled} onChange={(endFloor) => updateOpening("windows", { endFloor })} />
+        </div>
+        <div className={styles.elementChecks}>{FACADE_OPTIONS.map(([id, label]) => <label key={id}><input type="checkbox" disabled={!facadeOpenings.windows.enabled} checked={facadeOpenings.windows.facades.includes(id)} onChange={(event) => updateOpening("windows", { facades: event.target.checked ? [...facadeOpenings.windows.facades, id] : facadeOpenings.windows.facades.filter((item) => item !== id) })} /><span>{label}</span></label>)}</div>
+        <div className={styles.inlineGrid}>{[["frame", "창틀"], ["glass", "유리"]].map(([slot, label]) => <div key={slot}><label className={styles.selectField}><span>{label} 재질</span><select disabled={!facadeOpenings.windows.enabled} value={facadeOpenings.windows[slot].materialPreset} onChange={(event) => updateOpeningAppearance("windows", slot, { materialPreset: event.target.value })}>{APPEARANCE_MATERIAL_OPTIONS.map(([id, text]) => <option key={id} value={id}>{text}</option>)}</select></label><label className={styles.colorField}><span>{label} 색상</span><span><input type="color" disabled={!facadeOpenings.windows.enabled} value={facadeOpenings.windows[slot].color} onChange={(event) => updateOpeningAppearance("windows", slot, { color: event.target.value })} /><code>{facadeOpenings.windows[slot].color}</code></span></label></div>)}</div>
       </SettingsGroup> : null}
 
       <SettingsGroup title="층과 출입구" summary={`${floorCount}층 · ${totalHeight.toFixed(1)} m`}>

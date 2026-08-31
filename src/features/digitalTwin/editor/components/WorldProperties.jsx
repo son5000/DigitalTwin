@@ -10,21 +10,21 @@ export default function WorldProperties({ world, onChange }) {
       </div>
       <div className={styles.fields}>
         <NumericField
-          label="Width"
+          label="너비"
           value={world.width}
           min={3}
           unit="m"
           onChange={(width) => onChange({ width })}
         />
         <NumericField
-          label="Depth"
+          label="깊이"
           value={world.depth}
           min={3}
           unit="m"
           onChange={(depth) => onChange({ depth })}
         />
         <NumericField
-          label="Wall H"
+          label="벽 높이"
           value={world.wallHeight}
           min={1}
           unit="m"

@@ -4,6 +4,10 @@ import {
   GRID_CELL_SIZE_OPTIONS,
 } from "@/features/digitalTwin/editor/constants/gridSettings";
 import { SITE_INTERACTION_MODES } from "@/features/digitalTwin/editor/constants/siteEnvironmentTemplates";
+import {
+  MOVE_AXIS_MODES,
+  normalizeMoveAxisMode,
+} from "@/features/digitalTwin/editor/constants/transformTools";
 import { WORLD_PANEL_IDS } from "@/features/digitalTwin/editor/constants/worldPanel";
 import { EDITOR_MODES } from "@/features/digitalTwin/editor/constants/worldStructureTemplates";
 import {
@@ -12,6 +16,7 @@ import {
   DuplicateIcon,
   EditIcon,
   EquipmentIcon,
+  FocusBuildingIcon,
   GridViewIcon,
   ImportIcon,
   Layout2DIcon,
@@ -19,18 +24,20 @@ import {
   LockIcon,
   MoreIcon,
   MoveIcon,
+  MoveOffIcon,
+  MovePlanarIcon,
   NavigateIcon,
   ResetIcon,
   RedoIcon,
   RotateIcon,
   SaveIcon,
   SelectIcon,
+  ShadowIcon,
   SnapIcon,
+  TransparencyLayersIcon,
   UndoIcon,
   UnlockIcon,
   View3DIcon,
-  VisibilityIcon,
-  VisibilityOffIcon,
   ViewerIcon,
   WorldIcon,
 } from "@/components/icons";
@@ -76,7 +83,13 @@ const PANEL_TOOL_CONFIG = {
   },
 };
 
-function ToolbarButton({ icon, label, shortcut, active = false, pressed, menuItem = false, ...buttonProps }) {
+const MOVE_AXIS_UI = Object.freeze({
+  [MOVE_AXIS_MODES.XYZ]: { label: "전체 이동", badge: "XYZ", icon: MoveIcon },
+  [MOVE_AXIS_MODES.OFF]: { label: "이동 꺼짐", badge: "꺼짐", icon: MoveOffIcon },
+  [MOVE_AXIS_MODES.PLANAR]: { label: "평면 이동", badge: "평면", icon: MovePlanarIcon },
+});
+
+function ToolbarButton({ icon, label, shortcut, badge, active = false, pressed, menuItem = false, ...buttonProps }) {
   return (
     <button
       type="button"
@@ -88,9 +101,31 @@ function ToolbarButton({ icon, label, shortcut, active = false, pressed, menuIte
       {...buttonProps}
     >
       <span className={styles.icon} aria-hidden="true">{icon}</span>
+      {badge ? <span className={styles.badge} aria-hidden="true">{badge}</span> : null}
       {menuItem ? <span className={styles.menuLabel}>{label}</span> : null}
       {menuItem && shortcut ? <kbd>{shortcut}</kbd> : null}
     </button>
+  );
+}
+
+function MoveAxisButton({ transformTools, disabled, onClick }) {
+  const mode = normalizeMoveAxisMode(transformTools);
+  const config = MOVE_AXIS_UI[mode];
+  const Icon = config.icon;
+  const enabled = mode !== MOVE_AXIS_MODES.OFF;
+  const label = `이동: ${config.label}`;
+  return (
+    <ToolbarButton
+      icon={<Icon />}
+      label={label}
+      shortcut="W"
+      badge={config.badge}
+      active={enabled}
+      pressed={enabled}
+      disabled={disabled}
+      data-move-axis-mode={mode}
+      onClick={onClick}
+    />
   );
 }
 
@@ -180,6 +215,11 @@ export default function EditorToolbar({
   viewerTransparencyLabel = "반투명 보기",
   showSelectionActions = false,
   showSiteInteractionTools = false,
+  showBuildingIsolationToggle = false,
+  buildingIsolationEnabled = false,
+  buildingIsolationAvailable = false,
+  showShadowToggle = false,
+  shadowEnabled = true,
   siteInteractionMode = SITE_INTERACTION_MODES.NAVIGATE,
   editorMode,
   viewMode,
@@ -196,6 +236,8 @@ export default function EditorToolbar({
   onPanelChange,
   onViewerTransparencyChange,
   onSiteInteractionModeChange,
+  onBuildingIsolationChange,
+  onShadowEnabledChange,
   onViewModeChange,
   onTransformToolToggle,
   onSnapSizeChange,
@@ -234,8 +276,8 @@ export default function EditorToolbar({
         {panelTools.leading.map(renderPanelTool)}
         {panelTools.leading.length ? <Divider /> : null}
         <div className={styles.group} aria-label="이동과 회전">
-          <ToolbarButton icon={<MoveIcon />} label="이동" shortcut="W" active={transformTools.translate} pressed={transformTools.translate} disabled={!hasTransformSelection} onClick={() => onTransformToolToggle("translate")} />
-          <ToolbarButton icon={<RotateIcon />} label="로테이트" shortcut="E" active={transformTools.rotate} pressed={transformTools.rotate} disabled={!hasTransformSelection} onClick={() => onTransformToolToggle("rotate")} />
+          <MoveAxisButton transformTools={transformTools} disabled={!hasTransformSelection} onClick={() => onTransformToolToggle("translate")} />
+          <ToolbarButton icon={<RotateIcon />} label="회전" shortcut="E" active={transformTools.rotate} pressed={transformTools.rotate} disabled={!hasTransformSelection} onClick={() => onTransformToolToggle("rotate")} />
         </div>
         {showSiteInteractionTools ? (
           <div className={styles.group} aria-label="월드 조작 방식">
@@ -255,17 +297,42 @@ export default function EditorToolbar({
             />
           </div>
         ) : null}
+        {showBuildingIsolationToggle ? (
+          <>
+            <Divider />
+            <ToolbarButton
+              icon={<FocusBuildingIcon />}
+              label="선택 건축물만 보기"
+              active={buildingIsolationEnabled}
+              pressed={buildingIsolationEnabled}
+              disabled={!buildingIsolationAvailable}
+              title={buildingIsolationAvailable ? "선택 건축물만 보기" : "건축물을 선택하면 사용할 수 있습니다"}
+              data-tooltip={buildingIsolationAvailable ? `선택 건축물만 보기 · ${buildingIsolationEnabled ? "켜짐" : "꺼짐"}` : "건축물을 먼저 선택하세요"}
+              onClick={() => onBuildingIsolationChange?.(!buildingIsolationEnabled)}
+            />
+          </>
+        ) : null}
         {typeof viewerTranslucent === "boolean" ? (
           <>
             <Divider />
             <ToolbarButton
-              icon={viewerTranslucent ? <VisibilityOffIcon /> : <VisibilityIcon />}
+              icon={<TransparencyLayersIcon />}
               label={viewerTransparencyLabel}
               active={viewerTranslucent}
               pressed={viewerTranslucent}
               onClick={() => onViewerTransparencyChange?.(!viewerTranslucent)}
             />
           </>
+        ) : null}
+        {showShadowToggle ? (
+          <ToolbarButton
+            icon={<ShadowIcon />}
+            label={`그림자 표시 ${shadowEnabled ? "끄기" : "켜기"}`}
+            active={shadowEnabled}
+            pressed={shadowEnabled}
+            data-tooltip={`그림자 표시 · ${shadowEnabled ? "켜짐" : "꺼짐"}`}
+            onClick={() => onShadowEnabledChange?.(!shadowEnabled)}
+          />
         ) : null}
         {panelTools.trailing.length ? <Divider /> : null}
         {panelTools.trailing.map(renderPanelTool)}
@@ -307,7 +374,7 @@ export default function EditorToolbar({
         <>
           <Divider />
           <div className={styles.group} aria-label="이동과 회전">
-            <ToolbarButton icon={<MoveIcon />} label="이동" shortcut="W" active={transformTools.translate} pressed={transformTools.translate} disabled={!hasTransformSelection} onClick={() => onTransformToolToggle("translate")} />
+            <MoveAxisButton transformTools={transformTools} disabled={!hasTransformSelection} onClick={() => onTransformToolToggle("translate")} />
             <ToolbarButton icon={<RotateIcon />} label="Y축 회전" shortcut="E" active={transformTools.rotate} pressed={transformTools.rotate} disabled={!hasTransformSelection} onClick={() => onTransformToolToggle("rotate")} />
           </div>
           <Divider />

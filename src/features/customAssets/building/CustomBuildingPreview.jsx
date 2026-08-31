@@ -9,6 +9,7 @@ import {
   configureDualTransformControls,
   createDualTransformControls,
   DEFAULT_TRANSFORM_TOOLS,
+  DISABLED_TRANSFORM_TOOLS,
   detachDualTransformControls,
   disposeDualTransformControls,
   setDualTransformDragging,
@@ -195,7 +196,7 @@ export default function CustomBuildingPreview({
     runtime.snapSize = snapSize;
     runtime.transformEnabled = transformEnabled;
     runtime.transformControls.translate.setTranslationSnap(snapEnabled ? snapSize : null);
-    configureDualTransformControls(runtime.transformControls, transformEnabled ? transformTools : { translate: false, rotate: false });
+    configureDualTransformControls(runtime.transformControls, transformEnabled ? transformTools : DISABLED_TRANSFORM_TOOLS);
     const selectedObject = findTransformObject(runtime.model, selectedEntityId);
     if (selectedObject && transformEnabled && !runtime.explode) attachDualTransformControls(runtime.transformControls, selectedObject, transformTools);
     else detachDualTransformControls(runtime.transformControls);

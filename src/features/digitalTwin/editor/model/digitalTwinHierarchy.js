@@ -2,7 +2,7 @@ import {
   BUILDING_OBJECT_DEFINITIONS,
   getDefaultObjectVariants,
 } from "@/features/digitalTwin/editor/constants/objectLibraryCatalog";
-import { DEFAULT_BUILDING_SETTING_STATUS, getOverallBuildingSettingStatus } from "@/features/digitalTwin/editor/constants/buildingDetail";
+import { normalizeBuildingOpenings } from "@/features/digitalTwin/editor/model/buildingOpenings";
 
 export const HIERARCHY_NODE_TYPES = Object.freeze({
   SITE: "SITE",
@@ -19,7 +19,7 @@ export const HIERARCHY_CHILD_TYPES = Object.freeze({
 
 export const HIERARCHY_TYPE_LABELS = Object.freeze({
   [HIERARCHY_NODE_TYPES.SITE]: "부지",
-  [HIERARCHY_NODE_TYPES.BUILDING]: "건물",
+  [HIERARCHY_NODE_TYPES.BUILDING]: "건축물",
   [HIERARCHY_NODE_TYPES.FLOOR]: "층",
   [HIERARCHY_NODE_TYPES.ROOM]: "공간",
 });
@@ -34,13 +34,12 @@ export const BUILDING_TEMPLATES = Object.freeze(BUILDING_OBJECT_DEFINITIONS.map(
 export const DEFAULT_BUILDING_DEFINITION = Object.freeze({
   templateId: "BUILDING",
   objectDefinitionId: "BUILDING",
-  detailSettingStatus: "UNSET",
-  settingStatus: DEFAULT_BUILDING_SETTING_STATUS,
   parameters: Object.freeze({ width: 24, depth: 16, floorCount: 5, floorHeight: 3.6, roofType: "FLAT", entranceCount: 2, stairCount: 2, extras: [] }),
   variants: Object.freeze(getDefaultObjectVariants(BUILDING_OBJECT_DEFINITIONS[0])),
   position: Object.freeze({ x: 0, y: 0, z: 0 }),
   rotation: Object.freeze({ x: 0, y: 0, z: 0 }),
   appearance: Object.freeze({ color: "#9aa7ad", material: "CONCRETE" }),
+  facadeOpenings: Object.freeze(normalizeBuildingOpenings({}, 5)),
 });
 
 export const DEFAULT_ROOM_LAYOUT = Object.freeze({
@@ -73,16 +72,22 @@ export function normalizeHierarchy(hierarchy) {
     ))
     .map((node) => {
       if (node.type === HIERARCHY_NODE_TYPES.BUILDING) {
-        return {
+        const normalizedNode = {
           ...DEFAULT_BUILDING_DEFINITION,
           ...node,
           parameters: { ...DEFAULT_BUILDING_DEFINITION.parameters, ...node.parameters },
-          settingStatus: getOverallBuildingSettingStatus(node),
           variants: { ...DEFAULT_BUILDING_DEFINITION.variants, ...node.variants },
           position: { ...DEFAULT_BUILDING_DEFINITION.position, ...node.position },
           rotation: { ...DEFAULT_BUILDING_DEFINITION.rotation, ...node.rotation },
           appearance: { ...DEFAULT_BUILDING_DEFINITION.appearance, ...node.appearance },
+          facadeOpenings: normalizeBuildingOpenings(node.facadeOpenings ?? {
+            doors: { count: node.parameters?.entranceCount, type: node.variants?.entranceStyle },
+            windows: { type: node.variants?.windowStyle === "CURTAIN_WALL" ? "CURTAIN_WALL" : "FIXED" },
+          }, Math.max(1, Number(node.parameters?.floorCount) || 1)),
         };
+        delete normalizedNode.settingStatus;
+        delete normalizedNode.detailSettingStatus;
+        return normalizedNode;
       }
       if (node.type === HIERARCHY_NODE_TYPES.ROOM) {
         return {

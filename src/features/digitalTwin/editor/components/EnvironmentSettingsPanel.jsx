@@ -25,7 +25,7 @@ export default function EnvironmentSettingsPanel({ environment, boundaryNotice, 
       </div>
 
       <div className={styles.section}>
-        <h3>Background Theme</h3>
+        <h3>배경 테마</h3>
         <div className={styles.themeGrid}>
           {SITE_BACKGROUND_THEME_OPTIONS.map((option) => (
             <button
