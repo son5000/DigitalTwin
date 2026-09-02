@@ -31,7 +31,7 @@ const CATEGORY_SOURCE = [
   ["VEHICLE", "차량", "Vehicle", "승용·상용·산업 차량", "vehicle", [["PASSENGER", "승용 차량"], ["COMMERCIAL", "상용 차량"], ["INDUSTRIAL", "산업 차량"]]],
   ["TRAFFIC_FACILITY", "교통 시설", "Traffic Facility", "교통 흐름과 접근 제어", "traffic", [["SIGNAL", "신호·표지"], ["ACCESS", "접근 제어"]]],
   ["ROAD_FACILITY", "도로 시설", "Road Facility", "도로·보행·경계 시설", "road", [["SURFACE", "노면"], ["ACCESS", "보행 접근"], ["BOUNDARY", "경계·보호"]]],
-  ["ENVIRONMENT", "환경", "Environment", "부지의 자연·배경 요소", "environment", [["GROUND", "지면"], ["NATURAL", "자연물"], ["AMENITY", "편의시설"]]],
+  ["ENVIRONMENT", "환경", "Environment", "부지의 자연·배경 요소", "environment", [["GROUND", "지면"], ["NATURAL", "자연물"], ["AMENITY", "편의시설"], ["UNDERGROUND", "지하 연결 시설"]]],
   ["LANDSCAPING", "조경", "Landscaping", "산업 단지 조경과 식재", "landscape", [["TREE", "교목"], ["PLANTING", "식재"], ["FURNITURE", "조경 시설"]]],
   ["EQUIPMENT", "설비", "Equipment", "기능별 통합 설비 카탈로그", "mechanical", [["ELECTRICAL", "전기"], ["HVAC", "공조·환기"], ["PIPE_WATER", "배관·탱크·수처리"], ["FIRE_SAFETY", "소방·안전"], ["COMM_SECURITY", "통신·보안"], ["ENERGY_ENVIRONMENT", "에너지·환경"], ["GENERAL", "일반 설비"]]],
   ["LOGISTICS", "물류 시설", "Logistics", "보관·상하역·이송 시설", "logistics", [["STORAGE", "보관"], ["HANDLING", "하역·이송"]]],
@@ -185,6 +185,7 @@ function site([id, categoryId, subcategoryId, name, description, assetKind, prof
 }
 
 const SITE_OBJECTS = [
+  ["PERSON", "ENVIRONMENT", "AMENITY", "사람", "보행 경로와 대기 동작을 설정할 수 있는 사람", "PERSON", "PERSON", 0.55, 0.4, 1.75, "#4f7180", "PAINTED"],
   ["CAR", "VEHICLE", "PASSENGER", "승용차", "낮은 Sedan 비율의 승용차", "VEHICLE", "SEDAN", 1.85, 4.6, 1.45, "#5f7684"],
   ["SUV", "VEHICLE", "PASSENGER", "SUV", "높은 차체와 넓은 Wheel Arch", "VEHICLE", "SUV", 2, 4.8, 1.8, "#687b6b"],
   ["VAN", "VEHICLE", "COMMERCIAL", "밴", "박스형 적재 공간을 가진 Van", "VEHICLE", "VAN", 2, 5.2, 2.25, "#8b9295"],
@@ -193,6 +194,17 @@ const SITE_OBJECTS = [
   ["BUS", "VEHICLE", "COMMERCIAL", "버스", "긴 Passenger Cabin과 대형 창", "VEHICLE", "BUS", 2.5, 10.5, 3.2, "#477b8f"],
   ["FORKLIFT", "VEHICLE", "INDUSTRIAL", "지게차", "Mast와 Fork가 구분되는 산업 차량", "VEHICLE", "FORKLIFT", 1.5, 3.2, 2.3, "#d59a35"],
   ["TANKER_TRUCK", "VEHICLE", "INDUSTRIAL", "탱크로리", "원통 Tank와 Rear Ladder를 가진 차량", "VEHICLE", "TANKER", 2.5, 9.5, 3.4, "#788a91"],
+
+  ["UNDERGROUND_PASSAGE", "ENVIRONMENT", "UNDERGROUND", "지하통로", "지상과 지하층을 잇는 밀폐형 보행 통로", "UNDERGROUND_PATH", "UNDERGROUND_PASSAGE", 3.2, 10, 3, "#8b9492", "CONCRETE", "LINEAR", { targetFloorId: null }],
+  ["UNDERGROUND_WALKWAY", "ENVIRONMENT", "UNDERGROUND", "지하보도", "보행 동선과 조명이 포함된 지하 보도", "UNDERGROUND_PATH", "UNDERGROUND_WALKWAY", 4.5, 14, 3.2, "#929896", "CONCRETE", "LINEAR", { targetFloorId: null }],
+  ["SUBWAY_ENTRANCE", "ENVIRONMENT", "UNDERGROUND", "지하철역 출입구", "캐노피·표지·계단이 있는 지하철 출입구", "UNDERGROUND_ACCESS", "SUBWAY_ENTRANCE", 4, 7, 3.4, "#7c8b8f", "GLASS", "AREA", { targetFloorId: null }],
+  ["UNDERGROUND_STAIRS", "ENVIRONMENT", "UNDERGROUND", "지하 계단", "지면 개구부와 난간을 포함한 지하 연결 계단", "UNDERGROUND_ACCESS", "UNDERGROUND_STAIRS", 3, 6, 2.8, "#909492", "CONCRETE", "AREA", { stepCount: 16, targetFloorId: null }],
+  ["UNDERGROUND_ELEVATOR_ENTRANCE", "ENVIRONMENT", "UNDERGROUND", "지하 엘리베이터 출입구", "유리 승강로와 자동문이 있는 지상 출입구", "UNDERGROUND_ACCESS", "UNDERGROUND_ELEVATOR", 3.2, 3.2, 3.8, "#819298", "GLASS", "AREA", { targetFloorId: null }],
+  ["UNDERGROUND_PARKING_RAMP", "ENVIRONMENT", "UNDERGROUND", "지하주차장 진입 램프", "차량용 경사로와 측벽·경고등을 포함한 진입부", "UNDERGROUND_ACCESS", "PARKING_RAMP", 6, 14, 2.6, "#696f72", "CONCRETE", "AREA", { targetFloorId: null }],
+  ["VEHICLE_TUNNEL", "ENVIRONMENT", "UNDERGROUND", "차량용 지하 터널", "차선·조명·환기 덕트가 있는 차량 터널", "UNDERGROUND_PATH", "VEHICLE_TUNNEL", 8, 18, 5, "#747b7d", "CONCRETE", "LINEAR", { targetFloorId: null }],
+  ["EMERGENCY_STAIR_ENTRANCE", "ENVIRONMENT", "UNDERGROUND", "비상계단 출입구", "방화문과 비상 표지가 있는 계단실 출입구", "UNDERGROUND_ACCESS", "EMERGENCY_STAIR", 3, 4, 3.2, "#8b8178", "CONCRETE", "AREA", { targetFloorId: null }],
+  ["UNDERGROUND_VENT", "ENVIRONMENT", "UNDERGROUND", "지하 환기구", "루버와 방수턱이 있는 저상 환기구", "UNDERGROUND_ACCESS", "UNDERGROUND_VENT", 2.4, 1.4, 1.1, "#66777d", "METAL", "AREA", { targetFloorId: null }],
+  ["UNDERGROUND_VENT_TOWER", "ENVIRONMENT", "UNDERGROUND", "지하 환기탑", "흡·배기 루버와 점검문이 있는 환기탑", "UNDERGROUND_ACCESS", "UNDERGROUND_VENT_TOWER", 3, 2.5, 6, "#718188", "METAL", "AREA", { targetFloorId: null }],
 
   ["TRAFFIC_LIGHT", "TRAFFIC_FACILITY", "SIGNAL", "신호등", "3색 Signal Head와 Pole", "TRAFFIC", "TRAFFIC_LIGHT", 0.8, 0.8, 5.5, "#4f5b60", "METAL"],
   ["ROAD_SIGN", "TRAFFIC_FACILITY", "SIGNAL", "도로 표지판", "Pole과 반사 Sign Plate", "TRAFFIC", "ROAD_SIGN", 1.6, 0.5, 3.2, "#527b91", "METAL"],

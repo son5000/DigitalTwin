@@ -45,6 +45,8 @@ export default function BuildingProperties({ building, floorCount, floorPlanSumm
     );
   }
 
+  const basementFloorCount = Math.max(0, Number(building.parameters.basementFloorCount) || 0);
+  const basementFloorHeight = Math.max(2, Number(building.parameters.basementFloorHeight) || building.parameters.floorHeight);
   const totalHeight = floorCount * building.parameters.floorHeight;
   const configuredFloorCount = floorPlanSummary?.configuredFloorCount ?? 0;
   const verticalStructureCount = floorPlanSummary?.verticalStructureCount ?? 0;
@@ -153,10 +155,12 @@ export default function BuildingProperties({ building, floorCount, floorPlanSumm
         <div className={styles.inlineGrid}>{[["frame", "창틀"], ["glass", "유리"]].map(([slot, label]) => <div key={slot}><label className={styles.selectField}><span>{label} 재질</span><select disabled={!facadeOpenings.windows.enabled} value={facadeOpenings.windows[slot].materialPreset} onChange={(event) => updateOpeningAppearance("windows", slot, { materialPreset: event.target.value })}>{APPEARANCE_MATERIAL_OPTIONS.map(([id, text]) => <option key={id} value={id}>{text}</option>)}</select></label><label className={styles.colorField}><span>{label} 색상</span><span><input type="color" disabled={!facadeOpenings.windows.enabled} value={facadeOpenings.windows[slot].color} onChange={(event) => updateOpeningAppearance("windows", slot, { color: event.target.value })} /><code>{facadeOpenings.windows[slot].color}</code></span></label></div>)}</div>
       </SettingsGroup> : null}
 
-      <SettingsGroup title="층과 출입구" summary={`${floorCount}층 · ${totalHeight.toFixed(1)} m`}>
+      <SettingsGroup title="층과 출입구" summary={`지상 ${floorCount}층 · 지하 ${basementFloorCount}층 · ${totalHeight.toFixed(1)} m`}>
         <div className={styles.inlineGrid}>
-          <NumericField label="층 수" value={floorCount} min={1} step={1} unit="층" onChange={(nextFloorCount) => onChange({ parameters: { floorCount: nextFloorCount } })} />
-          <NumericField label="층고" value={building.parameters.floorHeight} min={2} unit="m" onChange={(floorHeight) => onChange({ parameters: { floorHeight } })} />
+          <NumericField label="지상 층 수" value={floorCount} min={1} step={1} unit="층" onChange={(nextFloorCount) => onChange({ parameters: { floorCount: nextFloorCount } })} />
+          <NumericField label="지상 층고" value={building.parameters.floorHeight} min={2} unit="m" onChange={(floorHeight) => onChange({ parameters: { floorHeight } })} />
+          <NumericField label="지하 층 수" value={basementFloorCount} min={0} max={20} step={1} unit="층" onChange={(basementFloorCount) => onChange({ parameters: { basementFloorCount } })} />
+          <NumericField label="지하 층고" value={basementFloorHeight} min={2} unit="m" onChange={(basementFloorHeight) => onChange({ parameters: { basementFloorHeight } })} />
           <NumericField label="출입구" value={building.parameters.entranceCount ?? 2} min={1} max={12} step={1} unit="개" onChange={(entranceCount) => onChange({ parameters: { entranceCount } })} />
         </div>
       </SettingsGroup>

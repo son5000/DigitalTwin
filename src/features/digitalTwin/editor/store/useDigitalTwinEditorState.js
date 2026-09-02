@@ -74,6 +74,20 @@ import {
   moveAttachedOutdoorEquipment,
   resolveOutdoorEquipmentPlacement,
 } from "@/features/digitalTwin/editor/model/outdoorEquipmentPlacement";
+import {
+  createUndergroundConnection,
+  getBasementFloorCount,
+  getBasementFloorHeight,
+  isUndergroundSiteObject,
+} from "@/features/digitalTwin/editor/model/undergroundModel";
+import { isMovableSiteObject, normalizeMovementConfig } from "@/features/digitalTwin/editor/model/movementPath";
+import {
+  createObservationWorkflow,
+  createUnconfiguredObservationWorkflow,
+  ensureObservationHostHierarchy,
+  expandObservationWorkflow,
+  normalizeObservationWorkflow,
+} from "@/features/digitalTwin/editor/model/observationWorkflow";
 import useWorldStructureState, {
   createDefaultWorldWalls,
 } from "@/features/digitalTwin/editor/store/useWorldStructureState";
@@ -203,6 +217,7 @@ function createHistorySnapshot(layoutDocument) {
     sensorBindings: layoutDocument.sensorBindings,
     observationPoints: layoutDocument.observationPoints,
     serverBindings: layoutDocument.serverBindings,
+    observationWorkflow: layoutDocument.observationWorkflow,
   });
 }
 
@@ -215,9 +230,11 @@ function mergeBuildingDefinition(building, changes) {
     ? Object.fromEntries(Object.entries({ ...building.parameters, ...changes.parameters }).map(([key, value]) => {
         if (typeof value !== "number") return [key, value];
         if (key === "floorCount") return [key, Math.min(100, Math.max(1, Math.round(value)))];
+        if (key === "basementFloorCount") return [key, Math.min(20, Math.max(0, Math.round(value)))];
         if (key === "entranceCount") return [key, Math.min(12, Math.max(1, Math.round(value)))];
         if (key === "stairCount") return [key, Math.min(8, Math.max(0, Math.round(value)))];
         if (key === "floorHeight") return [key, Math.max(2, value)];
+        if (key === "basementFloorHeight") return [key, Math.max(2, value)];
         if (key === "width" || key === "depth") return [key, Math.max(5, value)];
         return [key, value];
       }))
@@ -265,13 +282,29 @@ function getSiteBoundaryNotice(movedCount, oversizedCount) {
 function createBuildingFloors(building, existingFloors = []) {
   const floorCount = Math.min(100, Math.max(1, Math.round(building.parameters.floorCount ?? 1)));
   const floorHeight = Math.max(2, building.parameters.floorHeight ?? 4);
+  const basementFloorCount = getBasementFloorCount(building);
+  const basementFloorHeight = getBasementFloorHeight(building);
   const customAsset = building.customAssetId
     ? building.customAssetAutoUpdate === false
       ? building.customAssetSnapshot
       : getRuntimeCustomAsset(building.customAssetId) ?? building.customAssetSnapshot
     : null;
-  return Array.from({ length: floorCount }, (_, index) => {
-    const existing = existingFloors[index];
+  const existingByLevel = new Map(existingFloors.map((floor) => [Number(floor.level), floor]));
+  const basementFloors = Array.from({ length: basementFloorCount }, (_, index) => {
+    const level = -(index + 1);
+    const existing = existingByLevel.get(level);
+    return createHierarchyNode(HIERARCHY_NODE_TYPES.FLOOR, building.id, index, {
+      ...existing,
+      parentId: building.id,
+      level,
+      elevation: -(index + 1) * basementFloorHeight,
+      floorHeight: basementFloorHeight,
+      name: existing?.name ?? `B${index + 1}`,
+      isBasement: true,
+    });
+  });
+  const aboveGroundFloors = Array.from({ length: floorCount }, (_, index) => {
+    const existing = existingByLevel.get(index + 1);
     const level = index + 1;
     const resolvedFloorHeight = customAsset ? getFloorHeight(customAsset, level) : floorHeight;
     const elevation = customAsset ? getFloorBaseElevation(customAsset, level) : index * floorHeight;
@@ -282,8 +315,10 @@ function createBuildingFloors(building, existingFloors = []) {
       elevation,
       floorHeight: resolvedFloorHeight,
       name: existing?.name ?? `${level}층`,
+      isBasement: false,
     });
   });
+  return [...basementFloors.reverse(), ...aboveGroundFloors];
 }
 
 function createBuildingDefinitionFromArea({
@@ -317,6 +352,8 @@ function createBuildingDefinitionFromArea({
       width: Math.max(5, (Number(area?.width) || definition.width || 5) * scaleX),
       depth: Math.max(5, (Number(area?.depth) || definition.depth || 5) * scaleZ),
       floorHeight: Math.max(2, (definition.parameters?.floorHeight ?? 4) * scaleY),
+      basementFloorCount: 0,
+      basementFloorHeight: Math.max(2, (definition.parameters?.floorHeight ?? 4) * scaleY),
       roofType: variantOverrides.roofStyle
         ?? definition.defaultVariants?.roofStyle
         ?? definition.parameters?.roofType
@@ -364,6 +401,7 @@ export default function useDigitalTwinEditorState() {
   const [transformTools, setTransformTools] = useState(DEFAULT_TRANSFORM_TOOLS);
   const [gridSettings, setGridSettings] = useState(createDefaultGridSettings);
   const [navigationContext, setNavigationContext] = useState(createInitialNavigationContext);
+  const [observationWorkflow, setObservationWorkflow] = useState(createUnconfiguredObservationWorkflow);
   const [historyAvailability, setHistoryAvailability] = useState({ canUndo: false, canRedo: false });
   const snapSize = gridSettings.baseSize;
   const scanTimersRef = useRef(new Map());
@@ -964,6 +1002,7 @@ export default function useDigitalTwinEditorState() {
     setTransformTools(DEFAULT_TRANSFORM_TOOLS);
     setGridSettings(createDefaultGridSettings());
     setNavigationContext(createInitialNavigationContext());
+    setObservationWorkflow(createUnconfiguredObservationWorkflow());
     resetWorldStructures();
     floorPlanEditor.actions.resetFloorPlanState();
     floorEquipmentEditor.actions.resetFloorEquipmentState();
@@ -973,9 +1012,11 @@ export default function useDigitalTwinEditorState() {
   const hydrateLayout = useCallback((layout) => {
     const nextSiteEnvironment = resolveSiteEnvironmentFromLayout(layout);
     const normalizedHierarchy = normalizeHierarchy(layout?.hierarchy);
+    const normalizedWorkflow = normalizeObservationWorkflow(layout?.observationWorkflow, { legacyLayout: !layout?.observationWorkflow });
+    const hostResult = ensureObservationHostHierarchy(normalizedHierarchy, normalizedWorkflow.scopeType);
     const nextHierarchy = {
-      ...normalizedHierarchy,
-      nodes: normalizedHierarchy.nodes.map((node) => (
+      ...hostResult.hierarchy,
+      nodes: hostResult.hierarchy.nodes.map((node) => (
         node.type === HIERARCHY_NODE_TYPES.BUILDING
           ? clampBuildingToSite(node, nextSiteEnvironment).entity
           : node
@@ -997,6 +1038,13 @@ export default function useDigitalTwinEditorState() {
 
     clearHistory();
     setHierarchy(nextHierarchy);
+    setObservationWorkflow({
+      ...normalizedWorkflow,
+      viewerSettings: {
+        ...normalizedWorkflow.viewerSettings,
+        focusBuildingId: normalizedWorkflow.viewerSettings.focusBuildingId ?? hostResult.buildingId,
+      },
+    });
     setRoomScenes(nextRoomScenes);
     setSiteEnvironment(nextSiteEnvironment);
     setSiteBoundaryNotice("");
@@ -1011,7 +1059,12 @@ export default function useDigitalTwinEditorState() {
     floorPlanEditor.actions.hydrateFloorPlanState(layout);
     floorEquipmentEditor.actions.hydrateFloorEquipmentState(layout);
     monitoringEditor.actions.hydrateMonitoringState(layout);
-    setNavigationContext(createInitialNavigationContext());
+    setNavigationContext(hostResult.floorId ? {
+      ...createInitialNavigationContext(),
+      currentBuildingId: hostResult.buildingId,
+      currentFloorId: hostResult.floorId,
+      depth: EDITOR_DEPTHS.FLOOR,
+    } : createInitialNavigationContext());
     return true;
   }, [applyRoomScene, clearHistory, floorEquipmentEditor.actions, floorPlanEditor.actions, monitoringEditor.actions]);
 
@@ -1301,7 +1354,28 @@ export default function useDigitalTwinEditorState() {
     if (!building) return;
     const clampResult = clampBuildingToSite(mergeBuildingDefinition(building, changes), siteEnvironment);
     const nextBuilding = clampResult.entity;
-    setSiteObjects((items) => items.map((item) => moveAttachedOutdoorEquipment(item, building, nextBuilding)));
+    const buildingDelta = {
+      x: (nextBuilding.position.x ?? 0) - (building.position.x ?? 0),
+      z: (nextBuilding.position.z ?? 0) - (building.position.z ?? 0),
+    };
+    setSiteObjects((items) => items.map((item) => {
+      const moved = moveAttachedOutdoorEquipment(item, building, nextBuilding);
+      if (item.undergroundConnection?.targetBuildingId !== buildingId) return moved;
+      const targetFloor = hierarchy.nodes.find((node) => node.id === item.undergroundConnection.targetFloorId);
+      const targetLevel = Number(targetFloor?.level) < 0 ? Number(targetFloor.level) : -1;
+      return {
+        ...moved,
+        undergroundConnection: {
+          ...item.undergroundConnection,
+          endPoint: {
+            ...item.undergroundConnection.endPoint,
+            x: (item.undergroundConnection.endPoint?.x ?? nextBuilding.position.x) + buildingDelta.x,
+            y: targetLevel * getBasementFloorHeight(nextBuilding),
+            z: (item.undergroundConnection.endPoint?.z ?? nextBuilding.position.z) + buildingDelta.z,
+          },
+        },
+      };
+    }));
     if (nextBuilding.customAssetId && changes.parameters) {
       const customAsset = getRuntimeCustomAsset(nextBuilding.customAssetId) ?? nextBuilding.customAssetSnapshot;
       nextBuilding.customAssetScale = {
@@ -1318,7 +1392,8 @@ export default function useDigitalTwinEditorState() {
       setSiteBoundaryNotice(getSiteBoundaryNotice(clampResult.wasClamped ? 1 : 0, clampResult.fits ? 0 : 1));
     }
     const shouldSyncFloors = Boolean(changes.parameters)
-      && (Object.hasOwn(changes.parameters, "floorCount") || Object.hasOwn(changes.parameters, "floorHeight"));
+      && (["floorCount", "floorHeight", "basementFloorCount", "basementFloorHeight"]
+        .some((key) => Object.hasOwn(changes.parameters, key)));
 
     if (!shouldSyncFloors) {
       setHierarchy((current) => ({
@@ -1379,13 +1454,19 @@ export default function useDigitalTwinEditorState() {
     const sequence = siteObjects.filter((object) => object.type === templateId).length + 1;
     const createdObject = createSiteObjectFromArea(templateId, area, sequence, variantOverrides);
     const boundedObject = createdObject ? clampSiteObjectToSite(createdObject, siteEnvironment).entity : null;
-    const object = boundedObject ? resolveOutdoorEquipmentPlacement(boundedObject, buildings, siteObjects) : null;
+    let object = boundedObject ? resolveOutdoorEquipmentPlacement(boundedObject, buildings, siteObjects) : null;
+    if (object && isUndergroundSiteObject(object)) {
+      object = { ...object, undergroundConnection: createUndergroundConnection(object, buildings, floors) };
+    }
+    if (object && isMovableSiteObject(object)) {
+      object = { ...object, movement: normalizeMovementConfig(object.movement, object.position) };
+    }
     if (!object) return null;
     setSiteObjects((items) => [...items, object]);
     setSelectedSiteObjectId(object.id);
     setHierarchy((current) => ({ ...current, selectedNodeId: current.rootId }));
     return object.id;
-  }, [addBuildingFromArea, buildings, siteEnvironment, siteObjects]);
+  }, [addBuildingFromArea, buildings, floors, siteEnvironment, siteObjects]);
 
   const addSiteObjectsFromArea = useCallback((templateId, area, variantOverrides = {}, placementOptions = {}) => {
     const definition = OBJECT_LIBRARY_DEFINITION_MAP[templateId];
@@ -1468,14 +1549,17 @@ export default function useDigitalTwinEditorState() {
       });
       if (!normalizedObject) return null;
       const boundedObject = clampSiteObjectToSite(normalizedObject, siteEnvironment).entity;
-      return resolveOutdoorEquipmentPlacement(boundedObject, buildings, siteObjects);
+      const placed = resolveOutdoorEquipmentPlacement(boundedObject, buildings, siteObjects);
+      if (isUndergroundSiteObject(placed)) return { ...placed, undergroundConnection: createUndergroundConnection(placed, buildings, floors) };
+      if (isMovableSiteObject(placed)) return { ...placed, movement: normalizeMovementConfig(placed.movement, placed.position) };
+      return placed;
     }).filter(Boolean);
     const ids = createdObjects.map((object) => object.id);
     setSiteObjects((items) => [...items, ...createdObjects]);
     setSelectedSiteObjectId(ids.at(-1) ?? null);
     setHierarchy((current) => ({ ...current, selectedNodeId: current.rootId }));
     return { ...plan, ids };
-  }, [buildings, gridSettings.baseSize, gridSettings.enabled, hierarchy.nodes, hierarchy.rootId, siteEnvironment, siteObjects]);
+  }, [buildings, floors, gridSettings.baseSize, gridSettings.enabled, hierarchy.nodes, hierarchy.rootId, siteEnvironment, siteObjects]);
 
   const selectSiteObject = useCallback((objectId) => {
     const exists = siteObjects.some((object) => object.id === objectId);
@@ -1486,6 +1570,23 @@ export default function useDigitalTwinEditorState() {
   const updateSiteObject = useCallback((objectId, changes) => {
     const object = siteObjects.find((item) => item.id === objectId);
     if (!object || object.locked) return;
+    const undergroundConnectionChanges = changes.undergroundConnection
+      ? { ...object.undergroundConnection, ...changes.undergroundConnection }
+      : object.undergroundConnection && changes.position
+        ? {
+            ...object.undergroundConnection,
+            startPoint: {
+              ...object.undergroundConnection.startPoint,
+              x: (object.undergroundConnection.startPoint?.x ?? object.position.x) + ((changes.position.x ?? object.position.x) - object.position.x),
+              z: (object.undergroundConnection.startPoint?.z ?? object.position.z) + ((changes.position.z ?? object.position.z) - object.position.z),
+            },
+            endPoint: {
+              ...object.undergroundConnection.endPoint,
+              x: (object.undergroundConnection.endPoint?.x ?? object.position.x) + ((changes.position.x ?? object.position.x) - object.position.x),
+              z: (object.undergroundConnection.endPoint?.z ?? object.position.z) + ((changes.position.z ?? object.position.z) - object.position.z),
+            },
+          }
+        : object.undergroundConnection;
     const normalizedObject = normalizeSiteObject({
         ...object,
         ...changes,
@@ -1496,6 +1597,8 @@ export default function useDigitalTwinEditorState() {
         variants: changes.variants ? { ...object.variants, ...changes.variants } : object.variants,
         parameters: changes.parameters ? { ...object.parameters, ...changes.parameters } : object.parameters,
         path: changes.path ? { ...object.path, ...changes.path } : object.path,
+        movement: changes.movement ? normalizeMovementConfig({ ...object.movement, ...changes.movement }, object.position) : object.movement,
+        undergroundConnection: undergroundConnectionChanges,
     });
     if (!normalizedObject) return;
     const placedObject = resolveOutdoorEquipmentPlacement(
@@ -1637,16 +1740,20 @@ export default function useDigitalTwinEditorState() {
       if (targetNode?.type === HIERARCHY_NODE_TYPES.FLOOR) {
         const parent = nextNodes.find((node) => node.id === targetNode.parentId);
         const floorHeight = Math.max(2, parent?.parameters?.floorHeight ?? 4);
-        const remainingFloors = nextNodes
-          .filter((node) => node.type === HIERARCHY_NODE_TYPES.FLOOR && node.parentId === targetNode.parentId)
-          .sort((a, b) => (a.level ?? 0) - (b.level ?? 0));
-        const floorIndexes = new Map(remainingFloors.map((floor, index) => [floor.id, index]));
+        const basementFloorHeight = Math.max(2, parent?.parameters?.basementFloorHeight ?? floorHeight);
+        const remainingFloors = nextNodes.filter((node) => node.type === HIERARCHY_NODE_TYPES.FLOOR && node.parentId === targetNode.parentId);
+        const aboveFloors = remainingFloors.filter((floor) => Number(floor.level) > 0).sort((a, b) => Number(a.level) - Number(b.level));
+        const basementFloors = remainingFloors.filter((floor) => Number(floor.level) < 0).sort((a, b) => Math.abs(Number(a.level)) - Math.abs(Number(b.level)));
+        const floorUpdates = new Map([
+          ...aboveFloors.map((floor, index) => [floor.id, { level: index + 1, elevation: index * floorHeight, isBasement: false }]),
+          ...basementFloors.map((floor, index) => [floor.id, { level: -(index + 1), elevation: -(index + 1) * basementFloorHeight, isBasement: true }]),
+        ]);
         nextNodes = nextNodes.map((node) => {
           if (node.id === targetNode.parentId) {
-            return { ...node, parameters: { ...node.parameters, floorCount: remainingFloors.length } };
+            return { ...node, parameters: { ...node.parameters, floorCount: aboveFloors.length, basementFloorCount: basementFloors.length } };
           }
-          const index = floorIndexes.get(node.id);
-          return index === undefined ? node : { ...node, level: index + 1, elevation: index * floorHeight };
+          const update = floorUpdates.get(node.id);
+          return update ? { ...node, ...update } : node;
         });
       }
       return {
@@ -1716,6 +1823,51 @@ export default function useDigitalTwinEditorState() {
     selectWorldTemplate(null);
     setSelectedSiteObjectId(null);
   }, [selectWorldStructureState, selectWorldTemplate]);
+  const configureObservationWorkflow = useCallback((scopeType, options = {}) => {
+    const workflow = createObservationWorkflow(scopeType, options);
+    const hostResult = ensureObservationHostHierarchy(hierarchy, scopeType);
+    setHierarchy(hostResult.hierarchy);
+    setObservationWorkflow({
+      ...workflow,
+      viewerSettings: {
+        ...workflow.viewerSettings,
+        focusBuildingId: workflow.viewerSettings.focusBuildingId ?? hostResult.buildingId,
+      },
+    });
+    if (hostResult.buildingId || hostResult.floorId) {
+      setNavigationContext((current) => ({
+        ...current,
+        currentBuildingId: hostResult.buildingId,
+        currentFloorId: hostResult.floorId,
+        currentRoomId: null,
+        depth: hostResult.floorId ? EDITOR_DEPTHS.FLOOR : EDITOR_DEPTHS.BUILDING,
+        transitionDirection: "IN",
+        transitionId: current.transitionId + 1,
+      }));
+    }
+    return { workflow, buildingId: hostResult.buildingId, floorId: hostResult.floorId };
+  }, [hierarchy]);
+  const extendObservationWorkflow = useCallback((scopeType, options = {}) => {
+    const next = expandObservationWorkflow(observationWorkflow, scopeType, options);
+    const hostResult = ensureObservationHostHierarchy(hierarchy, scopeType);
+    setHierarchy(hostResult.hierarchy);
+    setObservationWorkflow({
+      ...next,
+      viewerSettings: {
+        ...next.viewerSettings,
+        focusBuildingId: next.viewerSettings.focusBuildingId ?? observationWorkflow.viewerSettings?.focusBuildingId ?? hostResult.buildingId,
+        equipmentIds: [...new Set([...(observationWorkflow.viewerSettings?.equipmentIds ?? []), ...(next.viewerSettings?.equipmentIds ?? [])])],
+        activeEquipmentId: next.viewerSettings?.activeEquipmentId ?? observationWorkflow.viewerSettings?.activeEquipmentId ?? null,
+      },
+    });
+    return next;
+  }, [hierarchy, observationWorkflow]);
+  const updateObservationViewerSettings = useCallback((changes) => {
+    setObservationWorkflow((current) => ({
+      ...current,
+      viewerSettings: { ...current.viewerSettings, ...changes },
+    }));
+  }, []);
   const layoutDocument = useMemo(() => ({
     hierarchy,
     gridSettings,
@@ -1731,7 +1883,8 @@ export default function useDigitalTwinEditorState() {
     sensorBindings: monitoringEditor.sensorBindings,
     observationPoints: monitoringEditor.observationPoints,
     serverBindings: monitoringEditor.serverBindings,
-  }), [currentRoomScene, floorEquipmentEditor.equipmentByFloorId, floorPlanEditor.floorPlansById, floorPlanEditor.verticalStructuresByBuildingId, gridSettings, hierarchy, monitoringEditor.equipmentAssetBindings, monitoringEditor.observationPoints, monitoringEditor.sensorBindings, monitoringEditor.serverBindings, roomScenes, siteEnvironment, siteObjects]);
+    observationWorkflow,
+  }), [currentRoomScene, floorEquipmentEditor.equipmentByFloorId, floorPlanEditor.floorPlansById, floorPlanEditor.verticalStructuresByBuildingId, gridSettings, hierarchy, monitoringEditor.equipmentAssetBindings, monitoringEditor.observationPoints, monitoringEditor.sensorBindings, monitoringEditor.serverBindings, observationWorkflow, roomScenes, siteEnvironment, siteObjects]);
 
   const commitHistorySnapshot = useCallback((snapshot) => {
     const currentSnapshot = historyCurrentRef.current;
@@ -1757,6 +1910,7 @@ export default function useDigitalTwinEditorState() {
 
   const restoreHistorySnapshot = useCallback((snapshot) => {
     const nextSiteEnvironment = normalizeSiteEnvironment(snapshot.siteEnvironment);
+    const nextObservationWorkflow = normalizeObservationWorkflow(snapshot.observationWorkflow, { legacyLayout: true });
     const nodeIds = new Set(snapshot.hierarchy.nodes.map((node) => node.id));
     const roomIds = new Set(
       snapshot.hierarchy.nodes
@@ -1793,6 +1947,7 @@ export default function useDigitalTwinEditorState() {
 
     applyRoomScene(activeScene ?? createDefaultRoomScene());
     setHierarchy(nextHierarchy);
+    setObservationWorkflow(nextObservationWorkflow);
     setRoomScenes(nextRoomScenes);
     setGridSettings(normalizeGridSettings(snapshot.gridSettings));
     setSiteEnvironment(nextSiteEnvironment);
@@ -1875,6 +2030,7 @@ export default function useDigitalTwinEditorState() {
 
   return {
     hierarchy,
+    observationWorkflow,
     hierarchyPath,
     rooms,
     activeRoom,
@@ -1970,6 +2126,9 @@ export default function useDigitalTwinEditorState() {
       updateDetailAsset,
       resetLayout,
       hydrateLayout,
+      configureObservationWorkflow,
+      extendObservationWorkflow,
+      updateObservationViewerSettings,
       selectRoom,
       addRoom,
       selectBuilding,

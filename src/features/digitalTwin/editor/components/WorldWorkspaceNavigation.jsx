@@ -2,11 +2,11 @@ import { WORLD_WIZARD_STEPS } from "@/features/digitalTwin/editor/constants/worl
 
 import styles from "./WorldWorkspaceNavigation.module.css";
 
-export default function WorldWorkspaceNavigation({ activeViewId, onViewChange }) {
+export default function WorldWorkspaceNavigation({ activeViewId, onViewChange, steps = WORLD_WIZARD_STEPS }) {
   return (
     <nav className={styles.navigation} aria-label="에디터 화면 이동">
       <ul>
-        {WORLD_WIZARD_STEPS.map((view) => {
+        {steps.map((view) => {
           const isActive = view.id === activeViewId;
           return (
             <li key={view.id}>

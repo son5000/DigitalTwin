@@ -21,9 +21,10 @@ export function saveLayout(layout) {
   delete gridSettings.siteSize;
   delete gridSettings.worldGridSize;
   const payload = {
-    version: 15,
+    version: 17,
     savedAt: new Date().toISOString(),
     hierarchy: layout.hierarchy,
+    observationWorkflow: layout.observationWorkflow,
     siteEnvironment: {
       width: layout.siteEnvironment.width,
       depth: layout.siteEnvironment.depth,

@@ -144,7 +144,7 @@ function addIndustrialDetails(group, building, width, depth, totalHeight, materi
 }
 
 export function getBuildingFloorCount(buildingId, floors) {
-  return Math.max(1, floors.filter((floor) => floor.parentId === buildingId).length);
+  return Math.max(1, floors.filter((floor) => floor.parentId === buildingId && Number(floor.level) > 0).length);
 }
 
 export function getBuildingSignature(building, floorCount, selected, expanded, theme, viewerTranslucent = false) {
@@ -283,14 +283,13 @@ export function updateBuildingFloorVisualState(group, building, floors, visualSt
     .filter((floor) => floor.parentId === building.id)
     .sort((left, right) => (left.level ?? 0) - (right.level ?? 0));
   const selectedIndex = Math.max(0, buildingFloors.findIndex((floor) => floor.id === visualState.selectedFloorId));
-  const floorHeight = building.parameters.floorHeight;
 
   group.traverse((child) => {
     if (!child.userData.floorId) return;
     const index = buildingFloors.findIndex((floor) => floor.id === child.userData.floorId);
     if (index < 0) return;
     const isSelectedFloor = index === selectedIndex;
-    child.position.y = index * floorHeight + 0.08;
+    child.position.y = (Number(buildingFloors[index].elevation) || 0) + 0.08;
     child.material.opacity = isSelectedFloor ? 0.96 : 0.38;
     child.material.color.set(isSelectedFloor ? visualState.selectionColor : visualState.floorColor);
     child.material.emissive.set(isSelectedFloor ? visualState.selectionColor : 0x000000);
@@ -304,6 +303,11 @@ export function createBuildingObject(building, floors, visualState) {
   const depth = building.parameters.depth;
   const floorHeight = building.parameters.floorHeight;
   const totalHeight = floorCount * floorHeight;
+  const buildingFloors = floors.filter((floor) => floor.parentId === building.id);
+  const basementFloors = buildingFloors.filter((floor) => Number(floor.level) < 0);
+  const basementBottom = basementFloors.length
+    ? Math.min(...basementFloors.map((floor) => (Number(floor.elevation) || 0)))
+    : 0;
   const { openings } = getBuildingFacadeOpenings(building, floorCount);
   const customAsset = building.customAssetId
     ? building.customAssetAutoUpdate === false
@@ -327,6 +331,16 @@ export function createBuildingObject(building, floors, visualState) {
     });
     customGroup.name = building.name;
     customGroup.userData.buildingId = building.id;
+    if (basementBottom < 0) {
+      const basementGeometry = new THREE.BoxGeometry(width * 0.98, Math.abs(basementBottom), depth * 0.98);
+      const basement = new THREE.Mesh(basementGeometry, createPresetMaterial(building.appearance, { opacity: visualState.expanded ? 0.14 : 1 }));
+      basement.position.y = basementBottom / 2;
+      basement.userData.buildingId = building.id;
+      basement.userData.basementShell = true;
+      basement.userData.textureSurface = "EXTERIOR";
+      basement.add(createEdgeOverlay(basementGeometry, visualState.edgeColor));
+      customGroup.add(basement);
+    }
     customGroup.userData.geometrySignature = getBuildingSignature(
       building,
       floorCount,
@@ -349,6 +363,16 @@ export function createBuildingObject(building, floors, visualState) {
   });
   if (!visualState.expanded && building.facadeOpenings && openings.length) addFacadeShell(group, building, width, depth, totalHeight, floorHeight, openings, bodyMaterial, visualState.edgeColor);
   else addBuildingMasses(group, building, width, depth, totalHeight, bodyMaterial, visualState.edgeColor);
+  if (basementBottom < 0) {
+    const basementGeometry = new THREE.BoxGeometry(width * 0.98, Math.abs(basementBottom), depth * 0.98);
+    const basement = new THREE.Mesh(basementGeometry, bodyMaterial.clone());
+    basement.position.y = basementBottom / 2;
+    basement.userData.buildingId = building.id;
+    basement.userData.basementShell = true;
+    basement.userData.textureSurface = "EXTERIOR";
+    basement.add(createEdgeOverlay(basementGeometry, visualState.edgeColor));
+    group.add(basement);
+  }
   if (!visualState.expanded && !building.facadeOpenings) addFacadeWindows(group, building, width, depth, floorCount, floorHeight);
   addIndustrialDetails(group, building, width, depth, totalHeight, bodyMaterial, visualState.edgeColor);
 
@@ -373,7 +397,7 @@ export function createBuildingObject(building, floors, visualState) {
     floors
       .filter((floor) => floor.parentId === building.id)
       .sort((a, b) => (a.level ?? 0) - (b.level ?? 0))
-      .forEach((floor, index) => {
+      .forEach((floor) => {
         const isSelectedFloor = floor.id === visualState.selectedFloorId;
         const slabGeometry = new THREE.BoxGeometry(width * 0.96, 0.14, depth * 0.96);
         const slab = new THREE.Mesh(
@@ -388,7 +412,7 @@ export function createBuildingObject(building, floors, visualState) {
             depthWrite: false,
           }),
         );
-        slab.position.y = index * floorHeight + 0.08;
+        slab.position.y = (Number(floor.elevation) || 0) + 0.08;
         slab.userData.buildingId = building.id;
         slab.userData.floorId = floor.id;
         slab.add(createEdgeOverlay(slabGeometry, visualState.edgeColor));

@@ -180,8 +180,71 @@ function addWheels(group, width, depth, wheelRadius, wheelCount = 4) {
   const material = standardMaterial(0x293137, "PAINTED");
   const axleRows = wheelCount > 4 ? [-depth * 0.32, 0, depth * 0.34] : [-depth * 0.3, depth * 0.3];
   axleRows.forEach((z) => [-1, 1].forEach((side) => {
-    cylinder(group, wheelRadius, wheelRadius, 0.22, { x: side * width * 0.51, y: wheelRadius, z }, material, 12, { z: Math.PI / 2 });
+    const wheel = cylinder(group, wheelRadius, wheelRadius, 0.22, { x: side * width * 0.51, y: wheelRadius, z }, material, 12, { z: Math.PI / 2 });
+    wheel.name = "MovementWheel";
+    wheel.userData.movementWheel = true;
   }));
+}
+
+function addPerson(group, object, material) {
+  const { width, height } = object.dimensions;
+  const skin = standardMaterial(0xc89b76, "PAINTED");
+  const dark = standardMaterial(0x303b42, "PAINTED");
+  cylinder(group, width * 0.32, width * 0.38, height * 0.42, { x: 0, y: height * 0.56, z: 0 }, material, 14);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(width * 0.26, 14, 10), skin);
+  head.position.y = height * 0.88;
+  group.add(head);
+  [-1, 1].forEach((side) => {
+    const arm = cylinder(group, width * 0.09, width * 0.1, height * 0.42, { x: side * width * 0.34, y: height * 0.56, z: 0 }, skin, 10);
+    arm.name = "MovementArm";
+    arm.userData.movementLimb = "ARM";
+    arm.rotation.z = side * 0.08;
+    const leg = cylinder(group, width * 0.11, width * 0.12, height * 0.42, { x: side * width * 0.14, y: height * 0.21, z: 0 }, dark, 10);
+    leg.name = "MovementLeg";
+    leg.userData.movementLimb = "LEG";
+  });
+}
+
+function addUndergroundObject(group, object, material, edgeColor) {
+  const { width, depth, height } = object.dimensions;
+  const profile = object.profile;
+  const dark = standardMaterial(0x30383c, "METAL");
+  const glass = standardMaterial(0x7194a2, "GLASS");
+  if (["UNDERGROUND_PASSAGE", "UNDERGROUND_WALKWAY", "VEHICLE_TUNNEL"].includes(profile)) {
+    box(group, { x: width, y: 0.18, z: depth }, { x: 0, y: -height + 0.09, z: 0 }, material, edgeColor);
+    [-1, 1].forEach((side) => box(group, { x: 0.18, y: height, z: depth }, { x: side * width / 2, y: -height / 2, z: 0 }, material, edgeColor));
+    box(group, { x: width, y: 0.2, z: depth }, { x: 0, y: -0.1, z: 0 }, material, edgeColor);
+    if (profile === "VEHICLE_TUNNEL") box(group, { x: 0.08, y: 0.03, z: depth * 0.9 }, { x: 0, y: -height + 0.2, z: 0 }, standardMaterial(0xe5c342, "PAINTED"));
+    return;
+  }
+  if (["UNDERGROUND_STAIRS", "SUBWAY_ENTRANCE", "PARKING_RAMP"].includes(profile)) {
+    const count = profile === "PARKING_RAMP" ? 1 : Math.max(6, Number(object.parameters?.stepCount) || 14);
+    for (let index = 0; index < count; index += 1) {
+      const ratio = (index + 1) / count;
+      box(group, { x: width * 0.78, y: height / count, z: depth / count + 0.03 }, { x: 0, y: -ratio * height / 2, z: depth / 2 - ratio * depth }, material, edgeColor);
+    }
+    [-1, 1].forEach((side) => box(group, { x: 0.18, y: height * 0.7, z: depth }, { x: side * width / 2, y: -height * 0.3, z: 0 }, material, edgeColor));
+    if (profile === "SUBWAY_ENTRANCE") {
+      box(group, { x: width, y: 0.16, z: depth * 0.5 }, { x: 0, y: height * 0.82, z: depth * 0.18 }, glass, edgeColor);
+      [-1, 1].forEach((side) => box(group, { x: 0.12, y: height * 0.86, z: depth * 0.5 }, { x: side * width * 0.46, y: height * 0.42, z: depth * 0.18 }, dark));
+    }
+    return;
+  }
+  if (profile === "UNDERGROUND_ELEVATOR") {
+    box(group, { x: width, y: height, z: depth }, { x: 0, y: height / 2, z: 0 }, glass, edgeColor);
+    box(group, { x: width * 0.72, y: height * 0.72, z: 0.12 }, { x: 0, y: height * 0.36, z: depth / 2 + 0.02 }, dark);
+    return;
+  }
+  if (profile === "EMERGENCY_STAIR") {
+    box(group, { x: width, y: height, z: depth }, { x: 0, y: height / 2, z: 0 }, material, edgeColor);
+    box(group, { x: width * 0.55, y: height * 0.72, z: 0.12 }, { x: 0, y: height * 0.36, z: depth / 2 + 0.02 }, standardMaterial(0x914c43, "PAINTED"));
+    return;
+  }
+  box(group, { x: width, y: height, z: depth }, { x: 0, y: height / 2, z: 0 }, material, edgeColor);
+  const louverCount = Math.max(3, Math.round(height / 0.45));
+  for (let index = 0; index < louverCount; index += 1) {
+    box(group, { x: width * 0.76, y: 0.08, z: 0.12 }, { x: 0, y: height * (index + 1) / (louverCount + 1), z: depth / 2 + 0.04 }, dark);
+  }
 }
 
 function addVehicle(group, object, material, edgeColor) {
@@ -1528,6 +1591,9 @@ export function createSiteEnvironmentObject(object, {
   const generators = {
     BUILDING: () => addEnvironmentBuilding(group, object, material, resolvedEdge),
     VEHICLE: () => addVehicle(group, object, material, resolvedEdge),
+    PERSON: () => addPerson(group, object, material),
+    UNDERGROUND_ACCESS: () => addUndergroundObject(group, object, material, resolvedEdge),
+    UNDERGROUND_PATH: () => addUndergroundObject(group, object, material, resolvedEdge),
     TRAFFIC: () => addTrafficObject(group, object, material),
     FENCE: () => addFence(group, object, material),
     VEGETATION: () => addTreeCluster(group, object, material),
@@ -1564,6 +1630,17 @@ export function createSiteEnvironmentObject(object, {
   group.traverse((child) => { child.userData.siteObjectId = object.id; });
   group.position.set(object.position.x, object.position.y, object.position.z);
   group.rotation.set(object.rotation.x, object.rotation.y, object.rotation.z);
+  if (object.undergroundConnection && ["UNDERGROUND_ACCESS", "UNDERGROUND_PATH"].includes(object.assetKind)) {
+    const start = object.undergroundConnection.startPoint;
+    const end = object.undergroundConnection.endPoint;
+    const dx = (end?.x ?? object.position.x) - (start?.x ?? object.position.x);
+    const dz = (end?.z ?? object.position.z) - (start?.z ?? object.position.z);
+    const horizontalLength = Math.hypot(dx, dz);
+    const verticalDepth = Math.abs((end?.y ?? 0) - (start?.y ?? 0));
+    group.rotation.y = Math.atan2(-dx, -dz) + (object.rotation.y ?? 0);
+    group.scale.z = Math.max(1, horizontalLength / Math.max(0.1, object.dimensions.depth));
+    group.scale.y = Math.max(1, verticalDepth / Math.max(0.1, object.dimensions.height));
+  }
   group.visible = object.visible;
   group.userData.geometrySignature = getSiteObjectSignature(object, selected, theme, pathRenderContext);
   return group;

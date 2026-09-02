@@ -1,0 +1,28 @@
+.timeline {
+  position: absolute;
+  z-index: 8;
+  right: var(--editor-overlay-right-safe, 16px);
+  bottom: 16px;
+  display: grid;
+  grid-template-columns: auto minmax(220px, 440px) auto;
+  align-items: center;
+  gap: 10px;
+  max-width: min(760px, calc(100% - 32px));
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--surface-panel) 94%, transparent);
+  box-shadow: var(--shadow-panel);
+}
+
+.controls { display: flex; align-items: center; gap: 4px; }
+.controls button { min-width: 40px; height: 40px; }
+.timeline label { display: grid; grid-template-columns: auto minmax(120px, 1fr) auto; align-items: center; gap: 8px; }
+.timeline input { width: 100%; }
+.timeline output, .state { font-size: 12px; white-space: nowrap; color: var(--text-secondary); }
+.error { grid-column: 1 / -1; margin: 0; color: var(--color-danger, #ff6b6b); font-size: 12px; text-align: center; }
+
+@media (max-width: 720px) {
+  .timeline { left: 12px; right: 12px; bottom: 72px; grid-template-columns: 1fr; }
+}

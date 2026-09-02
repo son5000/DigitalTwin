@@ -71,6 +71,20 @@ import {
   captureBuildingIsolationVisibility,
   restoreBuildingIsolationVisibility as restoreIsolationVisibility,
 } from "@/features/digitalTwin/editor/three/buildingIsolation";
+import {
+  collectTerrainExcavations,
+  GROUND_VIEW_MODES,
+  normalizeGroundViewMode,
+} from "@/features/digitalTwin/editor/model/undergroundModel";
+import {
+  advanceMovementClock,
+  compileMovementConfig,
+  isMovableSiteObject,
+  MOVEMENT_PATH_TYPES,
+  MOVEMENT_PLAYBACK_STATES,
+  normalizeMovementConfig,
+  sampleMovementPath,
+} from "@/features/digitalTwin/editor/model/movementPath";
 
 import {
   bindCameraFocusCancellation,
@@ -99,6 +113,168 @@ const SITE_VISUAL_THEMES = {
   light: { grid: 0x9babb6, gridCenter: 0x708691, edge: 0x607987, floor: 0xb8c8d0, apron: 0xcbd5da },
   dark: { grid: 0x2b4652, gridCenter: 0x4f7180, edge: 0x7696a3, floor: 0x42606c, apron: 0x263a43 },
 };
+
+function rebuildMovementPathPreview(root, object, color, selectedWaypointId = null) {
+  [...root.children].forEach(disposeObject3D);
+  root.clear();
+  if (!object?.movement) return;
+  const movement = normalizeMovementConfig(object.movement, object.position);
+  const points = movement.waypoints.map((waypoint) => new THREE.Vector3(waypoint.x, waypoint.y + 0.08, waypoint.z));
+  const curve = movement.pathType === MOVEMENT_PATH_TYPES.CURVE && points.length >= 3
+    ? new THREE.CatmullRomCurve3(points, false, "centripetal")
+    : null;
+  const renderPoints = curve ? curve.getPoints(Math.max(24, points.length * 12)) : points;
+  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(renderPoints), new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.95, depthTest: false }));
+  line.userData.movementPathLine = true;
+  line.renderOrder = 18;
+  root.add(line);
+  points.forEach((point, index) => {
+    const isStart = index === 0;
+    const isEnd = index === points.length - 1;
+    const markerColor = movement.waypoints[index].id === selectedWaypointId
+      ? 0xffc857
+      : isStart ? 0x58d69d : isEnd ? 0xff6b6b : color;
+    const marker = new THREE.Mesh(new THREE.SphereGeometry(isStart || isEnd ? 0.24 : 0.2, 14, 10), new THREE.MeshBasicMaterial({ color: markerColor, depthTest: false }));
+    marker.position.copy(point);
+    marker.userData.movementWaypointId = movement.waypoints[index].id;
+    marker.userData.movementWaypointRole = isStart ? "START" : isEnd ? "END" : "VIA";
+    marker.renderOrder = 19;
+    root.add(marker);
+  });
+  for (let index = 1; index < renderPoints.length; index += Math.max(1, Math.floor(renderPoints.length / 8))) {
+    const from = renderPoints[index - 1];
+    const to = renderPoints[index];
+    const direction = to.clone().sub(from).normalize();
+    if (direction.lengthSq() < 0.001) continue;
+    const arrow = new THREE.ArrowHelper(direction, from, Math.min(0.8, from.distanceTo(to)), color, 0.24, 0.12);
+    arrow.renderOrder = 19;
+    arrow.line.material.depthTest = false;
+    arrow.cone.material.depthTest = false;
+    root.add(arrow);
+  }
+}
+
+function getMovementInsertionIndex(movement, point) {
+  const config = normalizeMovementConfig(movement);
+  const target = new THREE.Vector3(point.x, point.y, point.z);
+  let closestIndex = 1;
+  let closestDistance = Number.POSITIVE_INFINITY;
+  for (let index = 1; index < config.waypoints.length; index += 1) {
+    const from = config.waypoints[index - 1];
+    const to = config.waypoints[index];
+    const start = new THREE.Vector3(from.x, from.y, from.z);
+    const end = new THREE.Vector3(to.x, to.y, to.z);
+    const segment = end.clone().sub(start);
+    const lengthSquared = segment.lengthSq();
+    const ratio = lengthSquared > 1e-8
+      ? THREE.MathUtils.clamp(target.clone().sub(start).dot(segment) / lengthSquared, 0, 1)
+      : 0;
+    const distance = target.distanceTo(start.addScaledVector(segment, ratio));
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      closestIndex = index;
+    }
+  }
+  return closestIndex;
+}
+
+function configureMovementAnimation(object) {
+  const detailNodes = { wheels: [], limbs: [] };
+  object.traverse((child) => {
+    if (child.userData.movementWheel) detailNodes.wheels.push(child);
+    if (child.userData.movementLimb) detailNodes.limbs.push(child);
+  });
+  object.userData.movementDetailNodes = detailNodes;
+  const clips = object.animations ?? object.userData.animationClips ?? [];
+  if (!clips.length || object.userData.animationMixer) return;
+  const mixer = new THREE.AnimationMixer(object);
+  object.userData.animationMixer = mixer;
+  object.userData.movementActions = {
+    moving: mixer.clipAction(clips.find((clip) => /walk|run|drive|move/i.test(clip.name)) ?? clips[0]),
+    idle: mixer.clipAction(clips.find((clip) => /idle|stand|stop/i.test(clip.name)) ?? clips[0]),
+  };
+}
+
+function disposeMovementAnimation(object) {
+  const mixer = object?.userData?.animationMixer;
+  if (!mixer) return;
+  mixer.stopAllAction();
+  mixer.uncacheRoot(object);
+  delete object.userData.animationMixer;
+  delete object.userData.movementActions;
+  delete object.userData.activeMovementAction;
+}
+
+function disposeSiteEnvironmentObject(object) {
+  disposeMovementAnimation(object);
+  disposeObject3D(object);
+}
+
+function isMovementObjectInFrustum(object, frustum) {
+  let meshes = object.userData.movementFrustumMeshes;
+  if (!meshes) {
+    meshes = [];
+    object.traverse((child) => {
+      if (child.isMesh && child.geometry) meshes.push(child);
+    });
+    object.userData.movementFrustumMeshes = meshes;
+  }
+  if (meshes.length === 0) return true;
+  object.updateMatrixWorld(true);
+  return meshes.some((mesh) => {
+    if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
+    return !mesh.geometry.boundingSphere || frustum.intersectsObject(mesh);
+  });
+}
+
+function updateMovementVisual(object, source, config, timelineTime, delta, animateDetails = true) {
+  if (!isMovableSiteObject(source) || !config?.enabled) return;
+  const sample = sampleMovementPath(config, timelineTime);
+  object.visible = source.visible !== false && sample.visible;
+  object.position.set(sample.position.x, sample.position.y, sample.position.z);
+  const horizontalLength = Math.hypot(sample.tangent.x, sample.tangent.z);
+  if (horizontalLength > 0.001) object.rotation.y = Math.atan2(sample.tangent.x, sample.tangent.z);
+  const moving = sample.phase === "MOVING";
+  const phase = sample.distance * 4.5;
+  if (!animateDetails) return;
+  const detailNodes = object.userData.movementDetailNodes;
+  detailNodes?.wheels.forEach((wheel) => { if (moving) wheel.rotation.x = phase; });
+  detailNodes?.limbs.forEach((limb) => {
+    limb.rotation.x = moving ? Math.sin(phase + (limb.position.x > 0 ? Math.PI : 0)) * 0.55 : 0;
+  });
+  const actions = object.userData.movementActions;
+  if (actions) {
+    const nextAction = moving ? actions.moving : actions.idle;
+    if (object.userData.activeMovementAction !== nextAction) {
+      object.userData.activeMovementAction?.fadeOut(0.15);
+      nextAction.reset().fadeIn(0.15).play();
+      object.userData.activeMovementAction = nextAction;
+    }
+    nextAction.timeScale = Math.min(3, Math.max(0.25, config.speed / 1.4));
+    object.userData.animationMixer.update(delta);
+  }
+}
+
+function syncMovementConfigs(runtime, sourceObjects, movementClockRef) {
+  const configs = new Map();
+  const movementErrors = new Set();
+  let duration = 0;
+  sourceObjects.forEach((source) => {
+    if (!isMovableSiteObject(source) || !source.movement?.enabled) return;
+    try {
+      const config = compileMovementConfig(source.movement, source.position);
+      configs.set(source.id, config);
+      duration = Math.max(duration, config.duration);
+    } catch (error) {
+      movementErrors.add(source.id);
+      console.warn(`[이동 애니메이션] ${source.id} 경로를 사용할 수 없습니다.`, error);
+    }
+  });
+  runtime.movementConfigs = configs;
+  runtime.movementErrors = movementErrors;
+  runtime.movementDuration = duration;
+  if (movementClockRef.current) movementClockRef.current.duration = duration;
+}
 
 function rebuildSitePathConnections(root, network, { previewObjectId = null } = {}) {
   const junctions = network?.junctions ?? [];
@@ -169,6 +345,14 @@ function captureCameraState(runtime) {
     orthographic: capture(runtime.orthographicCamera),
     target: runtime.orbitControls.target.clone(),
   };
+}
+
+function getUndergroundAutoRotation(object) {
+  const connection = object?.undergroundConnection;
+  if (!connection) return 0;
+  const dx = (connection.endPoint?.x ?? object.position?.x ?? 0) - (connection.startPoint?.x ?? object.position?.x ?? 0);
+  const dz = (connection.endPoint?.z ?? object.position?.z ?? 0) - (connection.startPoint?.z ?? object.position?.z ?? 0);
+  return Math.atan2(-dx, -dz);
 }
 
 function restoreCameraState(runtime, snapshot) {
@@ -433,6 +617,9 @@ export default function SiteOverviewScene({
   focusRequestKey,
   focusMode = false,
   buildingsTranslucent = false,
+  groundViewMode = GROUND_VIEW_MODES.VISIBLE,
+  movementPlayback = { status: MOVEMENT_PLAYBACK_STATES.STOPPED, currentTime: 0, revision: 0 },
+  movementClockRef: externalMovementClockRef = null,
   cameraStateRef,
   interactionMode,
   placementTemplateId,
@@ -456,6 +643,11 @@ export default function SiteOverviewScene({
   onCancelPlacement,
   terrainBrush = DEFAULT_TERRAIN_BRUSH,
   onTerrainChange,
+  onMovementWaypointAdd,
+  onMovementWaypointChange,
+  onMovementWaypointInsert,
+  onMovementWaypointDelete,
+  onMovementEditComplete,
 }) {
   const containerRef = useRef(null);
   const runtimeRef = useRef(null);
@@ -467,14 +659,22 @@ export default function SiteOverviewScene({
   const placementVariantsRef = useRef(placementVariants);
   const areaSelectionRef = useRef(areaSelection);
   const siteObjectsRef = useRef(siteObjects);
+  const selectedSiteObjectIdRef = useRef(selectedSiteObjectId);
   const siteEnvironmentRef = useRef(siteEnvironment);
   const terrainBrushRef = useRef(terrainBrush);
+  const excavationsRef = useRef([]);
+  const movementPlaybackRef = useRef(movementPlayback);
+  const selectedMovementWaypointIdRef = useRef(null);
+  const fallbackMovementClockRef = useRef({ currentTime: 0, duration: 0, status: MOVEMENT_PLAYBACK_STATES.STOPPED, onUiTimeChange: null });
+  const movementClockRef = externalMovementClockRef ?? fallbackMovementClockRef;
   const autoConnectEnabledRef = useRef(true);
   const [dragSnapSize, setDragSnapSize] = useState(null);
   const [pathSnapInfo, setPathSnapInfo] = useState(null);
   const [autoConnectEnabled, setAutoConnectEnabled] = useState(true);
   const [liveArea, setLiveArea] = useState(null);
+  const [selectedMovementWaypointId, setSelectedMovementWaypointId] = useState(null);
   const terrainFeatures = useMemo(() => collectTerrainFeatures(siteObjects), [siteObjects]);
+  const terrainExcavations = useMemo(() => collectTerrainExcavations(buildings, floors, siteObjects), [buildings, floors, siteObjects]);
   const areaPlacementPlan = useMemo(() => {
     const area = liveArea ?? areaSelection;
     const definition = SITE_CREATION_TEMPLATE_MAP[placementTemplateId];
@@ -493,12 +693,35 @@ export default function SiteOverviewScene({
       onSelectBuilding, onSelectSiteObject, onUpdateBuilding, onUpdateSiteObject,
       onEnterBuilding, onSelectFloor, onEnterFloor, onAreaSelectionChange, onPlaceTemplate, onPlaceTemplateArea, onCancelPlacement,
       onTerrainChange,
+      onMovementWaypointAdd, onMovementWaypointChange, onMovementWaypointInsert, onMovementWaypointDelete, onMovementEditComplete,
     };
-  }, [onAreaSelectionChange, onCancelPlacement, onEnterBuilding, onEnterFloor, onPlaceTemplate, onPlaceTemplateArea, onSelectBuilding, onSelectFloor, onSelectSiteObject, onTerrainChange, onUpdateBuilding, onUpdateSiteObject]);
+  }, [onAreaSelectionChange, onCancelPlacement, onEnterBuilding, onEnterFloor, onMovementEditComplete, onMovementWaypointAdd, onMovementWaypointChange, onMovementWaypointDelete, onMovementWaypointInsert, onPlaceTemplate, onPlaceTemplateArea, onSelectBuilding, onSelectFloor, onSelectSiteObject, onTerrainChange, onUpdateBuilding, onUpdateSiteObject]);
 
   useEffect(() => {
     siteObjectsRef.current = siteObjects;
-  }, [siteObjects]);
+    selectedSiteObjectIdRef.current = selectedSiteObjectId;
+    const runtime = runtimeRef.current;
+    if (runtime) syncMovementConfigs(runtime, siteObjects, movementClockRef);
+  }, [movementClockRef, selectedSiteObjectId, siteObjects]);
+
+  useEffect(() => {
+    excavationsRef.current = terrainExcavations;
+  }, [terrainExcavations]);
+
+  useEffect(() => {
+    selectedMovementWaypointIdRef.current = selectedMovementWaypointId;
+  }, [selectedMovementWaypointId]);
+
+  useEffect(() => {
+    movementPlaybackRef.current = movementPlayback;
+    const runtime = runtimeRef.current;
+    if (!runtime || runtime.movementRevision === movementPlayback.revision) return;
+    runtime.movementRevision = movementPlayback.revision;
+    runtime.movementTime = Math.max(0, Number.isFinite(Number(movementPlayback.currentTime)) ? Number(movementPlayback.currentTime) : 0);
+    movementClockRef.current.currentTime = runtime.movementTime;
+    movementClockRef.current.status = movementPlayback.status;
+    movementClockRef.current.onUiTimeChange?.(runtime.movementTime);
+  }, [movementClockRef, movementPlayback]);
 
   useEffect(() => {
     siteEnvironmentRef.current = siteEnvironment;
@@ -520,7 +743,7 @@ export default function SiteOverviewScene({
     if (!runtime) return;
     runtime.renderer.domElement.style.cursor = interactionMode === SITE_INTERACTION_MODES.NAVIGATE ? "grab" : "crosshair";
     if (runtime.terrainEdit && interactionMode !== SITE_INTERACTION_MODES.EDIT_TERRAIN) {
-      updateTerrainMesh(runtime.ground, siteEnvironmentRef.current, collectTerrainFeatures(siteObjectsRef.current));
+      updateTerrainMesh(runtime.ground, siteEnvironmentRef.current, collectTerrainFeatures(siteObjectsRef.current), excavationsRef.current);
       syncTerrainPicker(runtime.groundPicker, runtime.ground);
       runtime.terrainEdit = null;
       updateTerrainBrushCursor(runtime.terrainBrushCursor, null, terrainBrushRef.current, false);
@@ -575,7 +798,7 @@ export default function SiteOverviewScene({
     const siteConnectionRoot = new THREE.Group();
     siteConnectionRoot.name = "도로·인도 자동 연결부";
     objectRoot.add(siteConnectionRoot);
-    const ground = createTerrainMesh(DEFAULT_SITE_ENVIRONMENT, []);
+    const ground = createTerrainMesh(DEFAULT_SITE_ENVIRONMENT, [], []);
     scene.add(ground);
     const grid = createTerrainGrid(
       DEFAULT_SITE_ENVIRONMENT,
@@ -610,6 +833,9 @@ export default function SiteOverviewScene({
     const placementGhostRoot = new THREE.Group();
     placementGhostRoot.name = "영역 배치 미리보기";
     scene.add(placementGhostRoot);
+    const movementPathRoot = new THREE.Group();
+    movementPathRoot.name = "이동 경로 미리보기";
+    scene.add(movementPathRoot);
 
     const hemisphereLight = new THREE.HemisphereLight(sceneTheme.hemisphereSky, sceneTheme.hemisphereGround, 1.8);
     const keyLight = new THREE.DirectionalLight(sceneTheme.keyLight, 2.4);
@@ -622,15 +848,49 @@ export default function SiteOverviewScene({
       container, scene, renderer, perspectiveCamera, orthographicCamera,
       activeCamera: perspectiveCamera, orthographicSize: 120, orbitControls, transformControls, transformTools: DISABLED_TRANSFORM_TOOLS, objectRoot,
       buildingObjects: new Map(), siteEnvironmentObjects: new Map(), siteConnectionRoot, grid, gridRegionRoot,
-      gridSnapMarker, ground, groundPicker, terrainBrushCursor, areaGuide, placementGhostRoot, hemisphereLight, keyLight, fillLight,
+      gridSnapMarker, ground, groundPicker, terrainBrushCursor, areaGuide, placementGhostRoot, movementPathRoot, hemisphereLight, keyLight, fillLight,
       dragging: false, areaStart: null, areaEnd: null, placementPointerDown: false, placementAreaStart: null,
       placementDragArea: null, placementPreview: null,
+      movementPointerDown: null,
+      movementWaypointDrag: null,
       terrainEdit: null,
       cameraFocus: null,
       buildingFocusMode: null,
       siteBounds: getSiteBounds(DEFAULT_SITE_ENVIRONMENT),
+      movementTime: 0,
+      movementRevision: 0,
+      movementUiUpdateAt: 0,
+      movementDuration: 0,
+      movementConfigs: new Map(),
+      movementErrors: new Set(),
+      movementFrustum: new THREE.Frustum(),
+      movementProjectionMatrix: new THREE.Matrix4(),
+      movementStats: { frameCount: 0, objectUpdates: 0, errors: 0, uiUpdates: 0, totalFrameMs: 0, maxFrameMs: 0 },
     };
     runtimeRef.current = runtime;
+    syncMovementConfigs(runtime, siteObjectsRef.current, movementClockRef);
+    if (import.meta.env.DEV) {
+      const debug = window.__DIGITAL_TWIN_MOVEMENT_DEBUG__ ?? { activeRafLoops: 0, rafLoopStarts: 0, pageRenderCount: 0 };
+      debug.activeRafLoops += 1;
+      debug.rafLoopStarts += 1;
+      debug.getSnapshot = () => ({
+        ...runtime.movementStats,
+        activeRafLoops: debug.activeRafLoops,
+        rafLoopStarts: debug.rafLoopStarts,
+        pageRenderCount: debug.pageRenderCount,
+        movementTime: runtime.movementTime,
+        activeObjectIds: [...runtime.movementConfigs.keys()],
+        movementErrors: [...runtime.movementErrors],
+        objectPositions: Object.fromEntries([...runtime.movementConfigs.keys()].map((id) => {
+          const object = runtime.siteEnvironmentObjects.get(id);
+          return [id, object ? { x: object.position.x, y: object.position.y, z: object.position.z } : null];
+        })),
+        averageFrameMs: runtime.movementStats.frameCount
+          ? runtime.movementStats.totalFrameMs / runtime.movementStats.frameCount
+          : 0,
+      });
+      window.__DIGITAL_TWIN_MOVEMENT_DEBUG__ = debug;
+    }
     const removeCameraFocusCancellation = bindCameraFocusCancellation(runtime, renderer.domElement);
 
     const raycaster = new THREE.Raycaster();
@@ -641,13 +901,13 @@ export default function SiteOverviewScene({
     };
     const previewTerrainDraft = (terrain, point = null) => {
       const environment = { ...siteEnvironmentRef.current, terrain };
-      updateTerrainMesh(runtime.ground, environment, collectTerrainFeatures(siteObjectsRef.current));
+      updateTerrainMesh(runtime.ground, environment, collectTerrainFeatures(siteObjectsRef.current), excavationsRef.current);
       syncTerrainPicker(runtime.groundPicker, runtime.ground);
       if (point) updateTerrainBrushCursor(runtime.terrainBrushCursor, point, terrainBrushRef.current, true);
     };
     const cancelTerrainEdit = () => {
       if (!runtime.terrainEdit) return false;
-      updateTerrainMesh(runtime.ground, siteEnvironmentRef.current, collectTerrainFeatures(siteObjectsRef.current));
+      updateTerrainMesh(runtime.ground, siteEnvironmentRef.current, collectTerrainFeatures(siteObjectsRef.current), excavationsRef.current);
       syncTerrainPicker(runtime.groundPicker, runtime.ground);
       runtime.terrainEdit = null;
       runtime.orbitControls.enabled = false;
@@ -657,6 +917,23 @@ export default function SiteOverviewScene({
     function handlePointerDown(event) {
       pointerStart.set(event.clientX, event.clientY);
       if (event.button !== 0 || dualTransformIsActive(transformControls)) return;
+      if (interactionModeRef.current === SITE_INTERACTION_MODES.EDIT_MOVEMENT_PATH) {
+        raycaster.setFromCamera(getPointer(event, renderer.domElement), runtime.activeCamera);
+        const markerHit = raycaster.intersectObjects(runtime.movementPathRoot.children, true)
+          .find((intersection) => intersection.object.userData.movementWaypointId);
+        if (markerHit) {
+          const waypointId = markerHit.object.userData.movementWaypointId;
+          runtime.movementWaypointDrag = { waypointId, point: null };
+          runtime.orbitControls.enabled = false;
+          setSelectedMovementWaypointId(waypointId);
+          renderer.domElement.setPointerCapture?.(event.pointerId);
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        runtime.movementPointerDown = { x: event.clientX, y: event.clientY };
+        return;
+      }
       if (interactionModeRef.current === SITE_INTERACTION_MODES.EDIT_TERRAIN) {
         const point = hitGround(event);
         if (!point) return;
@@ -702,6 +979,16 @@ export default function SiteOverviewScene({
       renderer.domElement.setPointerCapture?.(event.pointerId);
     }
     function handlePointerMove(event) {
+      if (runtime.movementWaypointDrag) {
+        const point = hitGround(event);
+        if (!point) return;
+        runtime.movementWaypointDrag.point = { x: point.x, y: point.y, z: point.z };
+        const marker = runtime.movementPathRoot.children.find(
+          (child) => child.userData.movementWaypointId === runtime.movementWaypointDrag.waypointId,
+        );
+        if (marker) marker.position.set(point.x, point.y + 0.08, point.z);
+        return;
+      }
       if (interactionModeRef.current === SITE_INTERACTION_MODES.EDIT_TERRAIN) {
         const point = hitGround(event);
         if (!point) return;
@@ -762,6 +1049,32 @@ export default function SiteOverviewScene({
     }
     function handlePointerUp(event) {
       if (event.button !== 0) return;
+      if (interactionModeRef.current === SITE_INTERACTION_MODES.EDIT_MOVEMENT_PATH) {
+        if (runtime.movementWaypointDrag) {
+          const { waypointId, point } = runtime.movementWaypointDrag;
+          runtime.movementWaypointDrag = null;
+          runtime.orbitControls.enabled = true;
+          renderer.domElement.releasePointerCapture?.(event.pointerId);
+          if (point) handlersRef.current.onMovementWaypointChange?.(waypointId, point);
+          return;
+        }
+        const movementPointerDown = runtime.movementPointerDown;
+        runtime.movementPointerDown = null;
+        if (!movementPointerDown || Math.hypot(event.clientX - movementPointerDown.x, event.clientY - movementPointerDown.y) > 5) return;
+        const point = hitGround(event);
+        if (!point) return;
+        raycaster.setFromCamera(getPointer(event, renderer.domElement), runtime.activeCamera);
+        const lineHit = raycaster.intersectObjects(runtime.movementPathRoot.children, true)
+          .find((intersection) => intersection.object.userData.movementPathLine);
+        const selectedObject = siteObjectsRef.current.find((object) => object.id === selectedSiteObjectIdRef.current);
+        if (lineHit && selectedObject?.movement) {
+          const insertionIndex = getMovementInsertionIndex(selectedObject.movement, point);
+          handlersRef.current.onMovementWaypointInsert?.(insertionIndex, { x: point.x, y: point.y, z: point.z });
+        } else {
+          handlersRef.current.onMovementWaypointAdd?.({ x: point.x, y: point.y, z: point.z });
+        }
+        return;
+      }
       if (runtime.terrainEdit) {
         const draft = runtime.terrainEdit.draft;
         runtime.terrainEdit = null;
@@ -890,7 +1203,7 @@ export default function SiteOverviewScene({
       const transformed = {
         ...source,
         position: { x: object.position.x, y: object.position.y - (object.userData.terrainBaseElevation ?? 0), z: object.position.z },
-        rotation: { x: object.rotation.x, y: object.rotation.y, z: object.rotation.z },
+        rotation: { x: object.rotation.x, y: object.rotation.y - getUndergroundAutoRotation(source), z: object.rotation.z },
       };
       const pathSnap = autoConnectEnabledRef.current
         ? findSitePathMagneticSnap(transformed, siteObjectsRef.current)
@@ -941,7 +1254,7 @@ export default function SiteOverviewScene({
       const transformed = source ? {
         ...source,
         position: { x: object.position.x, y: object.position.y - (object.userData.terrainBaseElevation ?? 0), z: object.position.z },
-        rotation: { x: object.rotation.x, y: object.rotation.y, z: object.rotation.z },
+        rotation: { x: object.rotation.x, y: object.rotation.y - getUndergroundAutoRotation(source), z: object.rotation.z },
       } : null;
       const pathSnap = transformed && autoConnectEnabledRef.current
         ? findSitePathMagneticSnap(transformed, siteObjectsRef.current)
@@ -953,7 +1266,7 @@ export default function SiteOverviewScene({
       clampObjectToSiteBounds(object, runtime.siteBounds);
       const changes = {
         position: { x: object.position.x, y: object.position.y - (object.userData.terrainBaseElevation ?? 0), z: object.position.z },
-        rotation: { x: object.rotation.x, y: object.rotation.y, z: object.rotation.z },
+        rotation: { x: object.rotation.x, y: object.rotation.y - getUndergroundAutoRotation(source), z: object.rotation.z },
       };
       if (object.userData.buildingId) handlersRef.current.onUpdateBuilding(object.userData.buildingId, changes);
       if (siteObjectId) {
@@ -984,6 +1297,13 @@ export default function SiteOverviewScene({
       }
     }
     function handlePointerCancel(event) {
+      if (runtime.movementWaypointDrag || runtime.movementPointerDown) {
+        runtime.movementWaypointDrag = null;
+        runtime.movementPointerDown = null;
+        runtime.orbitControls.enabled = true;
+        if (renderer.domElement.hasPointerCapture?.(event.pointerId)) renderer.domElement.releasePointerCapture(event.pointerId);
+        return;
+      }
       if (cancelTerrainEdit()) {
         if (renderer.domElement.hasPointerCapture?.(event.pointerId)) renderer.domElement.releasePointerCapture(event.pointerId);
         return;
@@ -1010,6 +1330,22 @@ export default function SiteOverviewScene({
     }
 
     function handleKeyDown(event) {
+      if (interactionModeRef.current === SITE_INTERACTION_MODES.EDIT_MOVEMENT_PATH) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          setSelectedMovementWaypointId(null);
+          handlersRef.current.onMovementEditComplete?.();
+          return;
+        }
+        if ((event.key === "Delete" || event.key === "Backspace") && selectedMovementWaypointIdRef.current) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          handlersRef.current.onMovementWaypointDelete?.(selectedMovementWaypointIdRef.current);
+          setSelectedMovementWaypointId(null);
+          return;
+        }
+      }
       if (event.key === "Escape" && cancelTerrainEdit()) event.stopPropagation();
     }
 
@@ -1042,11 +1378,52 @@ export default function SiteOverviewScene({
     resizeRuntime(runtime);
 
     let animationFrameId;
-    function renderFrame() {
+    let previousFrameTime = null;
+    function renderFrame(frameTime = performance.now()) {
+      const frameStartedAt = performance.now();
+      const delta = previousFrameTime === null ? 0 : Math.max(0, (frameTime - previousFrameTime) / 1000);
+      previousFrameTime = frameTime;
+      const playback = movementPlaybackRef.current;
+      runtime.movementTime = advanceMovementClock(runtime.movementTime, delta, playback.status);
+      movementClockRef.current.currentTime = runtime.movementTime;
+      movementClockRef.current.status = playback.status;
+      const frustum = runtime.movementFrustum.setFromProjectionMatrix(runtime.movementProjectionMatrix.multiplyMatrices(runtime.activeCamera.projectionMatrix, runtime.activeCamera.matrixWorldInverse));
+      siteObjectsRef.current.forEach((source) => {
+        const config = runtime.movementConfigs.get(source.id);
+        if (!config) return;
+        const object = runtime.siteEnvironmentObjects.get(source.id);
+        if (!object) return;
+        try {
+          updateMovementVisual(
+            object,
+            source,
+            config,
+            runtime.movementTime,
+            playback.status === MOVEMENT_PLAYBACK_STATES.PLAYING ? Math.min(delta, 1 / 15) : 0,
+            isMovementObjectInFrustum(object, frustum),
+          );
+          runtime.movementStats.objectUpdates += 1;
+        } catch (error) {
+          runtime.movementStats.errors += 1;
+          if (!runtime.movementErrors.has(source.id)) {
+            runtime.movementErrors.add(source.id);
+            console.warn(`[이동 애니메이션] ${source.id} 업데이트를 건너뜁니다.`, error);
+          }
+        }
+      });
+      if (playback.status === MOVEMENT_PLAYBACK_STATES.PLAYING && performance.now() - runtime.movementUiUpdateAt > 250) {
+        runtime.movementUiUpdateAt = performance.now();
+        movementClockRef.current.onUiTimeChange?.(runtime.movementTime);
+        runtime.movementStats.uiUpdates += 1;
+      }
       updateCameraFocus(runtime);
       orbitControls.update();
       clampCameraTargetToSite(runtime);
       renderer.render(scene, runtime.activeCamera);
+      const frameMs = performance.now() - frameStartedAt;
+      runtime.movementStats.frameCount += 1;
+      runtime.movementStats.totalFrameMs += frameMs;
+      runtime.movementStats.maxFrameMs = Math.max(runtime.movementStats.maxFrameMs, frameMs);
       animationFrameId = requestAnimationFrame(renderFrame);
     }
     renderFrame();
@@ -1054,6 +1431,9 @@ export default function SiteOverviewScene({
     return () => {
       runtimeRef.current = null;
       cancelAnimationFrame(animationFrameId);
+      if (import.meta.env.DEV && window.__DIGITAL_TWIN_MOVEMENT_DEBUG__) {
+        window.__DIGITAL_TWIN_MOVEMENT_DEBUG__.activeRafLoops = Math.max(0, window.__DIGITAL_TWIN_MOVEMENT_DEBUG__.activeRafLoops - 1);
+      }
       resizeObserver.disconnect();
       removeCameraFocusCancellation();
       renderer.domElement.removeEventListener("pointerdown", handlePointerDown);
@@ -1074,7 +1454,7 @@ export default function SiteOverviewScene({
       disposeDualTransformControls(transformControls);
       orbitControls.dispose();
       runtime.buildingObjects.forEach(disposeObject3D);
-      runtime.siteEnvironmentObjects.forEach(disposeObject3D);
+      runtime.siteEnvironmentObjects.forEach(disposeSiteEnvironmentObject);
       disposeObject3D(runtime.siteConnectionRoot);
       if (runtime.placementPreview) disposeObject3D(runtime.placementPreview);
       clearPlacementGhosts(runtime.placementGhostRoot);
@@ -1082,13 +1462,14 @@ export default function SiteOverviewScene({
       disposeObject3D(runtime.gridSnapMarker);
       disposeObject3D(runtime.areaGuide);
       disposeObject3D(runtime.terrainBrushCursor);
+      disposeObject3D(runtime.movementPathRoot);
       disposeObject3D(ground);
       groundPicker.material.dispose();
       disposeObject3D(runtime.grid);
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, []);
+  }, [movementClockRef]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -1110,7 +1491,7 @@ export default function SiteOverviewScene({
     runtime.hemisphereLight.groundColor.set(backgroundPreset.ground);
     runtime.keyLight.color.set(backgroundPreset.key);
     runtime.fillLight.color.set(backgroundPreset.fill);
-    updateTerrainMesh(runtime.ground, siteEnvironment, terrainFeatures);
+    updateTerrainMesh(runtime.ground, siteEnvironment, terrainFeatures, terrainExcavations);
     syncTerrainPicker(runtime.groundPicker, runtime.ground);
     runtime.orbitControls.maxDistance = Math.max(80, diagonal * 4);
     runtime.perspectiveCamera.far = Math.max(500, diagonal * 6);
@@ -1120,7 +1501,41 @@ export default function SiteOverviewScene({
     runtime.areaGuide.material.color.set(sceneTheme.selection);
     runtime.areaGuide.children[0].material.color.set(sceneTheme.selection);
     replaceSiteGrid(runtime, siteTheme, gridSettings.baseSize, siteEnvironment, terrainFeatures);
-  }, [gridSettings.baseSize, siteEnvironment, terrainFeatures, theme]);
+  }, [gridSettings.baseSize, siteEnvironment, terrainExcavations, terrainFeatures, theme]);
+
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
+    const mode = normalizeGroundViewMode(groundViewMode);
+    const selectedBuilding = buildings.find((building) => building.id === selectedBuildingId);
+    const sectionZ = Number(selectedBuilding?.position?.z) || 0;
+    const clippingPlanes = mode === GROUND_VIEW_MODES.SECTION
+      ? [new THREE.Plane(new THREE.Vector3(0, 0, -1), sectionZ)]
+      : [];
+    runtime.renderer.localClippingEnabled = clippingPlanes.length > 0;
+    runtime.ground.visible = mode !== GROUND_VIEW_MODES.HIDDEN;
+    runtime.grid.visible = mode === GROUND_VIEW_MODES.VISIBLE;
+    runtime.ground.traverse((child) => {
+      if (!child.isMesh) return;
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      materials.forEach((material) => {
+        material.transparent = mode === GROUND_VIEW_MODES.TRANSLUCENT;
+        material.opacity = mode === GROUND_VIEW_MODES.TRANSLUCENT ? 0.28 : 1;
+        material.depthWrite = mode !== GROUND_VIEW_MODES.TRANSLUCENT;
+        material.clippingPlanes = clippingPlanes;
+        material.clipShadows = clippingPlanes.length > 0;
+        material.needsUpdate = true;
+      });
+    });
+  }, [buildings, gridSettings.baseSize, groundViewMode, selectedBuildingId, siteEnvironment, terrainExcavations]);
+
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
+    const selectedObject = siteObjects.find((object) => object.id === selectedSiteObjectId && isMovableSiteObject(object));
+    rebuildMovementPathPreview(runtime.movementPathRoot, selectedObject, SCENE_THEMES[theme].selection, selectedMovementWaypointId);
+    runtime.movementPathRoot.visible = Boolean(selectedObject?.movement);
+  }, [selectedMovementWaypointId, selectedSiteObjectId, siteObjects, theme]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -1244,7 +1659,7 @@ export default function SiteOverviewScene({
       if (!siteObjectIds.has(id)) {
         if (runtime.transformControls.translate.object === object || runtime.transformControls.rotate.object === object) detachDualTransformControls(runtime.transformControls);
         runtime.objectRoot.remove(object);
-        disposeObject3D(object);
+        disposeSiteEnvironmentObject(object);
         runtime.siteEnvironmentObjects.delete(id);
       }
     });
@@ -1260,12 +1675,13 @@ export default function SiteOverviewScene({
         if (object) {
           if (runtime.transformControls.translate.object === object || runtime.transformControls.rotate.object === object) detachDualTransformControls(runtime.transformControls);
           runtime.objectRoot.remove(object);
-          disposeObject3D(object);
+          disposeSiteEnvironmentObject(object);
         }
         object = createSiteEnvironmentObject(siteObject, {
           selected, theme, selectionColor: SCENE_THEMES[theme].selection, edgeColor: siteTheme.edge,
           pathRenderContext,
         });
+        configureMovementAnimation(object);
         runtime.siteEnvironmentObjects.set(siteObject.id, object);
         runtime.objectRoot.add(object);
       }
@@ -1277,6 +1693,9 @@ export default function SiteOverviewScene({
       object.userData.terrainBaseElevation = terrainBaseElevation;
       object.position.set(siteObject.position.x, siteObject.position.y + terrainBaseElevation, siteObject.position.z);
       object.rotation.set(siteObject.rotation.x, siteObject.rotation.y, siteObject.rotation.z);
+      if (siteObject.undergroundConnection) {
+        object.rotation.y = getUndergroundAutoRotation(siteObject) + (siteObject.rotation.y ?? 0);
+      }
       clampObjectToSiteBounds(object, runtime.siteBounds);
       if (
         Math.abs(object.position.x - siteObject.position.x) > 1e-5
@@ -1467,6 +1886,14 @@ export default function SiteOverviewScene({
     <section className={styles.viewport} aria-label={`부지 ${viewMode === VIEW_MODES.LAYOUT_2D ? "2D" : "3D"} 편집 화면`}>
       <div ref={containerRef} className={styles.canvasMount} />
       <div className={styles.sceneStatus}><span /> {viewMode === VIEW_MODES.LAYOUT_2D ? "평면 편집" : "공간 편집"}</div>
+      {interactionMode === SITE_INTERACTION_MODES.EDIT_MOVEMENT_PATH ? (
+        <div className={styles.movementEditStatus} role="status">
+          <strong>지면을 클릭해 경유점을 추가하세요</strong>
+          <span><i className={styles.startPoint} /> 시작점 <i className={styles.viaPoint} /> 경유점 <i className={styles.endPoint} /> 종료점</span>
+          <span>경유점 드래그 · 선분 클릭 삽입 · Delete 삭제 · Ctrl+Z 실행 취소</span>
+          <button type="button" onClick={onMovementEditComplete}>편집 완료</button>
+        </div>
+      ) : null}
       <button
         type="button"
         className={styles.cameraResetButton}

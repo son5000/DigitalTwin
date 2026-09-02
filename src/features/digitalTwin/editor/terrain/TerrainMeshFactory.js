@@ -8,6 +8,7 @@ import {
   sampleTerrainElevation,
   TERRAIN_MATERIALS,
 } from "./TerrainModel";
+import { isPointInsideExcavation } from "../model/undergroundModel";
 
 const HEIGHT_LOW = new THREE.Color("#315c82");
 const HEIGHT_MID = new THREE.Color("#7b9665");
@@ -43,7 +44,11 @@ function getVertexColor(terrain, features, x, z, elevation, range) {
   return color;
 }
 
-function createSurfaceGeometry(terrain, features) {
+function getExcavationSignature(excavations = []) {
+  return excavations.map((item) => [item.id, item.center?.x, item.center?.z, item.width, item.depth, item.bottom, item.rotationY]).join("|");
+}
+
+function createSurfaceGeometry(terrain, features, excavations = []) {
   const vertexCount = terrain.columns * terrain.rows;
   const positions = new Float32Array(vertexCount * 3);
   const colors = new Float32Array(vertexCount * 3);
@@ -68,6 +73,8 @@ function createSurfaceGeometry(terrain, features) {
   }
   for (let row = 0; row < terrain.rows - 1; row += 1) {
     for (let column = 0; column < terrain.columns - 1; column += 1) {
+      const center = getTerrainVertexPosition(terrain, column + 0.5, row + 0.5);
+      if (excavations.some((excavation) => isPointInsideExcavation(center.x, center.z, excavation))) continue;
       const topLeft = row * terrain.columns + column;
       const topRight = topLeft + 1;
       const bottomLeft = topLeft + terrain.columns;
@@ -83,12 +90,12 @@ function createSurfaceGeometry(terrain, features) {
   geometry.computeVertexNormals();
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
-  geometry.userData.terrainTopology = `${terrain.columns}:${terrain.rows}:${terrain.width}:${terrain.depth}`;
+  geometry.userData.terrainTopology = `${terrain.columns}:${terrain.rows}:${terrain.width}:${terrain.depth}:${getExcavationSignature(excavations)}`;
   return geometry;
 }
 
-function updateSurfaceGeometry(geometry, terrain, features) {
-  const expectedTopology = `${terrain.columns}:${terrain.rows}:${terrain.width}:${terrain.depth}`;
+function updateSurfaceGeometry(geometry, terrain, features, excavations = []) {
+  const expectedTopology = `${terrain.columns}:${terrain.rows}:${terrain.width}:${terrain.depth}:${getExcavationSignature(excavations)}`;
   if (geometry.userData.terrainTopology !== expectedTopology) return false;
   const positions = geometry.attributes.position;
   const colors = geometry.attributes.color;
@@ -110,6 +117,35 @@ function updateSurfaceGeometry(geometry, terrain, features) {
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
   return true;
+}
+
+function createExcavationGroup(terrain, features, excavations, material) {
+  const group = new THREE.Group();
+  group.name = "지하 절개면";
+  group.userData.terrainExcavations = true;
+  excavations.forEach((excavation) => {
+    const surface = sampleTerrainElevation(terrain, excavation.center.x, excavation.center.z, features);
+    const bottom = Math.min(surface - 0.2, Number(excavation.bottom) || -3.6);
+    const height = Math.max(0.2, surface - bottom);
+    const wallMaterial = material.clone();
+    const width = Math.max(0.4, Number(excavation.width) || 1);
+    const depth = Math.max(0.4, Number(excavation.depth) || 1);
+    const walls = [
+      [width, 0.12, 0, depth / 2], [width, 0.12, 0, -depth / 2],
+      [0.12, depth, width / 2, 0], [0.12, depth, -width / 2, 0],
+    ];
+    const root = new THREE.Group();
+    root.position.set(excavation.center.x, bottom + height / 2, excavation.center.z);
+    root.rotation.y = Number(excavation.rotationY) || 0;
+    walls.forEach(([wallWidth, wallDepth, x, z]) => {
+      const wall = new THREE.Mesh(new THREE.BoxGeometry(wallWidth, height, wallDepth), wallMaterial);
+      wall.position.set(x, 0, z);
+      wall.receiveShadow = true;
+      root.add(wall);
+    });
+    group.add(root);
+  });
+  return group;
 }
 
 function createBoundarySkirtGeometry(terrain, features) {
@@ -135,11 +171,11 @@ function createBoundarySkirtGeometry(terrain, features) {
   return geometry;
 }
 
-export function createTerrainMesh(environment, terrainFeatures = []) {
+export function createTerrainMesh(environment, terrainFeatures = [], excavations = []) {
   const terrain = normalizeTerrainModel(environment?.terrain, environment?.width, environment?.depth, environment?.groundMaterial);
   const baseMaterial = TERRAIN_MATERIALS[terrain.material] ?? TERRAIN_MATERIALS.CONCRETE;
   const mesh = new THREE.Mesh(
-    createSurfaceGeometry(terrain, terrainFeatures),
+    createSurfaceGeometry(terrain, terrainFeatures, excavations),
     new THREE.MeshStandardMaterial({
       color: 0xffffff,
       vertexColors: true,
@@ -157,14 +193,15 @@ export function createTerrainMesh(environment, terrainFeatures = []) {
   skirt.name = "지형 경계 마감";
   skirt.userData.terrainSkirt = true;
   mesh.add(skirt);
+  mesh.add(createExcavationGroup(terrain, terrainFeatures, excavations, skirt.material));
   mesh.userData.terrainRevision = terrain.revision;
   return mesh;
 }
 
-export function updateTerrainMesh(mesh, environment, terrainFeatures = []) {
+export function updateTerrainMesh(mesh, environment, terrainFeatures = [], excavations = []) {
   const terrain = normalizeTerrainModel(environment?.terrain, environment?.width, environment?.depth, environment?.groundMaterial);
-  if (!updateSurfaceGeometry(mesh.geometry, terrain, terrainFeatures)) {
-    const nextGeometry = createSurfaceGeometry(terrain, terrainFeatures);
+  if (!updateSurfaceGeometry(mesh.geometry, terrain, terrainFeatures, excavations)) {
+    const nextGeometry = createSurfaceGeometry(terrain, terrainFeatures, excavations);
     mesh.geometry.dispose();
     mesh.geometry = nextGeometry;
   }
@@ -176,6 +213,15 @@ export function updateTerrainMesh(mesh, environment, terrainFeatures = []) {
     currentSkirt.geometry = createBoundarySkirtGeometry(terrain, terrainFeatures);
     currentSkirt.material.color.set(baseMaterial.color);
   }
+  const currentExcavations = mesh.children.find((child) => child.userData.terrainExcavations);
+  if (currentExcavations) {
+    currentExcavations.traverse((child) => {
+      if (child.isMesh) child.geometry.dispose();
+      if (child.isMesh && child.material !== currentSkirt?.material) child.material.dispose();
+    });
+    mesh.remove(currentExcavations);
+  }
+  mesh.add(createExcavationGroup(terrain, terrainFeatures, excavations, currentSkirt?.material ?? mesh.material));
   mesh.userData.terrainRevision = terrain.revision;
   return terrain;
 }

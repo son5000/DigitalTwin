@@ -6,12 +6,15 @@ export default function ObjectDetailPanel({
   siteObject,
   siteEnvironment,
   siteObjects,
+  buildings,
+  floors,
   floorCount,
   floorPlanSummary,
   onBuildingChange,
   onOpenFloorPlans,
   onSiteObjectChange,
   onDeleteSiteObject,
+  onMovementEditStart,
 }) {
   if (building) {
     return (
@@ -25,7 +28,7 @@ export default function ObjectDetailPanel({
     );
   }
   if (siteObject) {
-    return <SiteObjectProperties object={siteObject} siteEnvironment={siteEnvironment} siteObjects={siteObjects} onChange={onSiteObjectChange} onDelete={onDeleteSiteObject} />;
+    return <SiteObjectProperties object={siteObject} siteEnvironment={siteEnvironment} siteObjects={siteObjects} buildings={buildings} floors={floors} onChange={onSiteObjectChange} onDelete={onDeleteSiteObject} onMovementEditStart={onMovementEditStart} />;
   }
   return null;
 }

@@ -1,21 +1,20 @@
 .toolbar {
   position: absolute;
-  top: 50%;
+  top: var(--editor-overlay-gap, 12px);
   left: var(--editor-overlay-gap, 12px);
   z-index: 7;
   display: flex;
-  width: var(--editor-overlay-toolbar-width, 50px);
+  width: var(--editor-overlay-toolbar-width, 52px);
   max-height: calc(100% - (var(--editor-overlay-gap, 12px) * 2));
   flex-direction: column;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   padding: 5px;
   border: 1px solid var(--color-border-strong);
   border-radius: var(--editor-overlay-radius, 8px);
   background: var(--color-surface-overlay);
   box-shadow: var(--shadow-panel);
-  transform: translateY(-50%);
-  backdrop-filter: blur(12px);
+  transform: none;
 }
 
 .group,
@@ -31,14 +30,14 @@
 .overflow > summary {
   position: relative;
   display: grid;
-  width: 38px;
-  height: 38px;
-  flex: 0 0 38px;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
   place-items: center;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 6px;
-  color: var(--color-text-muted);
+  border-radius: 7px;
+  color: var(--color-text);
   font-size: 19px;
   line-height: 1;
   background: transparent;
@@ -58,12 +57,15 @@
   border-color: var(--state-selected-border);
   color: var(--color-accent-strong);
   background: var(--state-selected);
-  box-shadow: inset 3px 0 var(--color-accent);
+  box-shadow: inset 2px 0 var(--color-accent), inset 0 0 0 1px var(--state-selected-border);
 }
 
 .button:disabled {
   cursor: not-allowed;
-  opacity: var(--state-disabled-opacity);
+  border-color: transparent;
+  color: var(--color-disabled);
+  background: color-mix(in srgb, var(--color-surface-raised) 55%, transparent);
+  opacity: 1;
 }
 
 .button:focus-visible,
@@ -75,16 +77,69 @@
 }
 
 .icon {
-  display: grid;
-  width: 22px;
-  height: 22px;
-  place-items: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+  line-height: 0;
 }
 
-.icon svg,
-.snapToggle svg,
-.overflow > summary svg {
+.iconSM,
+.iconSM img {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+}
+
+.iconMD,
+.iconMD img {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+}
+
+.iconLG,
+.iconLG img {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+}
+
+.icon img {
   display: block;
+  max-width: none;
+  max-height: none;
+  object-fit: contain;
+  filter: none;
+  opacity: 1;
+  transform: none;
+  image-rendering: auto;
+  user-select: none;
+  pointer-events: none;
+}
+
+.iconLight {
+  display: none !important;
+}
+
+.iconDark {
+  display: block !important;
+}
+
+:global([data-theme="light"]) .iconLight {
+  display: block !important;
+}
+
+:global([data-theme="light"]) .iconDark {
+  display: none !important;
+}
+
+.labeledButton {
+  width: auto;
+  min-width: 40px;
+  grid-template-columns: 24px auto;
+  gap: 6px;
+  padding: 0 10px;
 }
 
 .divider {
@@ -101,7 +156,7 @@
 
 .snapSize {
   position: relative;
-  width: 38px;
+  width: 40px;
   height: 28px;
 }
 
@@ -127,7 +182,7 @@
 }
 
 .snapSize select {
-  width: 38px;
+  width: 40px;
   height: 28px;
   padding: 0 2px;
   border: 1px solid var(--color-border);
@@ -140,7 +195,8 @@
 
 .snapSize select:disabled {
   cursor: not-allowed;
-  opacity: var(--state-disabled-opacity);
+  color: var(--color-text-faint);
+  background: var(--color-surface-raised);
 }
 
 .overflow {
@@ -169,14 +225,13 @@
   bottom: 0;
   left: 50px;
   display: grid;
-  width: 184px;
+  width: 218px;
   gap: 3px;
   padding: 7px;
   border: 1px solid var(--color-border-strong);
   border-radius: 8px;
   background: var(--color-surface-overlay);
   box-shadow: var(--shadow-popover);
-  backdrop-filter: blur(12px);
 }
 
 .menuItem {
@@ -198,6 +253,23 @@
 .menuItem kbd {
   color: var(--color-text-faint);
   font-size: var(--editor-font-size-xs);
+}
+
+.menuSection,
+.mobileOnly {
+  display: grid;
+  gap: 3px;
+}
+
+.menuHeading {
+  padding: 5px 9px 3px;
+  color: var(--color-text-faint);
+  font-size: var(--editor-font-size-xs);
+  font-weight: var(--font-weight-semibold);
+}
+
+.mobileOnly {
+  display: none;
 }
 
 .overflowMenu .divider {
@@ -274,16 +346,21 @@
   .toolbar {
     top: auto;
     bottom: var(--editor-overlay-gap, 12px);
-    left: 50%;
+    right: var(--editor-overlay-gap, 12px);
+    left: var(--editor-overlay-gap, 12px);
     width: auto;
-    max-width: calc(100% - 24px);
-    height: 50px;
+    max-width: none;
+    height: 52px;
     max-height: none;
     flex-direction: row;
     gap: 4px;
-    overflow: visible;
-    transform: translateX(-50%);
+    overflow-x: auto;
+    overflow-y: hidden;
+    transform: none;
+    scrollbar-width: none;
   }
+
+  .toolbar::-webkit-scrollbar { display: none; }
 
   .group,
   .snapControl {
@@ -298,9 +375,13 @@
   }
 
   .overflowMenu {
-    right: 0;
-    bottom: 50px;
+    position: fixed;
+    right: var(--editor-overlay-gap, 12px);
+    bottom: calc(var(--editor-overlay-gap, 12px) + 56px);
     left: auto;
+    width: min(218px, calc(100vw - (var(--editor-overlay-gap, 12px) * 2)));
+    max-height: calc(100dvh - 92px);
+    overflow-y: auto;
   }
 
   .button::after,
@@ -323,15 +404,7 @@
   }
 }
 
-@media (orientation: portrait) and (max-width: 620px) {
-  .toolbar {
-    justify-content: flex-start;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: none;
-  }
-
-  .toolbar::-webkit-scrollbar {
-    display: none;
-  }
+@media (max-width: 720px) {
+  .responsiveSecondary { display: none; }
+  .mobileOnly { display: grid; }
 }

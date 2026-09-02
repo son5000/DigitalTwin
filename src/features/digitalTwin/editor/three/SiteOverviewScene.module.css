@@ -19,7 +19,8 @@
 
 .sceneStatus,
 .gridSnapStatus,
-.areaStatus {
+.areaStatus,
+.movementEditStatus {
   position: absolute;
   z-index: 2;
   border: 1px solid var(--color-border-strong);
@@ -75,6 +76,27 @@
   letter-spacing: 0;
   backdrop-filter: blur(10px);
 }
+
+.movementEditStatus {
+  top: var(--editor-overlay-top-secondary, 62px);
+  left: 50%;
+  display: grid;
+  min-width: min(420px, calc(100% - 32px));
+  justify-items: center;
+  gap: 5px;
+  padding: 9px 12px;
+  border-color: rgb(var(--color-accent-rgb) / 70%);
+  color: var(--color-text-muted);
+  transform: translateX(-50%);
+}
+
+.movementEditStatus strong { color: var(--color-accent-strong); font-size: 13px; }
+.movementEditStatus span { display: flex; align-items: center; gap: 5px; font-size: 11px; }
+.movementEditStatus button { min-height: 28px; padding: 4px 10px; pointer-events: auto; }
+.movementEditStatus i { width: 8px; height: 8px; border-radius: 50%; }
+.startPoint { background: #58d69d; }
+.viaPoint { background: var(--color-accent-strong); }
+.endPoint { background: #ff6b6b; }
 
 .sceneStatus span {
   width: 6px;

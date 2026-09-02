@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { ArrowRightIcon, MoonIcon, SaveIcon, SunIcon, WorldIcon } from "@/components/icons";
+import { ArrowRightIcon, FloorGapIcon, FloorSelectIcon, MoonIcon, SaveIcon, SunIcon, WorldIcon } from "@/components/icons";
 import { navigateTo as navigateToAppRoute } from "@/features/customAssets/core/customAssetNavigation";
 import { getRuntimeCustomAsset } from "@/features/customAssets/core/customAssetRegistry";
 import { CUSTOM_BUILDING_CREATE_ID } from "@/features/customAssets/core/customAssetTypes";
@@ -15,6 +15,8 @@ import FloorObjectList from "@/features/digitalTwin/editor/components/FloorObjec
 import FloorPlanNavigator from "@/features/digitalTwin/editor/components/FloorPlanNavigator";
 import FloorWorkspaceCatalog from "@/features/digitalTwin/editor/components/FloorWorkspaceCatalog";
 import MonitoringSettingsPanel from "@/features/digitalTwin/editor/components/MonitoringSettingsPanel";
+import MovementTimeline from "@/features/digitalTwin/editor/components/MovementTimeline";
+import ObservationScopeSelector from "@/features/digitalTwin/editor/components/ObservationScopeSelector";
 import ObjectDetailPanel from "@/features/digitalTwin/editor/components/ObjectDetailPanel";
 import SiteAuthoringPanel from "@/features/digitalTwin/editor/components/SiteAuthoringPanel";
 import TerrainEditorPanel from "@/features/digitalTwin/editor/components/TerrainEditorPanel";
@@ -43,6 +45,23 @@ import FloorPlanScene from "@/features/digitalTwin/editor/three/FloorPlanScene";
 import SiteOverviewScene from "@/features/digitalTwin/editor/three/SiteOverviewScene";
 import { placeObjectsInArea } from "@/features/digitalTwin/editor/utils/siteAreaPlacement";
 import { DEFAULT_TERRAIN_BRUSH } from "@/features/digitalTwin/editor/terrain/TerrainEditor";
+import {
+  appendMovementWaypoint,
+  changeMovementWaypoint,
+  createDefaultMovementConfig,
+  insertMovementWaypoint,
+  isMovableSiteObject,
+  MOVEMENT_PLAYBACK_STATES,
+  normalizeMovementConfig,
+  removeMovementWaypoint,
+  validateMovementConfig,
+} from "@/features/digitalTwin/editor/model/movementPath";
+import { GROUND_VIEW_MODES } from "@/features/digitalTwin/editor/model/undergroundModel";
+import {
+  getObservationScopeDefinition,
+  normalizeObservationWorkflow,
+  OBSERVATION_SCOPE_TYPES,
+} from "@/features/digitalTwin/editor/model/observationWorkflow";
 
 import styles from "./DigitalTwinEditorPage.module.css";
 
@@ -64,6 +83,8 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
   const { theme, toggleTheme } = useEditorTheme();
   const { editorPreferences, setShadowEnabled } = useEditorPreferences();
   const [wizardStepId, setWizardStepId] = useState(WORLD_WIZARD_STEP_IDS.COMPOSITION);
+  const [layoutInitialized, setLayoutInitialized] = useState(false);
+  const [showObservationScopeSelector, setShowObservationScopeSelector] = useState(false);
   const [saveStatus, setSaveStatus] = useState("");
   const [activeFloatingPanelId, setActiveFloatingPanelId] = useState(null);
   const [siteAreaSelection, setSiteAreaSelection] = useState(null);
@@ -84,9 +105,21 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
   const [equipmentTargetFloorIds, setEquipmentTargetFloorIds] = useState([]);
   const [buildingsTranslucent, setBuildingsTranslucent] = useState(false);
   const [equipmentTranslucent, setEquipmentTranslucent] = useState(true);
+  const [groundViewMode, setGroundViewMode] = useState(GROUND_VIEW_MODES.VISIBLE);
+  const [movementPlayback, setMovementPlayback] = useState({ status: MOVEMENT_PLAYBACK_STATES.STOPPED, currentTime: 0, revision: 0 });
+  const [movementPlaybackError, setMovementPlaybackError] = useState("");
+  const movementClockRef = useRef({ currentTime: 0, duration: 0, status: MOVEMENT_PLAYBACK_STATES.STOPPED, onUiTimeChange: null });
   const buildingSaveRequestRef = useRef(0);
   const siteWorldCameraStateRef = useRef(null);
   const layoutReadyRef = useRef(false);
+  const singleEquipmentBootstrapRef = useRef(false);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const debug = window.__DIGITAL_TWIN_MOVEMENT_DEBUG__ ?? { activeRafLoops: 0, rafLoopStarts: 0 };
+    debug.pageRenderCount = (debug.pageRenderCount ?? 0) + 1;
+    window.__DIGITAL_TWIN_MOVEMENT_DEBUG__ = debug;
+  });
 
   const {
     updateSiteEnvironment, resetLayout, hydrateLayout, updateBuilding,
@@ -111,10 +144,27 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     addMonitoringDevice, updateMonitoringDevice, selectMonitoringDevice,
     addMonitoringBinding, updateMonitoringBinding, selectMonitoringBinding,
     toggleFavorite,
+    configureObservationWorkflow, extendObservationWorkflow, updateObservationViewerSettings,
   } = editor.actions;
 
-  const wizardStepIndex = getWizardStepIndex(wizardStepId);
-  const wizardStep = WORLD_WIZARD_STEPS[wizardStepIndex];
+  const activeWizardSteps = useMemo(() => {
+    const ids = editor.observationWorkflow.activeStepIds?.length
+      ? editor.observationWorkflow.activeStepIds
+      : WORLD_WIZARD_STEPS.map((step) => step.id);
+    const scopeDefinition = getObservationScopeDefinition(editor.observationWorkflow.scopeType);
+    return ids.map((id, index) => {
+      const step = WORLD_WIZARD_STEPS.find((item) => item.id === id);
+      if (!step) return null;
+      const scopeLabel = editor.observationWorkflow.scopeType === OBSERVATION_SCOPE_TYPES.BUILDING && id === WORLD_WIZARD_STEP_IDS.COMPOSITION
+        ? "건물·층 설정"
+        : editor.observationWorkflow.scopeType === OBSERVATION_SCOPE_TYPES.MULTI_EQUIPMENT && id === WORLD_WIZARD_STEP_IDS.FLOOR_AND_EQUIPMENT
+          ? "설비 선택·배치"
+          : scopeDefinition.stepLabels[index] ?? step.shortLabel;
+      return { ...step, shortLabel: scopeLabel };
+    }).filter(Boolean);
+  }, [editor.observationWorkflow.activeStepIds, editor.observationWorkflow.scopeType]);
+  const wizardStepIndex = Math.max(0, activeWizardSteps.findIndex((step) => step.id === wizardStepId));
+  const wizardStep = activeWizardSteps[wizardStepIndex] ?? WORLD_WIZARD_STEPS[getWizardStepIndex(wizardStepId)];
   const isCompositionStep = wizardStepId === WORLD_WIZARD_STEP_IDS.COMPOSITION;
   const isFloorWorkspaceStep = wizardStepId === WORLD_WIZARD_STEP_IDS.FLOOR_AND_EQUIPMENT;
   const isMonitoringStep = wizardStepId === WORLD_WIZARD_STEP_IDS.MONITORING;
@@ -124,7 +174,11 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     () => sortFloorsByLevel(editor.floors.filter((floor) => floor.parentId === focusedBuilding?.id)),
     [editor.floors, focusedBuilding?.id],
   );
-  const selectedFloor = editor.currentFloor?.parentId === focusedBuilding?.id ? editor.currentFloor : buildingFloors[0] ?? null;
+  const selectedFloor = editor.currentFloor?.parentId === focusedBuilding?.id
+    ? editor.currentFloor
+    : buildingFloors.find((floor) => Number(floor.level) === 1) ?? buildingFloors[0] ?? null;
+  const aboveGroundFloorCount = buildingFloors.filter((floor) => Number(floor.level) > 0).length;
+  const selectedMovableObject = isMovableSiteObject(editor.selectedSiteObject) ? editor.selectedSiteObject : null;
   const referenceFloor = useMemo(() => (
     buildingFloors.find((floor) => floor.id === referenceFloorId && floor.id !== selectedFloor?.id)
     ?? buildingFloors.find((floor) => floor.id !== selectedFloor?.id)
@@ -154,6 +208,76 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     setFloorDisplayGap(nextGap);
     if (nextGap > 0) setViewScope(VIEW_SCOPES.BUILDING);
   }, []);
+  const handleMovementEditStart = useCallback(() => {
+    if (!editor.selectedSiteObjectId || !editor.selectedSiteObject) return;
+    if (siteInteractionMode === SITE_INTERACTION_MODES.EDIT_MOVEMENT_PATH) {
+      setSiteInteractionMode(SITE_INTERACTION_MODES.NAVIGATE);
+      return;
+    }
+    const movement = editor.selectedSiteObject.movement
+      ? normalizeMovementConfig(editor.selectedSiteObject.movement, editor.selectedSiteObject.position)
+      : createDefaultMovementConfig(editor.selectedSiteObject.position);
+    updateSiteObject(editor.selectedSiteObjectId, { movement: { ...movement, enabled: true } });
+    setSiteInteractionMode(SITE_INTERACTION_MODES.EDIT_MOVEMENT_PATH);
+    setMovementPlaybackError("");
+    setMovementPlayback((current) => ({ ...current, status: MOVEMENT_PLAYBACK_STATES.PAUSED, currentTime: 0, revision: current.revision + 1 }));
+  }, [editor.selectedSiteObject, editor.selectedSiteObjectId, siteInteractionMode, updateSiteObject]);
+  const handleMovementEditComplete = useCallback(() => {
+    setSiteInteractionMode(SITE_INTERACTION_MODES.NAVIGATE);
+  }, []);
+  const handleMovementWaypointAdd = useCallback((point) => {
+    if (!editor.selectedSiteObjectId || !editor.selectedSiteObject) return;
+    updateSiteObject(editor.selectedSiteObjectId, {
+      movement: appendMovementWaypoint(editor.selectedSiteObject.movement, point, editor.selectedSiteObject.position),
+    });
+    setMovementPlaybackError("");
+  }, [editor.selectedSiteObject, editor.selectedSiteObjectId, updateSiteObject]);
+  const handleMovementWaypointChange = useCallback((waypointId, point) => {
+    if (!editor.selectedSiteObjectId || !editor.selectedSiteObject) return;
+    updateSiteObject(editor.selectedSiteObjectId, {
+      movement: changeMovementWaypoint(editor.selectedSiteObject.movement, waypointId, point),
+    });
+    setMovementPlaybackError("");
+  }, [editor.selectedSiteObject, editor.selectedSiteObjectId, updateSiteObject]);
+  const handleMovementWaypointInsert = useCallback((index, point) => {
+    if (!editor.selectedSiteObjectId || !editor.selectedSiteObject) return;
+    updateSiteObject(editor.selectedSiteObjectId, { movement: insertMovementWaypoint(editor.selectedSiteObject.movement, index, point, editor.selectedSiteObject.position) });
+    setMovementPlaybackError("");
+  }, [editor.selectedSiteObject, editor.selectedSiteObjectId, updateSiteObject]);
+  const handleMovementWaypointDelete = useCallback((waypointId) => {
+    if (!editor.selectedSiteObjectId || !editor.selectedSiteObject) return;
+    const result = removeMovementWaypoint(editor.selectedSiteObject.movement, waypointId);
+    if (!result.removed) {
+      setMovementPlaybackError("경로에는 경유점이 2개 이상 필요합니다.");
+      return;
+    }
+    updateSiteObject(editor.selectedSiteObjectId, { movement: result.config });
+    setMovementPlaybackError("");
+  }, [editor.selectedSiteObject, editor.selectedSiteObjectId, updateSiteObject]);
+  const handleMovementPlaybackChange = useCallback((nextPlayback) => {
+    const object = editor.selectedSiteObject;
+    if (nextPlayback.status === MOVEMENT_PLAYBACK_STATES.PLAYING) {
+      if (!object || !isMovableSiteObject(object)) {
+        setMovementPlaybackError("재생할 차량 또는 사람을 선택하세요.");
+        return;
+      }
+      const validation = validateMovementConfig(object.movement);
+      if (!validation.valid) {
+        setMovementPlaybackError(validation.message);
+        return;
+      }
+      if (!object.movement.enabled) updateSiteObject(object.id, { movement: { ...object.movement, enabled: true } });
+      setMovementPlaybackError("");
+      setMovementPlayback((current) => ({
+        ...nextPlayback,
+        objectId: object.id,
+        currentTime: current.objectId && current.objectId !== object.id ? 0 : nextPlayback.currentTime,
+      }));
+      return;
+    }
+    setMovementPlaybackError("");
+    setMovementPlayback((current) => ({ ...nextPlayback, objectId: current.objectId ?? object?.id ?? null }));
+  }, [editor.selectedSiteObject, updateSiteObject]);
   const sitePlacementPlan = useMemo(() => {
     const definition = OBJECT_LIBRARY_DEFINITION_MAP[activeSiteTemplateId];
     if (!siteAreaSelection || !definition) return null;
@@ -165,8 +289,48 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     if (layoutReadyRef.current) return;
     layoutReadyRef.current = true;
     const saved = loadLayout();
-    if (saved) hydrateLayout(saved);
+    const timer = window.setTimeout(() => {
+      if (saved) {
+        hydrateLayout(saved);
+        const workflow = normalizeObservationWorkflow(saved.observationWorkflow, { legacyLayout: !saved.observationWorkflow });
+        setWizardStepId(workflow.activeStepIds[0] ?? WORLD_WIZARD_STEP_IDS.COMPOSITION);
+      }
+      setLayoutInitialized(true);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [hydrateLayout]);
+
+  useEffect(() => {
+    if (!editor.observationWorkflow.configured) return;
+    if (editor.observationWorkflow.activeStepIds.includes(wizardStepId)) return;
+    const timer = window.setTimeout(() => {
+      setWizardStepId(editor.observationWorkflow.activeStepIds[0] ?? WORLD_WIZARD_STEP_IDS.MONITORING);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [editor.observationWorkflow.activeStepIds, editor.observationWorkflow.configured, wizardStepId]);
+
+  useEffect(() => {
+    const isSingleEquipment = editor.observationWorkflow.configured
+      && editor.observationWorkflow.scopeType === OBSERVATION_SCOPE_TYPES.SINGLE_EQUIPMENT;
+    if (!isSingleEquipment || singleEquipmentBootstrapRef.current || !editor.currentFloor) return;
+    singleEquipmentBootstrapRef.current = true;
+    if (editor.allFloorEquipment.length > 0) {
+      const equipment = editor.allFloorEquipment[0];
+      selectFloorEquipment(equipment.id);
+      updateObservationViewerSettings({ equipmentIds: [equipment.id], activeEquipmentId: equipment.id });
+      return;
+    }
+    const [equipmentId] = addFloorEquipment("CABINET_SINGLE", { x: 0, y: 0, z: 0 }, { floorId: editor.currentFloor.id });
+    if (equipmentId) {
+      selectFloorEquipment(equipmentId);
+      updateObservationViewerSettings({ equipmentIds: [equipmentId], activeEquipmentId: equipmentId });
+    }
+  }, [addFloorEquipment, editor.allFloorEquipment, editor.currentFloor, editor.observationWorkflow.configured, editor.observationWorkflow.scopeType, selectFloorEquipment, updateObservationViewerSettings]);
+
+  useEffect(() => {
+    if (editor.observationWorkflow.scopeType !== OBSERVATION_SCOPE_TYPES.SINGLE_EQUIPMENT || !editor.selectedFloorEquipment) return;
+    ensureEquipmentDetail(editor.selectedFloorEquipment);
+  }, [editor.observationWorkflow.scopeType, editor.selectedFloorEquipment, ensureEquipmentDetail]);
 
   useEffect(() => {
     if (!layoutReadyRef.current) return undefined;
@@ -394,8 +558,14 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     selectFloorEquipmentTemplate(null);
     if (id) setWorkspaceMode(WORKSPACE_MODES.EQUIPMENT);
     selectFloorEquipment(id);
+    if (id && [OBSERVATION_SCOPE_TYPES.SINGLE_EQUIPMENT, OBSERVATION_SCOPE_TYPES.MULTI_EQUIPMENT].includes(editor.observationWorkflow.scopeType)) {
+      updateObservationViewerSettings({
+        equipmentIds: [...new Set([...(editor.observationWorkflow.viewerSettings?.equipmentIds ?? []), id])],
+        activeEquipmentId: id,
+      });
+    }
     setActiveFloatingPanelId(id ? WORLD_PANEL_IDS.DETAILS : WORLD_PANEL_IDS.OBJECTS);
-  }, [selectFloorEquipment, selectFloorEquipmentTemplate, selectFloorPlanTemplate]);
+  }, [editor.observationWorkflow.scopeType, editor.observationWorkflow.viewerSettings?.equipmentIds, selectFloorEquipment, selectFloorEquipmentTemplate, selectFloorPlanTemplate, updateObservationViewerSettings]);
   const handleFloorEquipmentChange = useCallback((changes) => {
     if (editor.selectedFloorEquipmentId) updateFloorEquipment(editor.selectedFloorEquipmentId, changes);
   }, [editor.selectedFloorEquipmentId, updateFloorEquipment]);
@@ -416,6 +586,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
   }, [selectFloorEquipment, selectFloorEquipmentTemplate, selectFloorPlanStructure, selectFloorPlanTemplate, workspaceMode]);
 
   const enterStep = useCallback((stepId) => {
+    if (!editor.observationWorkflow.activeStepIds.includes(stepId)) return;
     if (stepId === WORLD_WIZARD_STEP_IDS.MONITORING && editor.selectedFloorEquipment) ensureEquipmentDetail(editor.selectedFloorEquipment);
     setWizardStepId(stepId);
     resetSiteInteraction();
@@ -428,12 +599,22 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     const floor = selectedFloor ?? editor.floors.find((item) => item.parentId === focusedBuilding?.id);
     if (floor) navigateToFloor(floor.id);
     setActiveFloatingPanelId(stepId === WORLD_WIZARD_STEP_IDS.MONITORING ? WORLD_PANEL_IDS.DETAILS : WORLD_PANEL_IDS.OBJECTS);
-  }, [editor.floors, editor.selectedFloorEquipment, ensureEquipmentDetail, focusedBuilding?.id, navigateToFloor, navigateToSite, resetSiteInteraction, selectedFloor]);
+  }, [editor.floors, editor.observationWorkflow.activeStepIds, editor.selectedFloorEquipment, ensureEquipmentDetail, focusedBuilding?.id, navigateToFloor, navigateToSite, resetSiteInteraction, selectedFloor]);
+  const handleObservationScopeSelect = useCallback((scopeType, options = {}) => {
+    const result = showObservationScopeSelector && editor.observationWorkflow.configured
+      ? extendObservationWorkflow(scopeType, options)
+      : configureObservationWorkflow(scopeType, options).workflow;
+    const firstStepId = result.activeStepIds[0] ?? WORLD_WIZARD_STEP_IDS.MONITORING;
+    setWizardStepId(firstStepId);
+    setShowObservationScopeSelector(false);
+    setActiveFloatingPanelId(firstStepId === WORLD_WIZARD_STEP_IDS.MONITORING ? WORLD_PANEL_IDS.DETAILS : WORLD_PANEL_IDS.OBJECTS);
+    singleEquipmentBootstrapRef.current = false;
+  }, [configureObservationWorkflow, editor.observationWorkflow.configured, extendObservationWorkflow, showObservationScopeSelector]);
   const handlePrimaryAction = useCallback(() => {
-    if (isCompositionStep) {
-      enterStep(WORLD_WIZARD_STEP_IDS.FLOOR_AND_EQUIPMENT);
-    } else if (isFloorWorkspaceStep) {
-      enterStep(WORLD_WIZARD_STEP_IDS.MONITORING);
+    const currentIndex = activeWizardSteps.findIndex((step) => step.id === wizardStepId);
+    const nextStep = activeWizardSteps[currentIndex + 1];
+    if (nextStep) {
+      enterStep(nextStep.id);
     } else {
       try {
         const payload = saveLayout(editor.layoutDocument);
@@ -442,21 +623,27 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
         setSaveStatus("저장하지 못했습니다");
       }
     }
-  }, [editor.layoutDocument, enterStep, isCompositionStep, isFloorWorkspaceStep]);
+  }, [activeWizardSteps, editor.layoutDocument, enterStep, wizardStepId]);
   const handleLoad = useCallback(() => {
     const saved = loadLayout();
     setSaveStatus(saved && hydrateLayout(saved) ? "저장된 월드를 불러왔습니다" : "저장된 배치가 없습니다");
-    enterStep(WORLD_WIZARD_STEP_IDS.COMPOSITION);
-  }, [enterStep, hydrateLayout]);
+  }, [hydrateLayout]);
   const handleReset = useCallback(() => {
     resetLayout();
-    enterStep(WORLD_WIZARD_STEP_IDS.COMPOSITION);
+    setWizardStepId(WORLD_WIZARD_STEP_IDS.COMPOSITION);
+    setShowObservationScopeSelector(false);
+    singleEquipmentBootstrapRef.current = false;
     setSaveStatus("새 월드로 초기화했습니다");
-  }, [enterStep, resetLayout]);
+  }, [resetLayout]);
 
   useEffect(() => {
     function onKeyDown(event) {
       if (event.key === "Escape") {
+        if (isCompositionStep && siteInteractionMode === SITE_INTERACTION_MODES.EDIT_MOVEMENT_PATH) {
+          event.preventDefault();
+          handleMovementEditComplete();
+          return;
+        }
         if (isCompositionStep) clearSitePlacement();
         if (isFloorWorkspaceStep) clearFloorPlacement();
         clearSelection();
@@ -488,9 +675,10 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [clearFloorPlacement, clearSelection, clearSitePlacement, duplicateSelectedFloorEquipment, duplicateSelectedFloorPlanStructure, duplicateSelectedSiteEntity, handleDeleteSiteSelection, handleRedo, handleUndo, hasTransformSelection, isCompositionStep, isFloorWorkspaceStep, removeSelectedFloorEquipment, removeSelectedFloorPlanStructure, selectFloorEquipment, selectFloorPlanStructure, toggleTransformTool, workspaceMode]);
+  }, [clearFloorPlacement, clearSelection, clearSitePlacement, duplicateSelectedFloorEquipment, duplicateSelectedFloorPlanStructure, duplicateSelectedSiteEntity, handleDeleteSiteSelection, handleMovementEditComplete, handleRedo, handleUndo, hasTransformSelection, isCompositionStep, isFloorWorkspaceStep, removeSelectedFloorEquipment, removeSelectedFloorPlanStructure, selectFloorEquipment, selectFloorPlanStructure, siteInteractionMode, toggleTransformTool, workspaceMode]);
 
-  const primaryDisabled = (isCompositionStep && editor.buildings.length === 0) || ((isFloorWorkspaceStep || isMonitoringStep) && !selectedFloor);
+  const hasNextWizardStep = wizardStepIndex < activeWizardSteps.length - 1;
+  const primaryDisabled = hasNextWizardStep && ((isCompositionStep && editor.buildings.length === 0) || ((isFloorWorkspaceStep || isMonitoringStep) && !selectedFloor));
   const stageContext = isCompositionStep
     ? `${editor.siteEnvironment.width.toFixed(0)} × ${editor.siteEnvironment.depth.toFixed(0)} m · 건축물 ${editor.buildings.length} · 환경 ${environmentSiteObjects.length}`
     : `${focusedBuilding?.name ?? "건축물 미선택"} · ${selectedFloor?.name ?? "층 미선택"}`;
@@ -551,6 +739,30 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     />
   ) : null;
 
+  if (!layoutInitialized) {
+    return <main className={styles.editor}><div className={styles.detailLoading}>저장된 관측 구성을 확인하는 중입니다.</div></main>;
+  }
+
+  if (!editor.observationWorkflow.configured || showObservationScopeSelector) {
+    return (
+      <main className={styles.editor}>
+        <header className={styles.header}>
+          <div className={styles.brandMark} aria-hidden="true"><WorldIcon size={24} /></div>
+          <div className={styles.headerMeta}><span>{showObservationScopeSelector ? "관측 범위 확장" : "새 관측 프로젝트"}</span></div>
+          <button type="button" className={styles.themeToggle} onClick={toggleTheme} aria-label={`${theme === EDITOR_THEMES.DARK ? "라이트" : "다크"} 테마로 전환`}>
+            <span aria-hidden="true">{theme === EDITOR_THEMES.DARK ? <MoonIcon size={19} /> : <SunIcon size={19} />}</span>
+          </button>
+        </header>
+        <ObservationScopeSelector
+          expansion={showObservationScopeSelector}
+          currentScopeType={editor.observationWorkflow.scopeType}
+          onSelect={handleObservationScopeSelect}
+          onCancel={() => setShowObservationScopeSelector(false)}
+        />
+      </main>
+    );
+  }
+
   return (
     <main className={styles.editor}>
       <header className={styles.header}>
@@ -586,14 +798,33 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
       >
         <div className={styles.sceneArea} data-scene-area>
           <div className={styles.topNavigationRow} data-camera-safe-ui>
-            <div className={styles.workspaceNavigation}><WorldWorkspaceNavigation activeViewId={wizardStepId} onViewChange={enterStep} /></div>
-            <section className={styles.stageGuide} aria-label="현재 화면 작업"><button type="button" disabled={primaryDisabled} title={primaryDisabled ? "건축물과 층을 먼저 선택하세요" : wizardStep.primaryLabel} onClick={handlePrimaryAction}>{isMonitoringStep ? <SaveIcon size={16} /> : <ArrowRightIcon size={16} />}<span>{isMonitoringStep ? "저장" : "다음"}</span></button></section>
+            <div className={styles.workspaceNavigation}><WorldWorkspaceNavigation activeViewId={wizardStepId} onViewChange={enterStep} steps={activeWizardSteps} /></div>
+            <div className={styles.workflowControls}>
+              {editor.observationWorkflow.scopeType === OBSERVATION_SCOPE_TYPES.MULTI_EQUIPMENT && isMonitoringStep ? (
+                <label>
+                  <span>설비 전환</span>
+                  <select
+                    value={editor.selectedFloorEquipmentId ?? ""}
+                    disabled={editor.allFloorEquipment.length === 0}
+                    onChange={(event) => {
+                      selectFloorEquipment(event.target.value || null);
+                      updateObservationViewerSettings({ activeEquipmentId: event.target.value || null });
+                    }}
+                  >
+                    <option value="">설비를 선택하세요</option>
+                    {editor.allFloorEquipment.map((equipment) => <option key={equipment.id} value={equipment.id}>{equipment.name}</option>)}
+                  </select>
+                </label>
+              ) : null}
+              <button type="button" className={styles.expandScopeButton} onClick={() => setShowObservationScopeSelector(true)}>관측 범위 확장</button>
+            </div>
+            <section className={styles.stageGuide} aria-label="현재 화면 작업"><button type="button" disabled={primaryDisabled} title={primaryDisabled ? "건축물과 층을 먼저 선택하세요" : wizardStep.primaryLabel} onClick={handlePrimaryAction}>{hasNextWizardStep ? <ArrowRightIcon size={16} /> : <SaveIcon size={16} />}<span>{hasNextWizardStep ? "다음" : "저장"}</span></button></section>
           </div>
 
           {isFloorWorkspaceStep ? (
             <div className={styles.workspaceControls} data-camera-safe-ui>
               <label className={styles.floorSelectControl}>
-                <span>층 이동</span>
+                <span className={styles.workspaceControlLabel}><FloorSelectIcon size={20} />층 선택</span>
                 <select
                   value={selectedFloor?.id ?? ""}
                   disabled={!focusedBuilding || buildingFloors.length === 0}
@@ -614,7 +845,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
               ) : null}
               <div className={styles.workspaceControlGroup} role="group" aria-label="층 표시 간격 설정">
                 <label className={styles.spreadControl}>
-                  <span>층 간격</span>
+                  <span className={styles.workspaceControlLabel}><FloorGapIcon size={20} />층 간격</span>
                   <input type="range" min="0" max="12" step="0.5" value={floorDisplayGap} onChange={(event) => handleFloorDisplayGapChange(event.target.value)} />
                   <input type="number" min="0" max="12" step="0.5" value={floorDisplayGap} aria-label="층 표시 간격 미터" onChange={(event) => handleFloorDisplayGapChange(event.target.value)} />
                   <output>{floorDisplayGap.toFixed(1)} m</output>
@@ -633,6 +864,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                 interiorBuildingId={null}
                 focusRequestKey={editor.navigationContext.transitionId} focusMode={showOnlySelectedBuilding} cameraStateRef={siteWorldCameraStateRef}
                 buildingsTranslucent={buildingsTranslucent}
+                groundViewMode={groundViewMode} movementPlayback={movementPlayback} movementClockRef={movementClockRef}
                 interactionMode={siteInteractionMode} placementTemplateId={activeSiteTemplateId} placementVariants={activeSiteVariants}
                 areaSelection={siteAreaSelection} theme={theme} viewMode={editor.viewMode} transformTools={editor.transformTools}
                 gridSettings={editor.gridSettings} gridScopeId={editor.hierarchy.rootId}
@@ -642,6 +874,11 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                 onEnterFloor={(floorId) => { navigateToFloor(floorId); setWizardStepId(WORLD_WIZARD_STEP_IDS.FLOOR_AND_EQUIPMENT); setShowOnlySelectedBuilding(false); resetSiteInteraction(); setActiveFloatingPanelId(WORLD_PANEL_IDS.OBJECTS); }}
                 onAreaSelectionChange={setSiteAreaSelection} onPlaceTemplate={handleSiteTemplatePlace} onPlaceTemplateArea={completeAreaPlacement} onCancelPlacement={clearSitePlacement}
                 terrainBrush={terrainBrush} onTerrainChange={(terrain) => updateSiteEnvironment({ terrain })}
+                onMovementWaypointAdd={handleMovementWaypointAdd}
+                onMovementWaypointChange={handleMovementWaypointChange}
+                onMovementWaypointInsert={handleMovementWaypointInsert}
+                onMovementWaypointDelete={handleMovementWaypointDelete}
+                onMovementEditComplete={handleMovementEditComplete}
               />
             ) : isFloorWorkspaceStep && workspaceView === WORKSPACE_VIEWS.PLAN_2D ? (
               <FloorPlanScene
@@ -679,6 +916,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                   monitoringDevices={editor.sensorBindings} monitoringBindings={editor.serverBindings} monitoringMode
                   transformTools={editor.transformTools} onEquipmentSelect={handleFloorEquipmentSelect} onObservationPointAdd={addObservationPoint}
                   shadowEnabled={editorPreferences.shadowEnabled}
+                  groundViewMode={groundViewMode}
                 />}
               />
             ) : (
@@ -701,6 +939,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                 onCancelPlacement={clearFloorPlacement}
                 externalStatus={editor.floorPlanValidationMessage}
                 shadowEnabled={editorPreferences.shadowEnabled}
+                groundViewMode={groundViewMode}
               />
             )}
           </div>
@@ -715,10 +954,15 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
               : `설비 반투명 보기 ${equipmentTranslucent ? "끄기" : "켜기"}`}
             onViewerTransparencyChange={isCompositionStep ? setBuildingsTranslucent : setEquipmentTranslucent}
             showSelectionActions={!isMonitoringStep} showSiteInteractionTools={isCompositionStep}
+            showMovementPathTool={Boolean(isCompositionStep && selectedMovableObject)}
+            onMovementPathEdit={handleMovementEditStart}
             showBuildingIsolationToggle={isCompositionStep}
             buildingIsolationEnabled={showOnlySelectedBuilding}
             buildingIsolationAvailable={Boolean(editor.selectedBuilding)}
             showShadowToggle={isFloorWorkspaceStep || isMonitoringStep}
+            showGroundViewControl={isCompositionStep || isFloorWorkspaceStep || isMonitoringStep}
+            groundViewMode={groundViewMode}
+            onGroundViewModeChange={setGroundViewMode}
             shadowEnabled={editorPreferences.shadowEnabled}
             onShadowEnabledChange={setShadowEnabled}
             onBuildingIsolationChange={(enabled) => {
@@ -737,6 +981,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
             onDelete={isCompositionStep ? handleDeleteSiteSelection : workspaceMode === WORKSPACE_MODES.PLAN ? removeSelectedFloorPlanStructure : removeSelectedFloorEquipment}
             onReset={handleReset} onLoad={handleLoad} onSave={handlePrimaryAction} onUndo={handleUndo} onRedo={handleRedo}
           />
+          {isCompositionStep && selectedMovableObject?.movement ? <MovementTimeline key={selectedMovableObject.id} object={selectedMovableObject} playback={movementPlayback} movementClockRef={movementClockRef} error={movementPlaybackError} onChange={handleMovementPlaybackChange} /> : null}
           {isCompositionStep || isFloorWorkspaceStep ? (
             <ViewModeToggle
               topAligned={isCompositionStep}
@@ -762,7 +1007,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
             ) : isCompositionStep ? (
               <>
                 {editor.selectedBuilding ? <BuildingDetailNavigator buildings={editor.buildings} selectedBuildingId={editor.selectedBuilding.id} isSaving={isSaving} hasUnsavedChanges={hasUnsavedChanges} onPrevious={() => handleAdjacentBuilding(-1)} onNext={() => handleAdjacentBuilding(1)} /> : null}
-                <ObjectDetailPanel building={editor.selectedBuilding} siteObject={editor.selectedSiteObject} siteEnvironment={editor.siteEnvironment} siteObjects={editor.siteObjects} floorCount={buildingFloors.length} floorPlanSummary={editor.floorPlanSummaryByBuildingId[focusedBuilding?.id]} onBuildingChange={handleBuildingChange} onOpenFloorPlans={() => enterStep(WORLD_WIZARD_STEP_IDS.FLOOR_AND_EQUIPMENT)} onSiteObjectChange={(changes) => editor.selectedSiteObjectId && updateSiteObject(editor.selectedSiteObjectId, changes)} onDeleteSiteObject={handleDeleteSiteSelection} />
+                <ObjectDetailPanel building={editor.selectedBuilding} siteObject={editor.selectedSiteObject} siteEnvironment={editor.siteEnvironment} siteObjects={editor.siteObjects} buildings={editor.buildings} floors={editor.floors} floorCount={aboveGroundFloorCount} floorPlanSummary={editor.floorPlanSummaryByBuildingId[focusedBuilding?.id]} onBuildingChange={handleBuildingChange} onOpenFloorPlans={() => enterStep(WORLD_WIZARD_STEP_IDS.FLOOR_AND_EQUIPMENT)} onSiteObjectChange={(changes) => editor.selectedSiteObjectId && updateSiteObject(editor.selectedSiteObjectId, changes)} onMovementEditStart={handleMovementEditStart} onDeleteSiteObject={handleDeleteSiteSelection} />
               </>
             ) : isFloorWorkspaceStep && activeFloatingPanelId === WORLD_PANEL_IDS.OBJECTS ? (
               <FloorWorkspaceCatalog

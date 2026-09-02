@@ -17,6 +17,7 @@ export const SITE_INTERACTION_MODES = Object.freeze({
   AREA_SELECT: "AREA_SELECT",
   PLACE_OBJECT: "PLACE_OBJECT",
   EDIT_TERRAIN: "EDIT_TERRAIN",
+  EDIT_MOVEMENT_PATH: "EDIT_MOVEMENT_PATH",
 });
 
 export const SITE_MATERIAL_OPTIONS = Object.freeze([
@@ -99,7 +100,7 @@ export function createSiteObjectFromArea(templateId, area, sequence = 1, variant
   const width = isPoint ? template.width : areaWidth;
   const depth = isPoint ? template.depth : areaDepth;
 
-  return {
+  const object = {
     id: `SITE_OBJECT_${crypto.randomUUID()}`,
     domain: "SITE",
     type: template.id,
@@ -128,6 +129,7 @@ export function createSiteObjectFromArea(templateId, area, sequence = 1, variant
     visible: true,
     locked: false,
   };
+  return object;
 }
 
 export function normalizeSiteObject(object, index = 0) {
@@ -172,5 +174,7 @@ export function normalizeSiteObject(object, index = 0) {
       : null,
     visible: object.visible !== false,
     locked: Boolean(object.locked),
+    movement: object.movement ? structuredClone(object.movement) : null,
+    undergroundConnection: object.undergroundConnection ? structuredClone(object.undergroundConnection) : null,
   };
 }

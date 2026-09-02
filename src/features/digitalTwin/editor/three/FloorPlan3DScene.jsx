@@ -8,6 +8,7 @@ import {
   sortFloorsByLevel,
 } from "@/features/digitalTwin/editor/model/floorDisplay";
 import { isFloorShadowEnabled } from "@/features/digitalTwin/editor/model/shadowPolicy";
+import { GROUND_VIEW_MODES, normalizeGroundViewMode } from "@/features/digitalTwin/editor/model/undergroundModel";
 import { createTextSprite } from "@/features/digitalTwin/editor/objects/createTextSprite";
 import { getBuildingFootprint } from "@/features/digitalTwin/editor/utils/buildingFootprint";
 import { getStairRenderInstances, getVerticalStructureOpeningForFloor, STAIR_SCOPES } from "@/features/digitalTwin/editor/utils/stairStructure";
@@ -167,6 +168,44 @@ function createFloor(building, openings, floorStyle) {
   return mesh;
 }
 
+function createGroundViewObject(building, floors, mode) {
+  const group = new THREE.Group();
+  group.name = "지하 편집 지면";
+  if (!building || !floors.some((floor) => Number(floor.level) < 0) || mode === GROUND_VIEW_MODES.HIDDEN) return group;
+  const footprint = getBuildingFootprint(building);
+  const margin = 12;
+  const halfWidth = (Number(building.parameters?.width) || 10) / 2 + margin;
+  const halfDepth = (Number(building.parameters?.depth) || 10) / 2 + margin;
+  const minimumZ = mode === GROUND_VIEW_MODES.SECTION ? 0 : -halfDepth;
+  const shape = new THREE.Shape();
+  shape.moveTo(-halfWidth, minimumZ);
+  shape.lineTo(halfWidth, minimumZ);
+  shape.lineTo(halfWidth, halfDepth);
+  shape.lineTo(-halfWidth, halfDepth);
+  shape.closePath();
+  if (mode !== GROUND_VIEW_MODES.SECTION) {
+    const hole = new THREE.Path();
+    hole.moveTo(footprint.points[0].x, footprint.points[0].z);
+    footprint.points.slice(1).forEach((point) => hole.lineTo(point.x, point.z));
+    hole.closePath();
+    shape.holes.push(hole);
+  }
+  const material = new THREE.MeshStandardMaterial({
+    color: 0x75836f,
+    roughness: 1,
+    side: THREE.DoubleSide,
+    transparent: mode === GROUND_VIEW_MODES.TRANSLUCENT,
+    opacity: mode === GROUND_VIEW_MODES.TRANSLUCENT ? 0.25 : 1,
+    depthWrite: mode !== GROUND_VIEW_MODES.TRANSLUCENT,
+  });
+  const ground = new THREE.Mesh(new THREE.ShapeGeometry(shape), material);
+  ground.rotation.x = Math.PI / 2;
+  ground.position.y = 0.015;
+  ground.receiveShadow = false;
+  group.add(ground);
+  return group;
+}
+
 function resize(runtime) {
   const { width, height } = runtime.container.getBoundingClientRect();
   if (!width || !height) return;
@@ -187,6 +226,7 @@ export default function FloorPlan3DScene({
   onSpatialSelect,
   floorDisplayGap = 0, onFloorSelect,
   shadowEnabled = true,
+  groundViewMode = GROUND_VIEW_MODES.VISIBLE,
 }) {
   const containerRef = useRef(null);
   const runtimeRef = useRef(null);
@@ -221,7 +261,8 @@ export default function FloorPlan3DScene({
     const contentRoot = new THREE.Group();
     const helperRoot = new THREE.Group();
     const placementRoot = new THREE.Group();
-    scene.add(contentRoot, helperRoot, placementRoot);
+    const groundViewRoot = new THREE.Group();
+    scene.add(groundViewRoot, contentRoot, helperRoot, placementRoot);
     scene.add(new THREE.HemisphereLight(sceneTheme.hemisphereSky, sceneTheme.hemisphereGround, 2));
     const light = new THREE.DirectionalLight(sceneTheme.keyLight, 1.8);
     light.position.set(30, 50, 22);
@@ -232,7 +273,7 @@ export default function FloorPlan3DScene({
     light.shadow.camera.top = 40;
     light.shadow.camera.bottom = -40;
     scene.add(light);
-    const runtime = { container, scene, renderer, camera, controls, transformControls, transformTools: DISABLED_TRANSFORM_TOOLS, contentRoot, helperRoot, placementRoot, placementPreview: null, floorPickers: [], floorGroups: new Map(), floorLayers: new Map(), floorOffsetTargets: new Map(), floorGuides: [], stairFloorGuides: [], monitoringFloorGuides: [], light, shadowEnabled: true, floorDisplayGap: 0, selectedFloorId: null };
+    const runtime = { container, scene, renderer, camera, controls, transformControls, transformTools: DISABLED_TRANSFORM_TOOLS, groundViewRoot, contentRoot, helperRoot, placementRoot, placementPreview: null, floorPickers: [], floorGroups: new Map(), floorLayers: new Map(), floorOffsetTargets: new Map(), floorGuides: [], stairFloorGuides: [], monitoringFloorGuides: [], light, shadowEnabled: true, floorDisplayGap: 0, selectedFloorId: null };
     runtimeRef.current = runtime;
     const raycaster = new THREE.Raycaster();
     const start = new THREE.Vector2();
@@ -393,6 +434,7 @@ export default function FloorPlan3DScene({
       disposeDualTransformControls(transformControls);
       controls.dispose();
       disposeObject3D(runtime.contentRoot);
+      disposeObject3D(runtime.groundViewRoot);
       disposeObject3D(runtime.helperRoot);
       disposeObject3D(runtime.placementRoot);
       renderer.dispose();
@@ -400,6 +442,14 @@ export default function FloorPlan3DScene({
       runtimeRef.current = null;
     };
   }, [theme]);
+
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
+    [...runtime.groundViewRoot.children].forEach(disposeObject3D);
+    runtime.groundViewRoot.clear();
+    runtime.groundViewRoot.add(createGroundViewObject(building, floors, normalizeGroundViewMode(groundViewMode)));
+  }, [building, floors, groundViewMode]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;

@@ -18,6 +18,14 @@ import {
   VERTICAL_PATH_MODES,
 } from "@/features/digitalTwin/editor/terrain/VerticalPathModel";
 import { OUTDOOR_PLACEMENT_MODES } from "@/features/digitalTwin/editor/model/outdoorEquipmentPlacement";
+import {
+  isMovableSiteObject,
+  MOVEMENT_END_BEHAVIORS,
+  MOVEMENT_PATH_TYPES,
+  MOVEMENT_REPEAT_MODES,
+  normalizeMovementConfig,
+} from "@/features/digitalTwin/editor/model/movementPath";
+import { formatFloorLevel, isUndergroundSiteObject } from "@/features/digitalTwin/editor/model/undergroundModel";
 
 import NumericField from "./NumericField";
 import { ObjectVariantSelector } from "./ObjectLibrary";
@@ -42,7 +50,7 @@ function ParameterColorField({ label, value, onChange }) {
   );
 }
 
-export default function SiteObjectProperties({ object, siteEnvironment, siteObjects = [], onChange, onDelete }) {
+export default function SiteObjectProperties({ object, siteEnvironment, siteObjects = [], buildings = [], floors = [], onChange, onDelete, onMovementEditStart }) {
   const [isColorPaletteOpen, setIsColorPaletteOpen] = useState(false);
   const colorControlRef = useRef(null);
 
@@ -66,6 +74,9 @@ export default function SiteObjectProperties({ object, siteEnvironment, siteObje
   const isRamp = object.profile === "OUTDOOR_RAMP";
   const isTerrain = object.assetKind === "TERRAIN";
   const isOutdoorEquipment = object.assetKind === "OUTDOOR_EQUIPMENT";
+  const isMovable = isMovableSiteObject(object);
+  const isUnderground = isUndergroundSiteObject(object);
+  const movement = isMovable ? normalizeMovementConfig(object.movement, object.position) : null;
   const isOutdoorStorage = isOutdoorEquipment && ["TANK", "SILO", "BASIN", "CLARIFIER", "WATER_TOWER"].some((key) => object.profile.includes(key));
   const supportsCardinalDirection = isRoad || isWalkway || isStairs || isRamp;
   const rotationDegrees = object.rotation.y * 180 / Math.PI;
@@ -263,6 +274,72 @@ export default function SiteObjectProperties({ object, siteEnvironment, siteObje
             <div><dt>경사각</dt><dd>{verticalMetrics.gradeAngle.toFixed(2)}°</dd></div>
           </dl>
           {Math.abs(verticalMetrics.gradePercent) > gradeLimit ? <p className={styles.gradeWarning}>권장 경사 {gradeLimit}%를 초과했습니다.</p> : null}
+        </div>
+      ) : null}
+
+      {isUnderground ? (
+        <div className={styles.section}>
+          <h3>지하 연결</h3>
+          <div className={styles.fields}>
+            <label>
+              <span>대상 건축물</span>
+              <select value={object.undergroundConnection?.targetBuildingId ?? ""} onChange={(event) => {
+                const targetBuildingId = event.target.value || null;
+                const targetFloor = floors.find((floor) => floor.parentId === targetBuildingId && Number(floor.level) === -1);
+                onChange({ undergroundConnection: { targetBuildingId, targetFloorId: targetFloor?.id ?? null, endPoint: { ...object.undergroundConnection?.endPoint, y: targetFloor?.elevation ?? -3.6 } } });
+              }}>
+                <option value="">자동 연결</option>
+                {buildings.filter((building) => floors.some((floor) => floor.parentId === building.id && Number(floor.level) < 0)).map((building) => <option key={building.id} value={building.id}>{building.name}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>대상 지하층</span>
+              <select value={object.undergroundConnection?.targetFloorId ?? ""} onChange={(event) => {
+                const targetFloor = floors.find((floor) => floor.id === event.target.value);
+                onChange({ undergroundConnection: { targetFloorId: targetFloor?.id ?? null, targetBuildingId: targetFloor?.parentId ?? object.undergroundConnection?.targetBuildingId, endPoint: { ...object.undergroundConnection?.endPoint, y: targetFloor?.elevation ?? -3.6 } } });
+              }}>
+                <option value="">자동 연결</option>
+                {floors.filter((floor) => Number(floor.level) < 0 && (!object.undergroundConnection?.targetBuildingId || floor.parentId === object.undergroundConnection.targetBuildingId)).map((floor) => <option key={floor.id} value={floor.id}>{formatFloorLevel(floor.level)} · {floor.name}</option>)}
+              </select>
+            </label>
+            <NumericField label="시작 높이" value={object.undergroundConnection?.startPoint?.y ?? 0} min={-50} max={20} unit="m" onChange={(y) => onChange({ undergroundConnection: { startPoint: { ...object.undergroundConnection?.startPoint, y } } })} />
+            <NumericField label="종료 높이" value={object.undergroundConnection?.endPoint?.y ?? -3.6} min={-80} max={0} unit="m" onChange={(y) => onChange({ undergroundConnection: { endPoint: { ...object.undergroundConnection?.endPoint, y } } })} />
+            <NumericField label="개구부 너비" value={object.undergroundConnection?.openingWidth ?? object.dimensions.width} min={0.6} unit="m" onChange={(openingWidth) => onChange({ undergroundConnection: { openingWidth } })} />
+          </div>
+          <p>지면과 대상 지하층 바닥에 연결 개구부가 생성되며 연결 높이는 실제 저장 좌표입니다.</p>
+        </div>
+      ) : null}
+
+      {isMovable ? (
+        <div className={styles.section}>
+          <h3>이동 경로</h3>
+          <div className={styles.fields}>
+            <label className={styles.toggle}><input type="checkbox" checked={movement.enabled} onChange={(event) => onChange({ movement: { ...movement, enabled: event.target.checked } })} /><span>이동 사용</span></label>
+            <label><span>경로 방식</span><select value={movement.pathType} onChange={(event) => onChange({ movement: { ...movement, pathType: event.target.value } })}><option value={MOVEMENT_PATH_TYPES.LINEAR}>직선 연결</option><option value={MOVEMENT_PATH_TYPES.CURVE}>곡선 연결</option></select></label>
+            <NumericField label="시작 시간" value={movement.startTime} min={0} unit="초" onChange={(startTime) => onChange({ movement: { ...movement, startTime } })} />
+            <NumericField label="이동 속도" value={movement.speed} min={0.05} unit="m/s" onChange={(speed) => onChange({ movement: { ...movement, speed } })} />
+            <NumericField label="기본 대기" value={movement.waitTime} min={0} unit="초" onChange={(waitTime) => onChange({ movement: { ...movement, waitTime } })} />
+            <label><span>반복 방식</span><select value={movement.repeatMode} onChange={(event) => onChange({ movement: { ...movement, repeatMode: event.target.value } })}><option value={MOVEMENT_REPEAT_MODES.ONCE}>1회 실행</option><option value={MOVEMENT_REPEAT_MODES.LOOP}>반복</option><option value={MOVEMENT_REPEAT_MODES.PING_PONG}>왕복</option></select></label>
+            <label><span>종료 동작</span><select value={movement.endBehavior} onChange={(event) => onChange({ movement: { ...movement, endBehavior: event.target.value } })}><option value={MOVEMENT_END_BEHAVIORS.HOLD}>종료 위치 유지</option><option value={MOVEMENT_END_BEHAVIORS.RESET}>시작 위치 복귀</option><option value={MOVEMENT_END_BEHAVIORS.HIDE}>숨기기</option></select></label>
+          </div>
+          <button type="button" onClick={onMovementEditStart}>월드에서 경유점 추가</button>
+          <div className={styles.fields}>
+            {movement.waypoints.map((waypoint, index) => (
+              <div key={waypoint.id}>
+                <strong>{index + 1}번 경유점</strong>
+                <label><span>소속 층</span><select value={waypoint.floorId ?? ""} onChange={(event) => {
+                  const floor = floors.find((item) => item.id === event.target.value);
+                  onChange({ movement: { ...movement, waypoints: movement.waypoints.map((item) => item.id === waypoint.id ? { ...item, floorId: floor?.id ?? null, y: floor?.elevation ?? item.y } : item) } });
+                }}><option value="">지형·월드 높이</option>{floors.map((floor) => <option key={floor.id} value={floor.id}>{formatFloorLevel(floor.level)} · {floor.name}</option>)}</select></label>
+                <NumericField label="X" value={waypoint.x} unit="m" onChange={(x) => onChange({ movement: { ...movement, waypoints: movement.waypoints.map((item) => item.id === waypoint.id ? { ...item, x } : item) } })} />
+                <NumericField label="Y" value={waypoint.y} unit="m" onChange={(y) => onChange({ movement: { ...movement, waypoints: movement.waypoints.map((item) => item.id === waypoint.id ? { ...item, y } : item) } })} />
+                <NumericField label="Z" value={waypoint.z} unit="m" onChange={(z) => onChange({ movement: { ...movement, waypoints: movement.waypoints.map((item) => item.id === waypoint.id ? { ...item, z } : item) } })} />
+                <NumericField label="대기" value={waypoint.waitTime} min={0} unit="초" onChange={(waitTime) => onChange({ movement: { ...movement, waypoints: movement.waypoints.map((item) => item.id === waypoint.id ? { ...item, waitTime } : item) } })} />
+                <button type="button" disabled={movement.waypoints.length <= 2} onClick={() => onChange({ movement: { ...movement, waypoints: movement.waypoints.filter((item) => item.id !== waypoint.id) } })}>경유점 삭제</button>
+              </div>
+            ))}
+          </div>
+          <p>{object.assetKind === "PERSON" ? "내장 보행 동작 지원" : "경로 방향 회전과 바퀴 회전 지원"} · 외부 모델 애니메이션 클립은 있을 때 자동 사용합니다.</p>
         </div>
       ) : null}
 

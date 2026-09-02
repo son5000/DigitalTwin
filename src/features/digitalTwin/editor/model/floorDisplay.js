@@ -14,7 +14,10 @@ export function normalizeFloorDisplayGap(value, maximum = 12) {
 
 export function createFloorDisplayOffsets(floors, floorDisplayGap) {
   const gap = normalizeFloorDisplayGap(floorDisplayGap);
-  return new Map(sortFloorsByLevel(floors).map((floor, index) => [floor.id, index * gap]));
+  return new Map(sortFloorsByLevel(floors).map((floor) => {
+    const level = Number(floor.level) || 1;
+    return [floor.id, level < 0 ? level * gap : Math.max(0, level - 1) * gap];
+  }));
 }
 
 export function resolveFloorOwnerId(entity, floors, fallbackFloorId = null) {
@@ -27,5 +30,5 @@ export function resolveFloorOwnerId(entity, floors, fallbackFloorId = null) {
 
 export function formatFloorOptionLabel(floor, fallbackLevel = 1) {
   const level = Number.isFinite(Number(floor?.level)) ? Number(floor.level) : fallbackLevel;
-  return `${level}F`;
+  return level < 0 ? `B${Math.abs(level)}` : `${level}F`;
 }

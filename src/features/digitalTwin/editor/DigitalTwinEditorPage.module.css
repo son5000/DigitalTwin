@@ -286,6 +286,23 @@
   flex: 0 1 auto;
 }
 
+.workflowControls {
+  display: flex;
+  min-height: var(--editor-overlay-control-height);
+  padding: 3px;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--editor-overlay-radius);
+  background: var(--color-surface-overlay);
+  box-shadow: var(--shadow-panel);
+  backdrop-filter: blur(10px);
+}
+
+.workflowControls label { display: flex; align-items: center; gap: 6px; color: var(--color-text-muted); font-size: var(--editor-font-size-xs); }
+.workflowControls select { min-width: 140px; min-height: var(--editor-overlay-inner-height); padding: 0 26px 0 8px; border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-heading); background: var(--color-input); }
+.workflowControls button { min-height: var(--editor-overlay-inner-height); padding: 0 9px; border-radius: 6px; color: var(--color-accent-strong); background: var(--state-selected); font-size: var(--editor-font-size-xs); white-space: nowrap; }
+
 .stageGuide {
   width: fit-content;
   max-width: min(230px, 30vw);
@@ -336,10 +353,13 @@
 .workspaceControls {
   position: absolute;
   top: var(--editor-overlay-top-secondary);
-  left: 50%;
+  right: var(--editor-overlay-right-safe, var(--editor-overlay-gap));
+  left: var(--editor-overlay-left-safe);
   z-index: 8;
   display: flex;
+  width: fit-content;
   max-width: calc(100% - var(--editor-overlay-left-safe) - var(--editor-overlay-right-safe, var(--editor-overlay-gap)));
+  margin-inline: auto;
   padding: 3px;
   align-items: center;
   gap: 6px;
@@ -347,8 +367,7 @@
   border-radius: var(--editor-overlay-radius);
   background: var(--color-surface-overlay);
   box-shadow: var(--shadow-panel);
-  transform: translateX(-50%);
-  backdrop-filter: blur(10px);
+  transform: none;
 }
 
 .workspaceControlGroup { display: flex; padding-left: 6px; align-items: center; gap: 3px; border-left: 1px solid var(--color-border); }
@@ -362,6 +381,8 @@
 .spreadControl input[type="range"] { width: 112px; accent-color: var(--color-accent); }
 .spreadControl input[type="number"] { width: 50px; min-height: 28px; padding: 0 5px; border: 1px solid var(--color-border); border-radius: 5px; color: var(--color-heading); background: var(--color-input); }
 .spreadControl output { min-width: 42px; color: var(--color-heading); text-align: right; }
+.workspaceControlLabel { display: inline-flex; align-items: center; gap: 5px; color: var(--color-text-muted); }
+.workspaceControlLabel svg { width: 20px; height: 20px; flex: 0 0 20px; color: currentColor; filter: none; transform: none; }
 
 .sceneTransition > * {
   min-width: 0;
@@ -625,6 +646,9 @@
     justify-self: center;
   }
 
+  .workflowControls { max-width: calc(100vw - 16px); overflow-x: auto; }
+  .workflowControls label > span { display: none; }
+
   .stageGuide {
     width: fit-content;
     max-width: min(250px, calc(100vw - 16px));
@@ -637,10 +661,11 @@
 
   .workspaceControls {
     top: var(--editor-overlay-top-secondary);
-    left: 50%;
+    right: 8px;
+    left: 8px;
     max-width: calc(100% - 16px);
     overflow-x: auto;
-    transform: translateX(-50%);
+    transform: none;
   }
 
   .floorSelectControl select { min-width: 140px; }
