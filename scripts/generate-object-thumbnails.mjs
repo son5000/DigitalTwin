@@ -5,6 +5,7 @@ import path from "node:path";
 import { createServer as createViteServer } from "vite";
 
 const projectRoot = process.cwd();
+const equipmentOnly = process.argv.includes("--equipment-only");
 const outputDirectory = path.join(projectRoot, "public", "assets", "object-thumbnails");
 await mkdir(outputDirectory, { recursive: true });
 
@@ -54,7 +55,7 @@ const browser = spawn(chrome, [
   "--enable-webgl",
   "--no-first-run",
   "--window-size=512,512",
-  "http://127.0.0.1:4178/thumbnail-renderer.html?generate=all",
+  `http://127.0.0.1:4178/thumbnail-renderer.html?generate=all${equipmentOnly ? "&domain=equipment" : ""}`,
 ], { stdio: "ignore", windowsHide: true });
 
 const timeout = setTimeout(() => complete({ timeout: true, failures: [] }), 10 * 60 * 1000);
@@ -68,13 +69,15 @@ if (result.failures?.length) {
   console.error(JSON.stringify(result, null, 2));
   process.exitCode = 1;
 } else {
-  await copyFile(path.join(outputDirectory, "MOTOR.png"), path.join(outputDirectory, "_fallback.png"));
-  await writeFile(path.join(outputDirectory, "manifest.json"), `${JSON.stringify({
-    version: 1,
-    width: 512,
-    height: 512,
-    count: result.count,
-    ids: result.ids,
-  }, null, 2)}\n`);
+  if (!equipmentOnly) {
+    await copyFile(path.join(outputDirectory, "MOTOR.png"), path.join(outputDirectory, "_fallback.png"));
+    await writeFile(path.join(outputDirectory, "manifest.json"), `${JSON.stringify({
+      version: 1,
+      width: 512,
+      height: 512,
+      count: result.count,
+      ids: result.ids,
+    }, null, 2)}\n`);
+  }
   console.log(`Generated ${result.count} object thumbnails in ${outputDirectory}`);
 }

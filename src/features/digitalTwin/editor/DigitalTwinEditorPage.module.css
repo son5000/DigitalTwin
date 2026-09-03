@@ -289,10 +289,11 @@
 
 .workflowControls {
   display: flex;
+  max-width: 100%;
   min-height: var(--editor-overlay-control-height);
   padding: 3px;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   border: 1px solid var(--color-border-strong);
   border-radius: var(--editor-overlay-radius);
   background: var(--color-surface-overlay);
@@ -300,9 +301,13 @@
   backdrop-filter: blur(10px);
 }
 
-.workflowControls label { display: flex; align-items: center; gap: 6px; color: var(--color-text-muted); font-size: var(--editor-font-size-xs); }
-.workflowControls select { min-width: 140px; min-height: var(--editor-overlay-inner-height); padding: 0 26px 0 8px; border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-heading); background: var(--color-input); }
-.workflowControls button { min-height: var(--editor-overlay-inner-height); padding: 0 9px; border-radius: 6px; color: var(--color-accent-strong); background: var(--state-selected); font-size: var(--editor-font-size-xs); white-space: nowrap; }
+.workflowControls label { display: flex; min-width: 0; align-items: center; gap: 6px; padding-left: 6px; color: var(--color-text-muted); font-size: var(--editor-font-size-xs); white-space: nowrap; }
+.workflowControls select { min-width: 140px; max-width: min(220px, 32vw); min-height: var(--editor-overlay-inner-height); padding: 0 26px 0 8px; border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-heading); background: var(--color-input); text-overflow: ellipsis; }
+.workflowControls button { display: inline-flex; min-height: var(--editor-overlay-inner-height); flex: 0 0 auto; padding: 0 10px; align-items: center; justify-content: center; gap: 5px; border: 1px solid transparent; border-radius: 6px; color: var(--color-heading); background: var(--color-input); font-size: var(--editor-font-size-xs); font-weight: var(--editor-font-weight-medium); white-space: nowrap; }
+.workflowControls button:hover:not(:disabled) { border-color: var(--color-border); color: var(--color-accent-strong); background: var(--state-hover); }
+.workflowControls button:active:not(:disabled) { background: var(--state-active); }
+.workflowControls button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+.workflowControls button:disabled { color: var(--color-disabled); background: var(--state-disabled-bg); cursor: not-allowed; }
 
 .stageGuide {
   width: fit-content;
@@ -672,8 +677,9 @@
     justify-self: center;
   }
 
-  .workflowControls { max-width: calc(100vw - 16px); overflow-x: auto; }
+  .workflowControls { width: 100%; max-width: calc(100vw - 16px); overflow-x: auto; }
   .workflowControls label > span { display: none; }
+  .workflowControls select { max-width: min(220px, 44vw); }
 
   .stageGuide {
     width: fit-content;

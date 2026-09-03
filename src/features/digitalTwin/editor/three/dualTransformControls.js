@@ -3,6 +3,7 @@ import { TransformControls } from "three/addons/controls/TransformControls.js";
 import {
   DEFAULT_TRANSFORM_TOOLS,
   getMoveAxisConfiguration,
+  getRotationAxisConfiguration,
 } from "@/features/digitalTwin/editor/constants/transformTools";
 
 export {
@@ -26,21 +27,21 @@ export function createDualTransformControls(camera, domElement, scene, { rotatio
 
 export function configureDualTransformControls(controls, tools = DEFAULT_TRANSFORM_TOOLS, { camera } = {}) {
   const moveAxes = getMoveAxisConfiguration(tools);
-  const rotateEnabled = Boolean(tools?.rotate);
+  const rotationAxes = getRotationAxisConfiguration(tools);
   if (camera) {
     controls.translate.camera = camera;
     controls.rotate.camera = camera;
   }
   controls.translate.enabled = moveAxes.enabled;
-  controls.rotate.enabled = rotateEnabled;
+  controls.rotate.enabled = rotationAxes.enabled;
   controls.translate.getHelper().visible = moveAxes.enabled && Boolean(controls.translate.object);
-  controls.rotate.getHelper().visible = rotateEnabled && Boolean(controls.rotate.object);
+  controls.rotate.getHelper().visible = rotationAxes.enabled && Boolean(controls.rotate.object);
   controls.translate.showX = moveAxes.showX;
   controls.translate.showY = moveAxes.showY;
   controls.translate.showZ = moveAxes.showZ;
-  controls.rotate.showX = false;
-  controls.rotate.showY = true;
-  controls.rotate.showZ = false;
+  controls.rotate.showX = rotationAxes.showX;
+  controls.rotate.showY = rotationAxes.showY;
+  controls.rotate.showZ = rotationAxes.showZ;
 }
 
 export function attachDualTransformControls(controls, object, tools, options) {
@@ -64,7 +65,7 @@ export function dualTransformIsActive(controls) {
 export function setDualTransformDragging(controls, activeControl, dragging, tools) {
   const other = activeControl === controls.translate ? controls.rotate : controls.translate;
   const otherEnabled = activeControl === controls.translate
-    ? Boolean(tools?.rotate)
+    ? getRotationAxisConfiguration(tools).enabled
     : getMoveAxisConfiguration(tools).enabled;
   other.enabled = dragging ? false : otherEnabled;
 }

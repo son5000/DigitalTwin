@@ -10,6 +10,7 @@ import {
 } from "@/features/digitalTwin/editor/constants/equipmentShapeTemplates";
 import { UNIFIED_EQUIPMENT_TEMPLATE_MAP } from "@/features/digitalTwin/editor/constants/unifiedEquipmentCatalog";
 import {
+  cycleTransformRotationAxisMode,
   cycleTransformMoveAxisMode,
   DEFAULT_TRANSFORM_TOOLS,
   normalizeTransformTools,
@@ -2218,6 +2219,7 @@ export default function useDigitalTwinEditorState() {
       setTransformMode,
       toggleTransformTool: (tool) => setTransformTools((current) => {
         if (tool === "translate") return cycleTransformMoveAxisMode(current);
+        if (tool === "rotate") return cycleTransformRotationAxisMode(current);
         const normalized = normalizeTransformTools(current);
         return { ...normalized, [tool]: !normalized[tool] };
       }),

@@ -103,5 +103,6 @@ export function normalizeEquipmentInstance(equipment, template) {
     },
     visible: equipment.visible ?? true,
     locked: equipment.locked ?? false,
+    showNameLabel: equipment.showNameLabel === true,
   };
 }

@@ -38,6 +38,7 @@ function createBuilding(definition) {
     appearance: { materialPreset: definition.material === "METAL" ? "PAINTED_METAL" : "CONCRETE", color: definition.color, opacity: 1, showEdges: true },
     position: { x: 0, y: 0, z: 0 },
     rotation: { x: 0, y: 0, z: 0 },
+    showNameLabel: false,
     visible: true,
   };
   const floors = Array.from({ length: floorCount }, (_, index) => ({ id: `${building.id}_F${index + 1}`, parentId: building.id, level: index + 1 }));
@@ -176,8 +177,11 @@ async function renderThumbnail(id) {
   return blob;
 }
 
-async function generateAll() {
-  const ids = [...definitionMap.keys()].sort();
+async function generateAll(domain = null) {
+  const ids = [...definitionMap.entries()]
+    .filter(([, entry]) => !domain || entry.domain === domain)
+    .map(([id]) => id)
+    .sort();
   const failures = [];
   for (let index = 0; index < ids.length; index += 1) {
     const id = ids[index];
@@ -197,5 +201,5 @@ async function generateAll() {
 
 window.__thumbnailIds = [...definitionMap.keys()].sort();
 const params = new URLSearchParams(location.search);
-if (params.get("generate") === "all") generateAll();
+if (params.get("generate") === "all") generateAll(params.get("domain")?.toUpperCase() || null);
 else renderThumbnail(params.get("id") ?? window.__thumbnailIds[0]);

@@ -1,23 +1,10 @@
-import { useMemo, useState } from "react";
-
 import ObjectModelThumbnail from "@/features/digitalTwin/editor/components/ObjectModelThumbnail";
-import {
-  UNIFIED_EQUIPMENT_CATEGORIES,
-  UNIFIED_EQUIPMENT_TEMPLATE_MAP,
-  UNIFIED_EQUIPMENT_TEMPLATES,
-} from "@/features/digitalTwin/editor/constants/unifiedEquipmentCatalog";
+import FloorWorkspaceCatalog from "@/features/digitalTwin/editor/components/FloorWorkspaceCatalog";
+import { UNIFIED_EQUIPMENT_TEMPLATE_MAP } from "@/features/digitalTwin/editor/constants/unifiedEquipmentCatalog";
 
 import styles from "./MonitoringEquipmentPicker.module.css";
 
 const ACCEPTED_ASSET_TYPES = ".obj,.ply,.mtl,.jpg,.jpeg,.png,.webp";
-
-function matchesQuery(template, query) {
-  if (!query) return true;
-  return [template.id, template.nameKo, template.name, ...(template.keywords ?? [])]
-    .join(" ")
-    .toLocaleLowerCase("ko-KR")
-    .includes(query);
-}
 
 export default function MonitoringEquipmentPicker({
   equipment = [],
@@ -29,17 +16,6 @@ export default function MonitoringEquipmentPicker({
   onAddTemplate,
   onUploadAsset,
 }) {
-  const [query, setQuery] = useState("");
-  const normalizedQuery = query.trim().toLocaleLowerCase("ko-KR");
-  const filteredTemplates = useMemo(
-    () => UNIFIED_EQUIPMENT_TEMPLATES.filter((template) => matchesQuery(template, normalizedQuery)),
-    [normalizedQuery],
-  );
-  const groupedTemplates = useMemo(() => UNIFIED_EQUIPMENT_CATEGORIES.map((category) => ({
-    ...category,
-    templates: filteredTemplates.filter((template) => template.category === category.id),
-  })).filter((category) => category.templates.length), [filteredTemplates]);
-
   function handleUpload(event) {
     const files = Array.from(event.target.files ?? []);
     if (files.length) onUploadAsset?.(files);
@@ -72,25 +48,16 @@ export default function MonitoringEquipmentPicker({
 
       <div className={styles.actions}>
         <label className={styles.uploadButton}>3D 파일로 직접 등록<input type="file" multiple accept={ACCEPTED_ASSET_TYPES} onChange={handleUpload} /></label>
-        <label className={styles.search}><span>설비 검색</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="탱크, 펌프, 캐비닛…" /></label>
       </div>
       {notice ? <p className={styles.notice} role="status">{notice}</p> : null}
 
-      <div className={styles.catalog}>
-        {groupedTemplates.map((category) => (
-          <section key={category.id} className={styles.category}>
-            <div className={styles.sectionHeading}><strong>{category.nameKo}</strong><span>{category.templates.length}</span></div>
-            <div className={styles.templateGrid}>
-              {category.templates.map((template) => (
-                <button key={template.id} type="button" onClick={() => onAddTemplate?.(template.id)} title={`${template.nameKo} 관측 설비로 등록`}>
-                  <ObjectModelThumbnail definition={template} title={template.nameKo} />
-                  <span><strong>{template.nameKo}</strong><small>{template.installationBadges?.join(" · ") || "설비"}</small></span>
-                </button>
-              ))}
-            </div>
-          </section>
-        ))}
-        {!groupedTemplates.length ? <p className={styles.emptyNotice}>검색 결과가 없습니다.</p> : null}
+      <div className={styles.libraryHost}>
+        <FloorWorkspaceCatalog
+          mode="EQUIPMENT"
+          equipmentOnly
+          activeEquipmentTemplateId={null}
+          onSelectEquipmentTemplate={(templateId) => onAddTemplate?.(templateId)}
+        />
       </div>
     </section>
   );

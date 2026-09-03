@@ -33,6 +33,7 @@ export function getEquipmentGeometrySignature(
   return [
     equipment.shapeTemplateId,
     equipment.name,
+    equipment.showNameLabel === true,
     JSON.stringify(equipment.dimensions),
     JSON.stringify(equipment.parameters),
     JSON.stringify(equipment.appearance),
@@ -49,6 +50,7 @@ export function getEquipmentGeometrySignature(
 export function getEquipmentBatchKey(equipment, { theme = "dark", viewerTranslucent = true } = {}) {
   return [
     equipment.shapeTemplateId,
+    equipment.showNameLabel === true,
     JSON.stringify(equipment.dimensions),
     JSON.stringify(equipment.parameters),
     JSON.stringify(equipment.appearance),
@@ -84,7 +86,7 @@ export function createEquipmentObject(
     parameters: equipment.parameters,
     appearance,
     appearanceSlots: equipment.appearanceSlots,
-    label: equipment.name,
+    label: equipment.showNameLabel === true ? equipment.name : null,
     edgeColor,
     sceneTheme,
     showEdges: appearance.showEdges || selected || colliding,

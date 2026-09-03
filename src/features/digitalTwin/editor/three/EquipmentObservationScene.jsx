@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
 
-import { getMoveAxisConfiguration } from "@/features/digitalTwin/editor/constants/transformTools";
+import { getMoveAxisConfiguration, getRotationAxisConfiguration } from "@/features/digitalTwin/editor/constants/transformTools";
 import { createEquipmentObject } from "@/features/digitalTwin/editor/objects/EquipmentFactory";
 import { disposeObject3D } from "@/features/digitalTwin/editor/three/disposeObject3D";
 
@@ -181,13 +181,14 @@ export default function EquipmentObservationScene({
     scene.add(transformHelper);
     const selectedMarker = sensorMarkers.get(selectedSensorId);
     const axis = getMoveAxisConfiguration(transformTools);
-    const transformActive = Boolean(selectedMarker && (transformTools?.rotate || axis.enabled));
+    const rotationAxis = getRotationAxisConfiguration(transformTools);
+    const transformActive = Boolean(selectedMarker && (rotationAxis.enabled || axis.enabled));
     transform.enabled = transformActive;
     transformHelper.visible = transformActive;
-    transform.setMode(transformTools?.rotate ? "rotate" : "translate");
-    transform.showX = transformTools?.rotate || axis.showX;
-    transform.showY = transformTools?.rotate || axis.showY;
-    transform.showZ = transformTools?.rotate || axis.showZ;
+    transform.setMode(rotationAxis.enabled ? "rotate" : "translate");
+    transform.showX = rotationAxis.enabled ? rotationAxis.showX : axis.showX;
+    transform.showY = rotationAxis.enabled ? rotationAxis.showY : axis.showY;
+    transform.showZ = rotationAxis.enabled ? rotationAxis.showZ : axis.showZ;
     if (transformActive) transform.attach(selectedMarker);
     transform.addEventListener("dragging-changed", (event) => {
       dragging = event.value;

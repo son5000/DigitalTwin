@@ -6,7 +6,9 @@ import {
 import { SITE_INTERACTION_MODES } from "@/features/digitalTwin/editor/constants/siteEnvironmentTemplates";
 import {
   MOVE_AXIS_MODES,
+  ROTATION_AXIS_MODES,
   normalizeMoveAxisMode,
+  normalizeRotationAxisMode,
 } from "@/features/digitalTwin/editor/constants/transformTools";
 import { WORLD_PANEL_IDS } from "@/features/digitalTwin/editor/constants/worldPanel";
 import { GROUND_VIEW_MODES } from "@/features/digitalTwin/editor/model/undergroundModel";
@@ -74,6 +76,32 @@ function MoveAxisButton({ transformTools, disabled, onClick }) {
       disabled={disabled}
       disabledReason="이동할 오브젝트를 먼저 선택하세요"
       data-move-axis-mode={mode}
+      onClick={onClick}
+    />
+  );
+}
+
+const ROTATION_AXIS_UI = Object.freeze({
+  [ROTATION_AXIS_MODES.OFF]: { label: "회전 꺼짐", badge: "꺼짐" },
+  [ROTATION_AXIS_MODES.Y]: { label: "Y축 회전", badge: "Y" },
+  [ROTATION_AXIS_MODES.XY]: { label: "X·Y축 회전", badge: "XY" },
+  [ROTATION_AXIS_MODES.XYZ]: { label: "X·Y·Z축 회전", badge: "XYZ" },
+});
+
+function RotationAxisButton({ transformTools, disabled, onClick }) {
+  const mode = normalizeRotationAxisMode(transformTools);
+  const config = ROTATION_AXIS_UI[mode];
+  const enabled = mode !== ROTATION_AXIS_MODES.OFF;
+  return (
+    <ToolbarButton
+      actionId={TOOLBAR_ACTION_IDS.ROTATE}
+      label={`회전: ${config.label}`}
+      badge={config.badge}
+      active={enabled}
+      pressed={enabled}
+      disabled={disabled}
+      disabledReason="회전할 오브젝트를 먼저 선택하세요"
+      data-rotation-axis-mode={mode}
       onClick={onClick}
     />
   );
@@ -315,7 +343,7 @@ export default function EditorToolbar({
             onClick={() => onSiteInteractionModeChange(SITE_INTERACTION_MODES.AREA_SELECT)}
           /> : null}
           <MoveAxisButton transformTools={transformTools} disabled={!hasTransformSelection} onClick={() => onTransformToolToggle("translate")} />
-          <ToolbarButton actionId={TOOLBAR_ACTION_IDS.ROTATE} active={transformTools.rotate} pressed={transformTools.rotate} disabled={!hasTransformSelection} disabledReason="회전할 오브젝트를 먼저 선택하세요" onClick={() => onTransformToolToggle("rotate")} />
+          <RotationAxisButton transformTools={transformTools} disabled={!hasTransformSelection} onClick={() => onTransformToolToggle("rotate")} />
         </ToolbarGroup>
         {showMovementPathTool ? <><ToolbarDivider /><ToolbarGroup label="경로·애니메이션">
           <ToolbarButton
@@ -405,7 +433,7 @@ export default function EditorToolbar({
           <ToolbarDivider />
           <ToolbarGroup label="선택·변형">
             <MoveAxisButton transformTools={transformTools} disabled={!hasTransformSelection} onClick={() => onTransformToolToggle("translate")} />
-            <ToolbarButton actionId={TOOLBAR_ACTION_IDS.ROTATE} label="Y축 회전" active={transformTools.rotate} pressed={transformTools.rotate} disabled={!hasTransformSelection} disabledReason="회전할 오브젝트를 먼저 선택하세요" onClick={() => onTransformToolToggle("rotate")} />
+            <RotationAxisButton transformTools={transformTools} disabled={!hasTransformSelection} onClick={() => onTransformToolToggle("rotate")} />
           </ToolbarGroup>
           <ToolbarDivider />
           <GridSnapControl enabled={gridSnapEnabled} snapSize={snapSize} onToggle={onGridSnapChange} onSnapSizeChange={onSnapSizeChange} />

@@ -1056,6 +1056,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                 assetBindings={editor.equipmentAssetBindings}
                 selectedAsset={editor.selectedAssetBinding}
                 selectedSensor={editor.selectedSensorBinding}
+                transformTools={editor.transformTools}
                 theme={theme}
                 onAddEquipment={() => setMonitoringEquipmentPickerOpen(true)}
                 equipmentPicker={(monitoringEquipmentPickerOpen || !editor.selectedFloorEquipment) ? <MonitoringEquipmentPicker

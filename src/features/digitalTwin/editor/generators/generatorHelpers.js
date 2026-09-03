@@ -42,6 +42,7 @@ export function addGeometry(group, geometry, options) {
 }
 
 export function addEquipmentLabel(group, label, height, width, edgeColor, sceneTheme) {
+  if (!label) return null;
   const namePlate = createTextSprite(label, {
     background: sceneTheme.labelBackground,
     border: colorToCss(edgeColor),
@@ -50,6 +51,7 @@ export function addEquipmentLabel(group, label, height, width, edgeColor, sceneT
   });
   namePlate.position.set(0, height + 0.26, 0);
   group.add(namePlate);
+  return namePlate;
 }
 
 export function addTubeBetween(group, start, end, radius, options) {

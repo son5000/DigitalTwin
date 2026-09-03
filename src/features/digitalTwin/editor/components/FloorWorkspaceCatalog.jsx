@@ -4,8 +4,15 @@ import {
   AddIcon,
   ChevronDownIcon,
   CloseIcon,
+  DuctIcon,
+  ElectricalIcon,
   EquipmentIcon,
   EquipmentTemplateIcon,
+  LandscapeIcon,
+  MechanicalIcon,
+  PipeIcon,
+  SafetyIcon,
+  SensorIcon,
   StarIcon,
   WorldIcon,
   WorldStructureTypeIcon,
@@ -27,6 +34,20 @@ import objectStyles from "./ObjectLibrary/ObjectLibrary.module.css";
 import styles from "./FloorWorkspaceCatalog.module.css";
 
 const CATALOG_MODES = Object.freeze({ PLAN: "PLAN", EQUIPMENT: "EQUIPMENT" });
+const EQUIPMENT_CATEGORY_ICONS = Object.freeze({
+  ELECTRICAL: ElectricalIcon,
+  HVAC: DuctIcon,
+  PIPE_WATER: PipeIcon,
+  FIRE_SAFETY: SafetyIcon,
+  COMM_SECURITY: SensorIcon,
+  ENERGY_ENVIRONMENT: LandscapeIcon,
+  GENERAL: MechanicalIcon,
+});
+
+function EquipmentCategoryIcon({ categoryId, ...props }) {
+  const Icon = EQUIPMENT_CATEGORY_ICONS[categoryId] ?? EquipmentIcon;
+  return <Icon {...props} />;
+}
 
 function matchesQuery(definition, normalizedQuery) {
   if (!normalizedQuery) return true;
@@ -63,7 +84,7 @@ function CatalogItem({ definition, domain, active, favorite = false, onSelect, o
         <span className={objectStyles.itemText}><strong>{definition.nameKo}</strong><small>{definition.installationBadges?.join(" · ") ?? formatDimensions(definition)}{definition.modelVariants?.length > 1 ? ` · 변형 ${definition.modelVariants.length}` : ""}</small></span>
         <span className={objectStyles.itemAction} aria-hidden="true">{active ? <CloseIcon size={15} /> : <AddIcon size={15} />}</span>
       </button>
-      {isEquipment ? (
+      {isEquipment && onToggleFavorite ? (
         <button
           type="button"
           className={`${styles.favoriteButton} ${favorite ? styles.favoriteActive : ""}`}
@@ -91,7 +112,7 @@ function CatalogCategory({ category, definitions, domain, activeTemplateId, favo
       <button type="button" className={objectStyles.categoryTrigger} aria-expanded={open} onClick={onToggle}>
         <span className={objectStyles.categoryIcon} aria-hidden="true">
           {domain === CATALOG_MODES.EQUIPMENT
-            ? <EquipmentTemplateIcon template={representative} size={19} />
+            ? <EquipmentCategoryIcon categoryId={category.id} size={19} />
             : <WorldStructureTypeIcon definition={representative} size={19} />}
         </span>
         <span className={objectStyles.categoryText}><strong>{category.nameKo}</strong></span>
@@ -100,7 +121,23 @@ function CatalogCategory({ category, definitions, domain, activeTemplateId, favo
       </button>
       <div className={objectStyles.categoryBody} aria-hidden={!open} inert={!open}>
         <div className={objectStyles.categoryBodyInner}>
-          {families.map((family) => (
+          {domain === CATALOG_MODES.EQUIPMENT ? (
+            <div className={objectStyles.subcategory}>
+              <div className={objectStyles.itemList}>
+                {definitions.map((definition) => (
+                  <CatalogItem
+                    key={definition.id}
+                    definition={definition}
+                    domain={domain}
+                    active={definition.id === activeTemplateId}
+                    favorite={favoriteTemplateIds.includes(definition.id)}
+                    onSelect={onSelect}
+                    onToggleFavorite={onToggleFavorite}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : families.map((family) => (
             <section key={family.id} className={objectStyles.subcategory}>
               <header><span>{family.label}</span><small>{family.definitions.length}</small></header>
               <div className={objectStyles.itemList}>
@@ -127,7 +164,8 @@ function CatalogCategory({ category, definitions, domain, activeTemplateId, favo
 export default function FloorWorkspaceCatalog({
   mode,
   onModeChange,
-  allowedStructureTemplateIds,
+  equipmentOnly = false,
+  allowedStructureTemplateIds = [],
   activeStructureTemplateId,
   activeEquipmentTemplateId,
   favoriteTemplateIds = [],
@@ -144,7 +182,7 @@ export default function FloorWorkspaceCatalog({
   const [openCategoryIds, setOpenCategoryIds] = useState(["PLAN:SPACE", "EQUIPMENT:CABINET"]);
   const [recentTemplateIds, setRecentTemplateIds] = useState([]);
   const normalizedQuery = query.trim().toLocaleLowerCase("ko-KR");
-  const isEquipment = mode === CATALOG_MODES.EQUIPMENT;
+  const isEquipment = equipmentOnly || mode === CATALOG_MODES.EQUIPMENT;
   const templates = useMemo(() => (
     isEquipment
       ? UNIFIED_EQUIPMENT_TEMPLATES
@@ -175,10 +213,12 @@ export default function FloorWorkspaceCatalog({
 
   return (
     <section className={`${objectStyles.library} ${styles.catalog}`} aria-label="배치할 오브젝트">
-      <div className={styles.majorTabs} role="tablist" aria-label="오브젝트 대분류">
-        <button type="button" role="tab" aria-selected={!isEquipment} className={!isEquipment ? styles.majorTabActive : ""} onClick={() => onModeChange(CATALOG_MODES.PLAN)}><WorldIcon size={17} />구조</button>
-        <button type="button" role="tab" aria-selected={isEquipment} className={isEquipment ? styles.majorTabActive : ""} onClick={() => onModeChange(CATALOG_MODES.EQUIPMENT)}><EquipmentIcon size={17} />설비</button>
-      </div>
+      {!equipmentOnly ? (
+        <div className={styles.majorTabs} role="tablist" aria-label="오브젝트 대분류">
+          <button type="button" role="tab" aria-selected={!isEquipment} className={!isEquipment ? styles.majorTabActive : ""} onClick={() => onModeChange(CATALOG_MODES.PLAN)}><WorldIcon size={17} />구조</button>
+          <button type="button" role="tab" aria-selected={isEquipment} className={isEquipment ? styles.majorTabActive : ""} onClick={() => onModeChange(CATALOG_MODES.EQUIPMENT)}><EquipmentIcon size={17} />설비</button>
+        </div>
+      ) : null}
 
       <ObjectLibrarySearch value={query} resultCount={templates.length} onChange={setQuery} />
 

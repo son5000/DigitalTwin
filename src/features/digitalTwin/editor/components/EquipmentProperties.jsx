@@ -132,6 +132,10 @@ export default function EquipmentProperties({
           <span>이름</span>
           <input type="text" value={equipment.name} onChange={(event) => onChange({ name: event.target.value })} />
         </label>
+        <label className={styles.checkField}>
+          <input type="checkbox" checked={equipment.showNameLabel === true} onChange={(event) => onChange({ showNameLabel: event.target.checked })} />
+          <span>이름표 표시</span>
+        </label>
         <label className={styles.textField}>
           <span>세부 모델</span>
           <select value={equipment.shapeTemplateId} onChange={(event) => {

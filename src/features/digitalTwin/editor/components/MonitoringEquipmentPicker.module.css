@@ -6,7 +6,11 @@
   left: var(--editor-overlay-left-safe, 74px);
   z-index: 9;
   display: grid;
-  width: min(420px, calc(100% - var(--editor-overlay-left-safe, 74px) - var(--editor-overlay-gap, 12px)));
+  width: min(
+    var(--editor-overlay-panel-width, clamp(300px, 23vw, 360px)),
+    calc(100% - var(--editor-overlay-left-safe, 74px) - var(--editor-overlay-gap, 12px))
+  );
+  max-width: calc(100% - var(--editor-overlay-left-safe, 74px) - var(--editor-overlay-gap, 12px));
   min-height: 0;
   grid-template-rows: auto auto auto auto minmax(0, 1fr);
   overflow: hidden;
@@ -19,8 +23,7 @@
 .header,
 .sectionHeading,
 .actions,
-.registeredList button,
-.templateGrid button {
+.registeredList button {
   display: flex;
   align-items: center;
 }
@@ -42,25 +45,36 @@
 .registeredList small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .registeredList small { color: var(--color-text-muted); }
 
-.actions { padding: 10px 12px; align-items: end; gap: 8px; border-block: 1px solid var(--color-border); }
-.uploadButton { display: grid; min-height: 36px; padding: 0 10px; place-items: center; border-radius: 6px; color: var(--color-primary-contrast); background: var(--color-primary); cursor: pointer; font-size: var(--editor-font-size-xs); font-weight: var(--font-weight-semibold); white-space: nowrap; }
+.actions { padding: 10px 12px; gap: 8px; border-block: 1px solid var(--color-border); }
+.uploadButton {
+  display: inline-flex;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 12px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--color-primary);
+  border-radius: 6px;
+  color: var(--color-primary-contrast) !important;
+  background: var(--color-primary);
+  cursor: pointer;
+  font-size: var(--editor-font-size-sm);
+  font-weight: var(--editor-font-weight-semibold);
+  line-height: var(--editor-line-height);
+  white-space: nowrap;
+  transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+}
+.uploadButton:hover:not(:has(input:disabled)) { border-color: var(--color-primary-strong); background: var(--color-primary-strong); }
+.uploadButton:active { border-color: var(--color-primary-strong); background: var(--color-primary-strong); }
+.uploadButton:focus-within { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.uploadButton:has(input:disabled) { border-color: var(--color-border); color: var(--color-disabled) !important; background: var(--state-disabled-bg); cursor: not-allowed; }
 .uploadButton input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
-.search { display: grid; min-width: 0; flex: 1; gap: 3px; color: var(--color-text-muted); font-size: var(--editor-font-size-xs); }
-.search input { width: 100%; min-width: 0; min-height: 36px; padding: 0 9px; border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-heading); background: var(--color-input); }
 .notice,
 .emptyNotice { margin: 0; padding: 9px 12px; color: var(--color-text-muted); font-size: var(--editor-font-size-xs); }
 .notice { color: var(--color-accent-strong); background: var(--state-selected); }
 
-.catalog { min-height: 0; overflow-y: auto; padding: 8px 12px 14px; scrollbar-width: thin; }
-.category + .category { margin-top: 10px; }
-.templateGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
-.templateGrid button { min-width: 0; min-height: 68px; gap: 8px; padding: 7px; border: 1px solid var(--color-border); border-radius: 7px; color: var(--color-text); background: var(--color-input); text-align: left; }
-.templateGrid button:hover { border-color: var(--state-selected-border); background: var(--state-hover); }
-.templateGrid button > :first-child { width: 52px; height: 52px; flex: 0 0 52px; overflow: hidden; border-radius: 5px; }
-.templateGrid button > span { min-width: 0; }
-.templateGrid strong,
-.templateGrid small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.templateGrid small { margin-top: 3px; color: var(--color-text-muted); font-size: var(--editor-font-size-xs); }
+.libraryHost { min-height: 0; overflow-y: auto; scrollbar-width: thin; }
 
 @media (orientation: portrait), (max-width: 900px), (max-height: 660px) and (orientation: landscape) {
   .picker {
@@ -70,10 +84,4 @@
     left: var(--editor-overlay-gap, 8px);
     width: auto;
   }
-  .actions { align-items: stretch; flex-direction: column; }
-  .uploadButton { width: 100%; }
-}
-
-@media (max-width: 430px) {
-  .templateGrid { grid-template-columns: 1fr; }
 }

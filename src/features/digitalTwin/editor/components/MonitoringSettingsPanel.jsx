@@ -55,6 +55,7 @@ export default function MonitoringSettingsPanel({
     {tab === "BASIC" ? <div className={styles.content}>
       <dl className={styles.summary}><div><dt>설비 ID</dt><dd>{selectedEquipment.id}</dd></div><div><dt>템플릿</dt><dd>{UNIFIED_EQUIPMENT_TEMPLATE_MAP[selectedEquipment.shapeTemplateId]?.nameKo ?? selectedEquipment.shapeTemplateId}</dd></div><div><dt>층</dt><dd>{selectedEquipment.floorId}</dd></div><div><dt>연결 현황</dt><dd>자산 {scopedAssets.length} · 센서 {scopedSensors.length} · 포인트 {scopedPoints.length}</dd></div></dl>
       <label className={styles.field}><span>현실 좌표계</span><select value={selectedEquipment.metadata?.coordinateSystem ?? "LOCAL_METERS"} onChange={(event) => onUpdateEquipment?.({ metadata: { coordinateSystem: event.target.value } })}><option value="LOCAL_METERS">로컬 미터 좌표</option><option value="SITE_METERS">부지 기준 미터 좌표</option><option value="CUSTOM">사용자 정의 좌표</option></select></label>
+      <label className={styles.check}><input type="checkbox" checked={selectedEquipment.showNameLabel === true} onChange={(event) => onUpdateEquipment?.({ showNameLabel: event.target.checked })} /><span>이름표 표시</span></label>
       <VectorFields label="현실세계 기준 위치 (m)" value={selectedEquipment.position} onChange={(position) => onUpdateEquipment?.({ position })} />
       <p className={styles.help}>프록시 모델은 설비 배치와 충돌 판정의 기준으로 유지하며 실제 자산은 별도의 정합 변환값으로만 보정됩니다.</p>
     </div> : null}
