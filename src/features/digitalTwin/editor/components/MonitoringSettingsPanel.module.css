@@ -1,32 +1,41 @@
-.panel { display: grid; gap: 12px; padding-bottom: 18px; }
-.panel header, .content { display: grid; gap: 10px; padding: 15px; border-bottom: 1px solid var(--color-border); }
-.panel header span { color: var(--color-accent-strong); font-size: 10px; letter-spacing: .12em; }
-.panel header h2 { margin: 0; color: var(--color-heading); font-size: 19px; }
-.panel header p, .help { margin: 0; color: var(--color-text-subtle); font-size: 11px; line-height: 1.5; }
-.tabs { display: grid; grid-template-columns: repeat(2,1fr); gap: 5px; padding: 0 15px; }
-.tabs button { min-height: 36px; border: 1px solid var(--color-border); border-radius: 7px; color: var(--color-text-muted); background: var(--color-input); font-size: 10px; font-weight: 700; }
+.panel { display: grid; height: 100%; min-height: 0; grid-template-rows: auto auto minmax(0, 1fr); overflow: hidden; }
+.panel > header { display: grid; gap: 6px; padding: 13px 15px; border-bottom: 1px solid var(--color-border); background: var(--color-surface); }
+.panel > header span { color: var(--color-accent-strong); font-size: 10px; letter-spacing: .12em; }
+.panel > header h2 { margin: 0; overflow: hidden; color: var(--color-heading); font-size: 18px; text-overflow: ellipsis; white-space: nowrap; }
+.panel > header p, .help { margin: 0; color: var(--color-text-subtle); font-size: 11px; line-height: 1.5; }
+.tabs { display: flex; min-width: 0; padding: 8px 10px; overflow-x: auto; gap: 5px; border-bottom: 1px solid var(--color-border); scrollbar-width: thin; }
+.tabs button { min-height: 34px; flex: 0 0 auto; padding: 0 10px; border: 1px solid var(--color-border); border-radius: 7px; color: var(--color-text-muted); background: var(--color-input); font-size: 10px; font-weight: 700; white-space: nowrap; }
 .tabs button[aria-selected="true"] { border-color: var(--color-accent); color: var(--color-accent-strong); background: rgb(var(--color-accent-rgb) / 12%); }
-.field { display: grid; gap: 5px; padding: 0 15px; color: var(--color-text-subtle); font-size: 11px; }
-.content .field { padding: 0; }
+.content { display: grid; min-height: 0; padding: 14px 15px 18px; align-content: start; gap: 10px; overflow-y: auto; overscroll-behavior: contain; scrollbar-color: var(--color-scrollbar) transparent; scrollbar-width: thin; }
+.field { display: grid; gap: 5px; color: var(--color-text-subtle); font-size: 11px; }
 .field input, .field select, .field textarea { width: 100%; min-height: 38px; padding: 8px; border: 1px solid var(--color-border); border-radius: 7px; color: var(--color-heading); background: var(--color-input); }
 .field textarea { min-height: 64px; resize: vertical; }
-.actionRow { display: grid; grid-template-columns: repeat(2,1fr); gap: 6px; }
+.actionRow { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .actionRow button, .primaryAction { min-height: 38px; border: 1px solid rgb(var(--color-accent-rgb) / 45%); border-radius: 7px; color: var(--color-accent-strong); background: rgb(var(--color-accent-rgb) / 9%); font-weight: 700; }
 .itemList { display: grid; gap: 5px; }
 .itemList button { display: grid; gap: 2px; padding: 9px; border: 1px solid var(--color-border); border-radius: 7px; color: var(--color-heading); background: var(--color-input); text-align: left; }
 .itemList button[aria-pressed="true"] { border-color: var(--color-accent); }
 .itemList small { color: var(--color-text-faint); }
-.rangeGrid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 6px; }
+.rangeGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .check { display: flex; align-items: center; gap: 7px; color: var(--color-text-subtle); font-size: 11px; }
 .preview { display: grid; gap: 5px; padding: 11px; border: 1px solid rgb(var(--color-accent-rgb) / 35%); border-radius: 8px; background: rgb(var(--color-accent-rgb) / 7%); }
-.preview span { color: var(--color-text-subtle); font-size: 10px; }.preview strong { color: var(--color-accent-strong); font-size: 18px; }.preview code { overflow: hidden; color: var(--color-text-faint); font-size: 9px; text-overflow: ellipsis; }
-.emptyState { display: grid; place-items: center; gap: 8px; min-height: 280px; padding: 28px; text-align: center; }
+.preview span { color: var(--color-text-subtle); font-size: 10px; }
+.preview strong { color: var(--color-accent-strong); font-size: 18px; }
+.preview code { overflow: hidden; color: var(--color-text-faint); font-size: 9px; text-overflow: ellipsis; }
+.emptyState { display: grid; height: 100%; min-height: 240px; padding: 28px; place-items: center; align-content: center; gap: 8px; text-align: center; }
 .emptyState strong { color: var(--color-heading); font-size: 16px; }
 .emptyState p { max-width: 260px; margin: 0; color: var(--color-text-muted); line-height: 1.6; }
 .summary { display: grid; gap: 6px; margin: 0; }
-.summary div { display: grid; grid-template-columns: 78px minmax(0,1fr); gap: 8px; padding: 8px; border: 1px solid var(--color-border); border-radius: 7px; background: var(--color-input); }
-.summary dt { color: var(--color-text-muted); }.summary dd { min-width: 0; margin: 0; overflow: hidden; color: var(--color-heading); text-overflow: ellipsis; }
-.uploadButton { display: grid; min-height: 38px; place-items: center; border: 1px solid rgb(var(--color-accent-rgb) / 45%); border-radius: 7px; color: var(--color-accent-strong); background: rgb(var(--color-accent-rgb) / 9%); font-weight: 700; cursor: pointer; }
+.summary div { display: grid; padding: 8px; border: 1px solid var(--color-border); border-radius: 7px; grid-template-columns: 78px minmax(0, 1fr); gap: 8px; background: var(--color-input); }
+.summary dt { color: var(--color-text-muted); }
+.summary dd { min-width: 0; margin: 0; overflow: hidden; color: var(--color-heading); text-overflow: ellipsis; }
+.uploadButton { display: grid; min-height: 38px; border: 1px solid rgb(var(--color-accent-rgb) / 45%); border-radius: 7px; place-items: center; color: var(--color-accent-strong); background: rgb(var(--color-accent-rgb) / 9%); font-weight: 700; cursor: pointer; }
 .uploadButton input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-.vectorGroup { display: grid; gap: 6px; }.vectorGroup > strong { color: var(--color-text-muted); font-size: 10px; }
-.checkGrid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 7px; }
+.vectorGroup { display: grid; gap: 6px; }
+.vectorGroup > strong { color: var(--color-text-muted); font-size: 10px; }
+.checkGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+
+@media (max-width: 380px) {
+  .actionRow, .checkGrid { grid-template-columns: 1fr; }
+  .rangeGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

@@ -5,6 +5,8 @@ export const BUILDING_OPENING_TYPES = Object.freeze({
 });
 
 const DEFAULT_APPEARANCE = Object.freeze({ materialPreset: "PAINTED_METAL", color: "#405865" });
+const FACADE_EDGE_MARGIN = 0.15;
+export const OPENING_COLLISION_MARGIN = 0.2;
 
 function clamp(value, minimum, maximum) {
   return Math.min(maximum, Math.max(minimum, Number(value) || minimum));
@@ -62,7 +64,21 @@ function centeredPositions(length, count, width, spacing, offset) {
   const occupied = actualCount * width + (actualCount - 1) * spacing;
   const start = -occupied / 2 + width / 2 + Math.max(-length / 3, Math.min(length / 3, offset));
   return Array.from({ length: actualCount }, (_, index) => start + index * (width + spacing))
-    .filter((position) => position - width / 2 > -length / 2 + 0.15 && position + width / 2 < length / 2 - 0.15);
+    .filter((position) => position - width / 2 > -length / 2 + FACADE_EDGE_MARGIN && position + width / 2 < length / 2 - FACADE_EDGE_MARGIN);
+}
+
+function rangesOverlap([leftStart, leftEnd], [rightStart, rightEnd]) {
+  return leftStart < rightEnd && leftEnd > rightStart;
+}
+
+function windowSlotCollidesWithDoor({ center, width, bottom, height }, door) {
+  return rangesOverlap(
+    [center - width / 2, center + width / 2],
+    [door.center - door.width / 2 - OPENING_COLLISION_MARGIN, door.center + door.width / 2 + OPENING_COLLISION_MARGIN],
+  ) && rangesOverlap(
+    [bottom, bottom + height],
+    [door.bottom - OPENING_COLLISION_MARGIN, door.bottom + door.height + OPENING_COLLISION_MARGIN],
+  );
 }
 
 export function getBuildingFacadeOpenings(building, floorCount) {
@@ -81,9 +97,14 @@ export function getBuildingFacadeOpenings(building, floorCount) {
   if (settings.windows.enabled) {
     settings.windows.facades.forEach((facade) => {
       const length = [BUILDING_FACADES.FRONT, BUILDING_FACADES.BACK].includes(facade) ? width : depth;
+      const windowSlots = centeredPositions(length, settings.windows.count, settings.windows.width, settings.windows.spacing, settings.windows.offset);
       for (let floor = settings.windows.startFloor; floor <= settings.windows.endFloor; floor += 1) {
-        centeredPositions(length, settings.windows.count, settings.windows.width, settings.windows.spacing, settings.windows.offset)
-          .forEach((center) => openings.push({ kind: "WINDOW", facade, center, floor, bottom: (floor - 1) * floorHeight + settings.windows.sillHeight, width: settings.windows.width, height: Math.min(settings.windows.height, floorHeight - settings.windows.sillHeight - 0.1), type: settings.windows.type, frame: settings.windows.frame, fill: settings.windows.glass }));
+        const bottom = (floor - 1) * floorHeight + settings.windows.sillHeight;
+        const height = Math.min(settings.windows.height, floorHeight - settings.windows.sillHeight - 0.1);
+        const doors = openings.filter((opening) => opening.kind === "DOOR" && opening.facade === facade && opening.floor === floor);
+        windowSlots
+          .filter((center) => doors.every((door) => !windowSlotCollidesWithDoor({ center, width: settings.windows.width, bottom, height }, door)))
+          .forEach((center) => openings.push({ kind: "WINDOW", facade, center, floor, bottom, width: settings.windows.width, height, type: settings.windows.type, frame: settings.windows.frame, fill: settings.windows.glass }));
       }
     });
   }

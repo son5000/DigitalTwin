@@ -82,11 +82,17 @@ import {
 } from "@/features/digitalTwin/editor/model/undergroundModel";
 import { isMovableSiteObject, normalizeMovementConfig } from "@/features/digitalTwin/editor/model/movementPath";
 import {
+  calculateObservationSiteSize,
+  canAutoResizeObservationSite,
+  OBSERVATION_SITE_SIZE_MODES,
+} from "@/features/digitalTwin/editor/model/observationSiteSizing";
+import {
   createObservationWorkflow,
   createUnconfiguredObservationWorkflow,
   ensureObservationHostHierarchy,
   expandObservationWorkflow,
   normalizeObservationWorkflow,
+  OBSERVATION_SCOPE_TYPES,
 } from "@/features/digitalTwin/editor/model/observationWorkflow";
 import useWorldStructureState, {
   createDefaultWorldWalls,
@@ -781,9 +787,14 @@ export default function useDigitalTwinEditorState() {
   }, []);
 
   const updateSiteEnvironment = useCallback((changes) => {
-    const mergedChanges = changes.groundMaterial && !changes.terrain
-      ? { ...changes, terrain: { ...siteEnvironment.terrain, material: changes.groundMaterial } }
+    const hasManualSizeChange = (Object.hasOwn(changes, "width") || Object.hasOwn(changes, "depth"))
+      && !Object.hasOwn(changes, "sizeMode");
+    const modeAwareChanges = hasManualSizeChange
+      ? { ...changes, sizeMode: OBSERVATION_SITE_SIZE_MODES.CUSTOM, autoFitBuildingId: null }
       : changes;
+    const mergedChanges = modeAwareChanges.groundMaterial && !modeAwareChanges.terrain
+      ? { ...modeAwareChanges, terrain: { ...siteEnvironment.terrain, material: modeAwareChanges.groundMaterial } }
+      : modeAwareChanges;
     const nextSiteEnvironment = normalizeSiteEnvironment({ ...siteEnvironment, ...mergedChanges });
     const sizeChanged = nextSiteEnvironment.width !== siteEnvironment.width
       || nextSiteEnvironment.depth !== siteEnvironment.depth;
@@ -1013,7 +1024,11 @@ export default function useDigitalTwinEditorState() {
     const nextSiteEnvironment = resolveSiteEnvironmentFromLayout(layout);
     const normalizedHierarchy = normalizeHierarchy(layout?.hierarchy);
     const normalizedWorkflow = normalizeObservationWorkflow(layout?.observationWorkflow, { legacyLayout: !layout?.observationWorkflow });
-    const hostResult = ensureObservationHostHierarchy(normalizedHierarchy, normalizedWorkflow.scopeType);
+    const hostResult = ensureObservationHostHierarchy(
+      normalizedHierarchy,
+      normalizedWorkflow.scopeType,
+      normalizedWorkflow.activeStepIds,
+    );
     const nextHierarchy = {
       ...hostResult.hierarchy,
       nodes: hostResult.hierarchy.nodes.map((node) => (
@@ -1337,7 +1352,22 @@ export default function useDigitalTwinEditorState() {
       variantOverrides,
     });
     if (!created) return null;
-    created.building = clampBuildingToSite(created.building, siteEnvironment).entity;
+    const hasUserBuilding = hierarchy.nodes.some(
+      (node) => node.type === HIERARCHY_NODE_TYPES.BUILDING && !node.systemHost,
+    );
+    const shouldAutoFitSite = observationWorkflow.scopeType === OBSERVATION_SCOPE_TYPES.BUILDING
+      && !hasUserBuilding
+      && siteEnvironment.sizeMode !== OBSERVATION_SITE_SIZE_MODES.CUSTOM;
+    const nextSiteEnvironment = shouldAutoFitSite
+      ? normalizeSiteEnvironment({
+          ...siteEnvironment,
+          ...calculateObservationSiteSize(created.building),
+          sizeMode: OBSERVATION_SITE_SIZE_MODES.AUTO_BUILDING,
+          autoFitBuildingId: created.building.id,
+        })
+      : siteEnvironment;
+    created.building = clampBuildingToSite(created.building, nextSiteEnvironment).entity;
+    if (nextSiteEnvironment !== siteEnvironment) setSiteEnvironment(nextSiteEnvironment);
     setHierarchy((current) => ({
       ...current,
       selectedNodeId: created.building.id,
@@ -1345,15 +1375,28 @@ export default function useDigitalTwinEditorState() {
     }));
     setSelectedSiteObjectId(null);
     return created.building.id;
-  }, [hierarchy.nodes, hierarchy.rootId, siteEnvironment]);
+  }, [hierarchy.nodes, hierarchy.rootId, observationWorkflow.scopeType, siteEnvironment]);
 
   const updateBuilding = useCallback((buildingId, changes) => {
     const building = hierarchy.nodes.find(
       (node) => node.id === buildingId && node.type === HIERARCHY_NODE_TYPES.BUILDING,
     );
     if (!building) return;
-    const clampResult = clampBuildingToSite(mergeBuildingDefinition(building, changes), siteEnvironment);
+    const mergedBuilding = mergeBuildingDefinition(building, changes);
+    const nextSiteEnvironment = canAutoResizeObservationSite(siteEnvironment, buildingId)
+      ? normalizeSiteEnvironment({
+          ...siteEnvironment,
+          ...calculateObservationSiteSize(mergedBuilding),
+          sizeMode: OBSERVATION_SITE_SIZE_MODES.AUTO_BUILDING,
+          autoFitBuildingId: buildingId,
+        })
+      : siteEnvironment;
+    const clampResult = clampBuildingToSite(mergedBuilding, nextSiteEnvironment);
     const nextBuilding = clampResult.entity;
+    if (
+      nextSiteEnvironment.width !== siteEnvironment.width
+      || nextSiteEnvironment.depth !== siteEnvironment.depth
+    ) setSiteEnvironment(nextSiteEnvironment);
     const buildingDelta = {
       x: (nextBuilding.position.x ?? 0) - (building.position.x ?? 0),
       z: (nextBuilding.position.z ?? 0) - (building.position.z ?? 0),
@@ -1825,7 +1868,7 @@ export default function useDigitalTwinEditorState() {
   }, [selectWorldStructureState, selectWorldTemplate]);
   const configureObservationWorkflow = useCallback((scopeType, options = {}) => {
     const workflow = createObservationWorkflow(scopeType, options);
-    const hostResult = ensureObservationHostHierarchy(hierarchy, scopeType);
+    const hostResult = ensureObservationHostHierarchy(hierarchy, scopeType, workflow.activeStepIds);
     setHierarchy(hostResult.hierarchy);
     setObservationWorkflow({
       ...workflow,
@@ -1849,7 +1892,7 @@ export default function useDigitalTwinEditorState() {
   }, [hierarchy]);
   const extendObservationWorkflow = useCallback((scopeType, options = {}) => {
     const next = expandObservationWorkflow(observationWorkflow, scopeType, options);
-    const hostResult = ensureObservationHostHierarchy(hierarchy, scopeType);
+    const hostResult = ensureObservationHostHierarchy(hierarchy, scopeType, next.activeStepIds);
     setHierarchy(hostResult.hierarchy);
     setObservationWorkflow({
       ...next,

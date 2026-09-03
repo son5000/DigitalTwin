@@ -1,3 +1,6 @@
+import { OBSERVATION_SITE_SIZE_MODES } from "../model/observationSiteSizing.js";
+import { createFlatTerrainModel, normalizeTerrainModel } from "@/features/digitalTwin/editor/terrain/TerrainModel";
+
 export const SITE_BACKGROUND_THEME_OPTIONS = Object.freeze([
   { id: "DAY", label: "낮", description: "균형 잡힌 자연광" },
   { id: "NIGHT", label: "밤", description: "어두운 산업 현장" },
@@ -24,6 +27,8 @@ export const SITE_GROUND_MATERIAL_OPTIONS = Object.freeze([
 export const DEFAULT_SITE_ENVIRONMENT = Object.freeze({
   width: 120,
   depth: 90,
+  sizeMode: OBSERVATION_SITE_SIZE_MODES.DEFAULT,
+  autoFitBuildingId: null,
   groundMaterial: "CONCRETE",
   backgroundTheme: "DAY",
   terrain: createFlatTerrainModel(120, 90, 3),
@@ -53,9 +58,16 @@ export function normalizeSiteEnvironment(environment) {
     : DEFAULT_SITE_ENVIRONMENT.backgroundTheme;
   const width = Math.min(400, Math.max(20, finite(environment?.width, DEFAULT_SITE_ENVIRONMENT.width)));
   const depth = Math.min(400, Math.max(20, finite(environment?.depth, DEFAULT_SITE_ENVIRONMENT.depth)));
+  const sizeMode = Object.values(OBSERVATION_SITE_SIZE_MODES).includes(environment?.sizeMode)
+    ? environment.sizeMode
+    : DEFAULT_SITE_ENVIRONMENT.sizeMode;
   return {
     width,
     depth,
+    sizeMode,
+    autoFitBuildingId: sizeMode === OBSERVATION_SITE_SIZE_MODES.AUTO_BUILDING
+      ? environment?.autoFitBuildingId ?? null
+      : null,
     groundMaterial,
     backgroundTheme,
     terrain: normalizeTerrainModel(environment?.terrain, width, depth, groundMaterial),
@@ -63,13 +75,21 @@ export function normalizeSiteEnvironment(environment) {
 }
 
 export function resolveSiteEnvironmentFromLayout(layout) {
-  const current = resolveSize(layout?.siteEnvironment ?? layout?.worldSettings?.site);
+  const environmentSource = layout?.siteEnvironment ?? layout?.worldSettings?.site;
+  const current = resolveSize(environmentSource);
   const legacySite = resolveSize(layout?.siteSize ?? layout?.worldSettings?.siteSize);
   const legacyGrid = resolveSize(layout?.gridSize ?? layout?.worldGridSize ?? layout?.gridSettings?.gridSize);
   const dimensions = current ?? legacySite ?? legacyGrid ?? DEFAULT_SITE_ENVIRONMENT;
+  const hasStoredSize = Boolean(current ?? legacySite ?? legacyGrid);
+  const matchesLegacyDefault = dimensions.width === DEFAULT_SITE_ENVIRONMENT.width
+    && dimensions.depth === DEFAULT_SITE_ENVIRONMENT.depth;
   return normalizeSiteEnvironment({
     ...dimensions,
-    ...(layout?.siteEnvironment ?? layout?.worldSettings?.site),
+    ...environmentSource,
+    sizeMode: environmentSource?.sizeMode
+      ?? (hasStoredSize && !matchesLegacyDefault
+        ? OBSERVATION_SITE_SIZE_MODES.CUSTOM
+        : OBSERVATION_SITE_SIZE_MODES.DEFAULT),
   });
 }
 
@@ -134,4 +154,3 @@ export function intersectAreaWithSite(area, environment) {
     depth: maxZ - minZ,
   };
 }
-import { createFlatTerrainModel, normalizeTerrainModel } from "@/features/digitalTwin/editor/terrain/TerrainModel";

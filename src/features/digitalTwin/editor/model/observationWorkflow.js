@@ -1,8 +1,8 @@
 import {
   DEFAULT_BUILDING_DEFINITION,
   HIERARCHY_NODE_TYPES,
-} from "@/features/digitalTwin/editor/model/digitalTwinHierarchy";
-import { WORLD_WIZARD_STEP_IDS } from "@/features/digitalTwin/editor/constants/worldWizard";
+} from "./digitalTwinHierarchy.js";
+import { WORLD_WIZARD_STEP_IDS } from "../constants/worldWizard.js";
 
 export const OBSERVATION_SCOPE_TYPES = Object.freeze({
   SITE: "SITE",
@@ -43,7 +43,7 @@ export const OBSERVATION_SCOPE_DEFINITIONS = Object.freeze([
   },
   {
     id: OBSERVATION_SCOPE_TYPES.BUILDING,
-    title: "건물 한 동",
+    title: "건물 중심 관측",
     description: "한 동의 건축물과 층을 간단히 정한 뒤 도면과 설비를 연결합니다.",
     steps: ALL_STEPS,
     stepLabels: ["건물·층 설정", "도면·설비", "설비 상세"],
@@ -52,7 +52,7 @@ export const OBSERVATION_SCOPE_DEFINITIONS = Object.freeze([
   },
   {
     id: OBSERVATION_SCOPE_TYPES.SINGLE_EQUIPMENT,
-    title: "설비 한 개",
+    title: "단일 설비 관측",
     description: "내부 호스트를 자동 준비하고 한 설비의 자산·센서·관측 설정으로 바로 이동합니다.",
     steps: [WORLD_WIZARD_STEP_IDS.MONITORING],
     stepLabels: ["설비 상세"],
@@ -61,7 +61,7 @@ export const OBSERVATION_SCOPE_DEFINITIONS = Object.freeze([
   },
   {
     id: OBSERVATION_SCOPE_TYPES.MULTI_EQUIPMENT,
-    title: "여러 설비",
+    title: "다중 설비 관측",
     description: "필요한 설비만 간단히 배치하고 목록에서 전환하며 각각의 상세를 설정합니다.",
     steps: [WORLD_WIZARD_STEP_IDS.FLOOR_AND_EQUIPMENT, WORLD_WIZARD_STEP_IDS.MONITORING],
     stepLabels: ["설비 선택·배치", "각 설비 상세"],
@@ -128,8 +128,19 @@ export function normalizeObservationWorkflow(workflow, { legacyLayout = false } 
   return createObservationWorkflow(scopeType, workflow);
 }
 
-export function ensureObservationHostHierarchy(hierarchy, scopeType) {
-  if (![OBSERVATION_SCOPE_TYPES.BUILDING, OBSERVATION_SCOPE_TYPES.SINGLE_EQUIPMENT, OBSERVATION_SCOPE_TYPES.MULTI_EQUIPMENT, OBSERVATION_SCOPE_TYPES.CUSTOM].includes(scopeType)) {
+export function resolveObservationEquipmentId(workflow, equipment = [], selectedEquipmentId = null) {
+  const availableIds = new Set(equipment.map((item) => item.id));
+  if (selectedEquipmentId && availableIds.has(selectedEquipmentId)) return selectedEquipmentId;
+  const activeId = workflow?.viewerSettings?.activeEquipmentId;
+  if (activeId && availableIds.has(activeId)) return activeId;
+  const scopedId = workflow?.viewerSettings?.equipmentIds?.find((id) => availableIds.has(id));
+  return scopedId ?? equipment[0]?.id ?? null;
+}
+
+export function ensureObservationHostHierarchy(hierarchy, scopeType, activeStepIds = []) {
+  const needsInternalHost = [OBSERVATION_SCOPE_TYPES.SINGLE_EQUIPMENT, OBSERVATION_SCOPE_TYPES.MULTI_EQUIPMENT].includes(scopeType)
+    || (scopeType === OBSERVATION_SCOPE_TYPES.CUSTOM && !activeStepIds.includes(WORLD_WIZARD_STEP_IDS.COMPOSITION));
+  if (!needsInternalHost) {
     return { hierarchy, buildingId: null, floorId: null, created: false };
   }
   const nodes = [...(hierarchy?.nodes ?? [])];

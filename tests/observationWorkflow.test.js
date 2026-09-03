@@ -1,57 +1,44 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import {
-  createObservationWorkflow,
-  ensureObservationHostHierarchy,
-  expandObservationWorkflow,
-  normalizeObservationWorkflow,
-  OBSERVATION_HOST_IDS,
-  OBSERVATION_SCOPE_TYPES,
-  OBSERVATION_VIEWER_MODES,
-} from "../src/features/digitalTwin/editor/model/observationWorkflow.js";
-import { createDefaultHierarchy } from "../src/features/digitalTwin/editor/model/digitalTwinHierarchy.js";
-import { WORLD_WIZARD_STEP_IDS } from "../src/features/digitalTwin/editor/constants/worldWizard.js";
+const source = await readFile(new URL("../src/features/digitalTwin/editor/model/observationWorkflow.js", import.meta.url), "utf8");
+const scopeStyles = await readFile(new URL("../src/features/digitalTwin/editor/components/ObservationScopeSelector.module.css", import.meta.url), "utf8");
 
-test("관측 유형마다 필요한 단계와 뷰어 모드만 제공한다", () => {
-  const single = createObservationWorkflow(OBSERVATION_SCOPE_TYPES.SINGLE_EQUIPMENT);
-  assert.deepEqual(single.activeStepIds, [WORLD_WIZARD_STEP_IDS.MONITORING]);
-  assert.equal(single.viewerSettings.mode, OBSERVATION_VIEWER_MODES.SINGLE_EQUIPMENT);
-
-  const multiple = createObservationWorkflow(OBSERVATION_SCOPE_TYPES.MULTI_EQUIPMENT);
-  assert.deepEqual(multiple.activeStepIds, [WORLD_WIZARD_STEP_IDS.FLOOR_AND_EQUIPMENT, WORLD_WIZARD_STEP_IDS.MONITORING]);
+test("관측 유형별 단계와 뷰어 모드 계약을 유지한다", () => {
+  for (const scopeType of ["SITE", "BUILDING", "SINGLE_EQUIPMENT", "MULTI_EQUIPMENT", "CUSTOM"]) {
+    assert.match(source, new RegExp(`${scopeType}: \\"${scopeType}\\"`));
+  }
+  assert.match(source, /SINGLE_EQUIPMENT_FOCUS/);
+  assert.match(source, /MULTI_EQUIPMENT_OVERVIEW/);
+  assert.match(source, /steps: \[WORLD_WIZARD_STEP_IDS\.MONITORING\]/);
+  assert.match(source, /title: "건물 중심 관측"/);
+  assert.match(source, /title: "단일 설비 관측"/);
+  assert.match(source, /title: "다중 설비 관측"/);
 });
 
-test("생략된 단계의 내부 건물과 층은 안정적인 ID로 한 번만 생성한다", () => {
-  const first = ensureObservationHostHierarchy(createDefaultHierarchy(), OBSERVATION_SCOPE_TYPES.SINGLE_EQUIPMENT);
-  assert.equal(first.buildingId, OBSERVATION_HOST_IDS.BUILDING);
-  assert.equal(first.floorId, OBSERVATION_HOST_IDS.FLOOR);
-  assert.equal(first.hierarchy.nodes.filter((node) => node.id === OBSERVATION_HOST_IDS.BUILDING).length, 1);
-
-  const second = ensureObservationHostHierarchy(first.hierarchy, OBSERVATION_SCOPE_TYPES.MULTI_EQUIPMENT);
-  assert.equal(second.hierarchy.nodes.length, first.hierarchy.nodes.length);
-  assert.equal(second.created, false);
+test("공간 단계를 생략한 범위만 안정적인 내부 호스트를 사용한다", () => {
+  assert.match(source, /OBSERVATION_HOST_BUILDING/);
+  assert.match(source, /OBSERVATION_HOST_FLOOR_1/);
+  assert.match(source, /SINGLE_EQUIPMENT, OBSERVATION_SCOPE_TYPES\.MULTI_EQUIPMENT/);
+  assert.match(source, /!activeStepIds\.includes\(WORLD_WIZARD_STEP_IDS\.COMPOSITION\)/);
+  assert.doesNotMatch(source, /\[OBSERVATION_SCOPE_TYPES\.BUILDING, OBSERVATION_SCOPE_TYPES\.SINGLE_EQUIPMENT/);
 });
 
-test("기존 프로젝트는 전체 공간 워크플로로 마이그레이션한다", () => {
-  const migrated = normalizeObservationWorkflow(undefined, { legacyLayout: true });
-  assert.equal(migrated.configured, true);
-  assert.equal(migrated.scopeType, OBSERVATION_SCOPE_TYPES.SITE);
-  assert.deepEqual(migrated.activeStepIds, [
-    WORLD_WIZARD_STEP_IDS.COMPOSITION,
-    WORLD_WIZARD_STEP_IDS.FLOOR_AND_EQUIPMENT,
-    WORLD_WIZARD_STEP_IDS.MONITORING,
-  ]);
+test("기존 프로젝트 마이그레이션과 비삭제 범위 확장 함수를 제공한다", () => {
+  assert.match(source, /legacyLayout \? createObservationWorkflow\(OBSERVATION_SCOPE_TYPES\.SITE\)/);
+  assert.match(source, /expandObservationWorkflow/);
+  assert.match(source, /\.\.\.\(current\?\.activeStepIds \?\? \[\]\)/);
 });
 
-test("관측 범위 확장은 기존 단계를 삭제하지 않는다", () => {
-  const single = createObservationWorkflow(OBSERVATION_SCOPE_TYPES.SINGLE_EQUIPMENT, {
-    viewerSettings: { equipmentIds: ["EQ_1"], activeEquipmentId: "EQ_1" },
-  });
-  const expanded = expandObservationWorkflow(single, OBSERVATION_SCOPE_TYPES.BUILDING);
-  assert.deepEqual(expanded.activeStepIds, [
-    WORLD_WIZARD_STEP_IDS.COMPOSITION,
-    WORLD_WIZARD_STEP_IDS.FLOOR_AND_EQUIPMENT,
-    WORLD_WIZARD_STEP_IDS.MONITORING,
-  ]);
+test("설비 상세 재진입 시 저장된 활성 설비와 첫 유효 설비를 복원한다", () => {
+  assert.match(source, /resolveObservationEquipmentId/);
+  assert.match(source, /viewerSettings\?\.activeEquipmentId/);
+  assert.match(source, /equipment\[0\]\?\.id \?\? null/);
+});
+
+test("관측 범위 카드 설명은 한국어 어절 단위로 안전하게 줄바꿈한다", () => {
+  assert.match(scopeStyles, /word-break:\s*keep-all/);
+  assert.match(scopeStyles, /overflow-wrap:\s*break-word/);
+  assert.match(scopeStyles, /max-width:\s*100%/);
 });

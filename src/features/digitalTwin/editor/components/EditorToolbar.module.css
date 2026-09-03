@@ -222,6 +222,7 @@
 
 .overflowMenu {
   position: absolute;
+  z-index: 12;
   bottom: 0;
   left: 50px;
   display: grid;
@@ -232,6 +233,18 @@
   border-radius: 8px;
   background: var(--color-surface-overlay);
   box-shadow: var(--shadow-popover);
+  overscroll-behavior: contain;
+}
+
+@media (min-width: 901px) and (orientation: landscape) {
+  .overflowMenu {
+    position: fixed;
+    top: calc(var(--editor-overlay-viewport-top, 72px) + var(--editor-overlay-gap, 12px) + var(--editor-overlay-control-height, 40px) + 8px);
+    bottom: var(--editor-overlay-gap, 12px);
+    left: calc(var(--editor-overlay-gap, 12px) + var(--editor-overlay-toolbar-width, 50px) + 8px);
+    max-height: none;
+    overflow-y: auto;
+  }
 }
 
 .menuItem {
@@ -380,7 +393,8 @@
     bottom: calc(var(--editor-overlay-gap, 12px) + 56px);
     left: auto;
     width: min(218px, calc(100vw - (var(--editor-overlay-gap, 12px) * 2)));
-    max-height: calc(100dvh - 92px);
+    top: 220px;
+    max-height: none;
     overflow-y: auto;
   }
 

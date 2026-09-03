@@ -51,6 +51,7 @@
 .header button { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; border: 1px solid transparent; border-radius: 6px; color: var(--color-text-muted); background: transparent; }
 .header button:hover { border-color: var(--color-border); color: var(--color-heading); background: var(--state-hover); }
 .content { min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-color: var(--color-scrollbar) transparent; scrollbar-width: thin; }
+.contentContained { overflow: hidden; }
 
 @keyframes panelEnter {
   from { opacity: 0; transform: translateX(10px) scale(.985); }

@@ -39,6 +39,7 @@ export function createEquipmentAssetBinding(equipmentId, asset, source = {}) {
     sourceType: source.sourceType ?? ASSET_SOURCE_TYPES.PROJECT,
     sourceKey: source.sourceKey ?? asset.sourceKey ?? "",
     relatedSourceKey: source.relatedSourceKey ?? asset.relatedSourceKey ?? null,
+    textureSourceKey: source.textureSourceKey ?? asset.textureSourceKey ?? null,
     assetType: source.assetType ?? asset.assetType ?? ASSET_TYPES.OBJ,
     usageType: source.usageType ?? asset.usageType ?? ASSET_USAGE_TYPES.MODEL,
     alignmentTransform: createAlignmentTransform(source.alignmentTransform),

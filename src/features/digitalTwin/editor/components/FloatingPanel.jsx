@@ -2,7 +2,7 @@ import { CloseIcon } from "@/components/icons";
 
 import styles from "./FloatingPanel.module.css";
 
-export default function FloatingPanel({ open, title, side = "right", docked = false, topAligned = false, onClose, children }) {
+export default function FloatingPanel({ open, title, side = "right", docked = false, topAligned = false, contentScrollable = true, onClose, children }) {
   if (!open) return null;
 
   return (
@@ -11,7 +11,7 @@ export default function FloatingPanel({ open, title, side = "right", docked = fa
         <h2>{title}</h2>
         {onClose ? <button type="button" aria-label={`${title} 닫기`} onClick={onClose}><CloseIcon size={18} /></button> : null}
       </header>
-      <div className={styles.content}>{children}</div>
+      <div className={`${styles.content} ${contentScrollable ? "" : styles.contentContained}`}>{children}</div>
     </aside>
   );
 }

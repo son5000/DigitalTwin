@@ -13,45 +13,63 @@
 
 .grid {
   display: grid;
-  max-width: 1280px;
+  max-width: 1180px;
   margin: 0 auto;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
 }
 
 .card {
-  display: flex;
-  min-height: 350px;
-  padding: 20px;
-  border: 1px solid var(--color-border);
-  border-radius: 14px;
-  flex-direction: column;
-  gap: 14px;
+  position: relative;
+  min-width: 0;
+  min-height: 250px;
+  padding: 0;
+  overflow: hidden;
+  border: 2px solid var(--color-border);
+  border-radius: 16px;
+  color: #fff;
   background: var(--color-surface);
   box-shadow: var(--shadow-panel);
+  text-align: left;
+  isolation: isolate;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
-.card:hover { border-color: var(--color-accent); transform: translateY(-2px); transition: 160ms ease; }
-.card.current { border-color: var(--state-selected-border); background: var(--state-selected); }
-.cardHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
-.card h2 { margin: 0; color: var(--color-heading); font-size: 18px; }
-.card > p { min-height: 68px; margin: 0; color: var(--color-text-muted); font-size: 13px; line-height: 1.55; }
-.currentBadge { padding: 3px 7px; border-radius: 999px; color: var(--color-accent-strong); font-size: 10px; background: var(--state-selected); white-space: nowrap; }
-.steps { display: flex; min-height: 58px; align-content: flex-start; flex-wrap: wrap; gap: 6px; }
-.steps span { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 7px; color: var(--color-text); font-size: 11px; background: var(--color-input); }
-.steps b { color: var(--color-text-muted); font-weight: 400; }
-.customSteps { display: flex; margin: 0; padding: 10px; border: 1px solid var(--color-border); border-radius: 8px; flex-wrap: wrap; gap: 8px; }
-.customSteps legend { padding: 0 5px; color: var(--color-text-muted); font-size: 11px; }
-.customSteps label { display: inline-flex; align-items: center; gap: 5px; color: var(--color-text); font-size: 11px; }
-.result { display: grid; margin-top: auto; grid-template-columns: 38px 1fr; gap: 8px; color: var(--color-text-muted); font-size: 12px; line-height: 1.45; }
-.result strong { color: var(--color-accent-strong); }
-.card > button, .cancel { min-height: 42px; border: 1px solid var(--color-accent); border-radius: 8px; color: var(--color-accent-contrast); font-weight: 700; background: var(--color-accent); }
-.card > button:disabled { border-color: var(--color-border); color: var(--color-text-muted); background: var(--color-input); cursor: not-allowed; }
+.card:hover:not(:disabled), .card.pending { border-color: var(--color-accent); transform: translateY(-2px); }
+.card:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 3px; }
+.card.current { border-color: var(--state-selected-border); box-shadow: 0 0 0 2px var(--state-selected), var(--shadow-panel); }
+.card:disabled { cursor: default; }
+.cardImage { position: absolute; z-index: -2; width: 100%; height: 100%; inset: 0; object-fit: cover; filter: saturate(.88) brightness(.76); transition: filter 180ms ease, transform 220ms ease; }
+.card:hover:not(:disabled) .cardImage, .card.pending .cardImage { filter: saturate(1) brightness(.82); transform: scale(1.025); }
+.cardOverlay { position: absolute; z-index: -1; inset: 0; background: linear-gradient(180deg, rgba(9, 17, 29, .08) 18%, rgba(9, 17, 29, .38) 50%, rgba(9, 17, 29, .94) 100%); }
+.cardContent { position: absolute; display: grid; min-width: 0; max-width: 100%; right: 0; bottom: 0; left: 0; padding: 52px 20px 20px; gap: 7px; }
+.cardContent strong { font-size: 20px; line-height: 1.2; text-shadow: 0 1px 8px rgba(0, 0, 0, .58); }
+.cardContent span { display: -webkit-box; min-width: 0; max-width: 100%; overflow: hidden; color: rgba(255, 255, 255, .88); font-size: 13px; line-height: 1.5; overflow-wrap: break-word; word-break: keep-all; text-shadow: 0 1px 6px rgba(0, 0, 0, .72); -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+:global([data-theme="light"]) .cardImage { filter: saturate(.9) brightness(.86); }
+:global([data-theme="light"]) .card:hover:not(:disabled) .cardImage, :global([data-theme="light"]) .card.pending .cardImage { filter: saturate(1) brightness(.93); }
+
+.customPanel { display: grid; max-width: 760px; margin: 18px auto 0; padding: 16px; border: 1px solid var(--color-border); border-radius: 12px; grid-template-columns: minmax(150px, 1fr) auto auto; align-items: center; gap: 16px; color: var(--color-text); background: var(--color-surface); box-shadow: var(--shadow-panel); }
+.customPanel > div { display: grid; gap: 3px; }
+.customPanel > div > strong { color: var(--color-heading); font-size: 14px; }
+.customPanel > div > span { color: var(--color-text-muted); font-size: 12px; }
+.customSteps { display: flex; margin: 0; padding: 0; border: 0; flex-wrap: wrap; gap: 8px; }
+.customSteps label { display: inline-flex; min-height: 36px; padding: 0 9px; border: 1px solid var(--color-border); border-radius: 8px; align-items: center; gap: 6px; color: var(--color-text); font-size: 12px; background: var(--color-input); }
+.customPanel > button, .cancel { min-height: 42px; padding: 0 16px; border: 1px solid var(--color-accent); border-radius: 8px; color: var(--color-accent-contrast); font-weight: 700; background: var(--color-accent); }
+.customPanel > button:disabled { border-color: var(--color-border); color: var(--color-text-muted); background: var(--color-input); cursor: not-allowed; }
 .cancel { display: block; margin: 20px auto 0; padding: 0 24px; color: var(--color-heading); background: var(--color-surface); }
+.visuallyHidden { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; border: 0; margin: -1px; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+
+@media (max-width: 960px) {
+  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .customPanel { grid-template-columns: 1fr auto; }
+  .customPanel > div { grid-column: 1 / -1; }
+}
 
 @media (max-width: 680px) {
   .screen { padding: 22px 14px; }
   .grid { grid-template-columns: 1fr; }
-  .card { min-height: 0; }
-  .card > p { min-height: 0; }
+  .card { min-height: 220px; aspect-ratio: 16 / 10; }
+  .customPanel { grid-template-columns: 1fr; }
+  .customPanel > div { grid-column: auto; }
+  .customPanel > button { width: 100%; }
 }

@@ -1,6 +1,7 @@
 import { serializeTerrain } from "@/features/digitalTwin/editor/terrain/TerrainPersistence";
+import { LAYOUT_STORAGE_KEY } from "@/features/digitalTwin/editor/model/layoutInitialization";
 
-const STORAGE_KEY = "digital-twin-editor-layout";
+const STORAGE_KEY = LAYOUT_STORAGE_KEY;
 
 export function saveLayout(layout) {
   const roomScenes = Object.fromEntries(
@@ -28,6 +29,8 @@ export function saveLayout(layout) {
     siteEnvironment: {
       width: layout.siteEnvironment.width,
       depth: layout.siteEnvironment.depth,
+      sizeMode: layout.siteEnvironment.sizeMode,
+      autoFitBuildingId: layout.siteEnvironment.autoFitBuildingId,
       groundMaterial: layout.siteEnvironment.groundMaterial,
       backgroundTheme: layout.siteEnvironment.backgroundTheme,
       terrain: serializeTerrain(
@@ -51,7 +54,6 @@ export function saveLayout(layout) {
     equipmentAssetBindings: (layout.equipmentAssetBindings ?? []).map((binding) => {
       const sanitized = { ...binding };
       delete sanitized.objectUrl;
-      if (sanitized.sourceType === "UPLOAD") sanitized.status = "MISSING_LOCAL_FILE";
       return sanitized;
     }),
     sensorBindings: layout.sensorBindings ?? [],
