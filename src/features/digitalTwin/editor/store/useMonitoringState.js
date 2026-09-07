@@ -127,7 +127,7 @@ export default function useMonitoringState({ equipment }) {
   } : item)), []);
 
   const hydrateMonitoringState = useCallback((snapshot = {}) => {
-    const normalized = normalizeEquipmentDetailSnapshot(snapshot);
+    const normalized = normalizeEquipmentDetailSnapshot(snapshot.observationConfig ?? snapshot);
     setEquipmentAssetBindings(normalized.equipmentAssetBindings); setSensorBindings(normalized.sensorBindings);
     setObservationPoints(normalized.observationPoints); setServerBindings(normalized.serverBindings);
     setSelectedAssetBindingId(null); setSelectedSensorBindingId(null); setSelectedObservationPointId(null); setSelectedServerBindingId(null);

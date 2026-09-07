@@ -4,6 +4,17 @@ import { LAYOUT_STORAGE_KEY } from "@/features/digitalTwin/editor/model/layoutIn
 const STORAGE_KEY = LAYOUT_STORAGE_KEY;
 
 export function saveLayout(layout) {
+  const observationConfig = layout.observationConfig ?? {
+    equipmentAssetBindings: layout.equipmentAssetBindings ?? [],
+    sensorBindings: layout.sensorBindings ?? [],
+    observationPoints: layout.observationPoints ?? [],
+    serverBindings: layout.serverBindings ?? [],
+  };
+  const equipmentAssetBindings = (observationConfig.equipmentAssetBindings ?? []).map((binding) => {
+    const sanitized = { ...binding };
+    delete sanitized.objectUrl;
+    return sanitized;
+  });
   const roomScenes = Object.fromEntries(
     Object.entries(layout.roomScenes ?? {}).map(([roomId, scene]) => [
       roomId,
@@ -22,10 +33,11 @@ export function saveLayout(layout) {
   delete gridSettings.siteSize;
   delete gridSettings.worldGridSize;
   const payload = {
-    version: 17,
+    version: 18,
     savedAt: new Date().toISOString(),
     hierarchy: layout.hierarchy,
     observationWorkflow: layout.observationWorkflow,
+    viewerPreset: layout.viewerPreset,
     siteEnvironment: {
       width: layout.siteEnvironment.width,
       depth: layout.siteEnvironment.depth,
@@ -51,14 +63,16 @@ export function saveLayout(layout) {
     })),
     verticalStructuresByBuildingId: layout.verticalStructuresByBuildingId ?? {},
     equipmentByFloorId: layout.equipmentByFloorId ?? {},
-    equipmentAssetBindings: (layout.equipmentAssetBindings ?? []).map((binding) => {
-      const sanitized = { ...binding };
-      delete sanitized.objectUrl;
-      return sanitized;
-    }),
-    sensorBindings: layout.sensorBindings ?? [],
-    observationPoints: layout.observationPoints ?? [],
-    serverBindings: layout.serverBindings ?? [],
+    observationConfig: {
+      equipmentAssetBindings,
+      sensorBindings: observationConfig.sensorBindings ?? [],
+      observationPoints: observationConfig.observationPoints ?? [],
+      serverBindings: observationConfig.serverBindings ?? [],
+    },
+    equipmentAssetBindings,
+    sensorBindings: observationConfig.sensorBindings ?? [],
+    observationPoints: observationConfig.observationPoints ?? [],
+    serverBindings: observationConfig.serverBindings ?? [],
   };
 
   localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));

@@ -1,6 +1,7 @@
 const DATABASE_NAME = "digital-twin-equipment-assets";
 const STORE_NAME = "assets";
 const DATABASE_VERSION = 1;
+const assetCache = new Map();
 
 function openDatabase() {
   return new Promise((resolve, reject) => {
@@ -30,7 +31,22 @@ async function transact(mode, callback) {
 }
 
 export const equipmentAssetRepository = {
-  async put(asset) { await transact("readwrite", (store) => store.put(asset)); return asset; },
-  async get(id) { return transact("readonly", (store) => store.get(id)); },
-  async remove(id) { return transact("readwrite", (store) => store.delete(id)); },
+  async put(asset) {
+    await transact("readwrite", (store) => store.put(asset));
+    assetCache.set(asset.id, Promise.resolve(asset));
+    return asset;
+  },
+  async get(id) {
+    if (!assetCache.has(id)) assetCache.set(id, transact("readonly", (store) => store.get(id)));
+    try {
+      return await assetCache.get(id);
+    } catch (error) {
+      assetCache.delete(id);
+      throw error;
+    }
+  },
+  async remove(id) {
+    assetCache.delete(id);
+    return transact("readwrite", (store) => store.delete(id));
+  },
 };

@@ -95,6 +95,11 @@ import {
   normalizeObservationWorkflow,
   OBSERVATION_SCOPE_TYPES,
 } from "@/features/digitalTwin/editor/model/observationWorkflow";
+import {
+  createViewerPreset,
+  normalizeViewerPreset,
+  setEquipmentDisplayOverride,
+} from "@/features/digitalTwin/editor/model/viewerPreset";
 import useWorldStructureState, {
   createDefaultWorldWalls,
 } from "@/features/digitalTwin/editor/store/useWorldStructureState";
@@ -225,6 +230,7 @@ function createHistorySnapshot(layoutDocument) {
     observationPoints: layoutDocument.observationPoints,
     serverBindings: layoutDocument.serverBindings,
     observationWorkflow: layoutDocument.observationWorkflow,
+    viewerPreset: layoutDocument.viewerPreset,
   });
 }
 
@@ -409,6 +415,7 @@ export default function useDigitalTwinEditorState() {
   const [gridSettings, setGridSettings] = useState(createDefaultGridSettings);
   const [navigationContext, setNavigationContext] = useState(createInitialNavigationContext);
   const [observationWorkflow, setObservationWorkflow] = useState(createUnconfiguredObservationWorkflow);
+  const [viewerPreset, setViewerPreset] = useState(createViewerPreset);
   const [historyAvailability, setHistoryAvailability] = useState({ canUndo: false, canRedo: false });
   const snapSize = gridSettings.baseSize;
   const scanTimersRef = useRef(new Map());
@@ -1015,6 +1022,7 @@ export default function useDigitalTwinEditorState() {
     setGridSettings(createDefaultGridSettings());
     setNavigationContext(createInitialNavigationContext());
     setObservationWorkflow(createUnconfiguredObservationWorkflow());
+    setViewerPreset(createViewerPreset());
     resetWorldStructures();
     floorPlanEditor.actions.resetFloorPlanState();
     floorEquipmentEditor.actions.resetFloorEquipmentState();
@@ -1025,6 +1033,7 @@ export default function useDigitalTwinEditorState() {
     const nextSiteEnvironment = resolveSiteEnvironmentFromLayout(layout);
     const normalizedHierarchy = normalizeHierarchy(layout?.hierarchy);
     const normalizedWorkflow = normalizeObservationWorkflow(layout?.observationWorkflow, { legacyLayout: !layout?.observationWorkflow });
+    const normalizedPreset = normalizeViewerPreset(layout?.viewerPreset);
     const hostResult = ensureObservationHostHierarchy(
       normalizedHierarchy,
       normalizedWorkflow.scopeType,
@@ -1061,6 +1070,7 @@ export default function useDigitalTwinEditorState() {
         focusBuildingId: normalizedWorkflow.viewerSettings.focusBuildingId ?? hostResult.buildingId,
       },
     });
+    setViewerPreset(normalizedPreset);
     setRoomScenes(nextRoomScenes);
     setSiteEnvironment(nextSiteEnvironment);
     setSiteBoundaryNotice("");
@@ -1912,6 +1922,23 @@ export default function useDigitalTwinEditorState() {
       viewerSettings: { ...current.viewerSettings, ...changes },
     }));
   }, []);
+  const updateViewerPreset = useCallback((changes) => {
+    setViewerPreset((current) => normalizeViewerPreset({
+      ...current,
+      ...changes,
+      equipmentRepresentation: changes.equipmentRepresentation ? {
+        ...current.equipmentRepresentation,
+        ...changes.equipmentRepresentation,
+        overrides: {
+          ...current.equipmentRepresentation.overrides,
+          ...changes.equipmentRepresentation.overrides,
+        },
+      } : current.equipmentRepresentation,
+    }));
+  }, []);
+  const updateEquipmentRepresentationOverride = useCallback((equipmentId, override) => {
+    setViewerPreset((current) => setEquipmentDisplayOverride(current, equipmentId, override));
+  }, []);
   const layoutDocument = useMemo(() => ({
     hierarchy,
     gridSettings,
@@ -1928,7 +1955,14 @@ export default function useDigitalTwinEditorState() {
     observationPoints: monitoringEditor.observationPoints,
     serverBindings: monitoringEditor.serverBindings,
     observationWorkflow,
-  }), [currentRoomScene, floorEquipmentEditor.equipmentByFloorId, floorPlanEditor.floorPlansById, floorPlanEditor.verticalStructuresByBuildingId, gridSettings, hierarchy, monitoringEditor.equipmentAssetBindings, monitoringEditor.observationPoints, monitoringEditor.sensorBindings, monitoringEditor.serverBindings, observationWorkflow, roomScenes, siteEnvironment, siteObjects]);
+    viewerPreset,
+    observationConfig: {
+      equipmentAssetBindings: monitoringEditor.equipmentAssetBindings,
+      sensorBindings: monitoringEditor.sensorBindings,
+      observationPoints: monitoringEditor.observationPoints,
+      serverBindings: monitoringEditor.serverBindings,
+    },
+  }), [currentRoomScene, floorEquipmentEditor.equipmentByFloorId, floorPlanEditor.floorPlansById, floorPlanEditor.verticalStructuresByBuildingId, gridSettings, hierarchy, monitoringEditor.equipmentAssetBindings, monitoringEditor.observationPoints, monitoringEditor.sensorBindings, monitoringEditor.serverBindings, observationWorkflow, roomScenes, siteEnvironment, siteObjects, viewerPreset]);
 
   const commitHistorySnapshot = useCallback((snapshot) => {
     const currentSnapshot = historyCurrentRef.current;
@@ -1955,6 +1989,7 @@ export default function useDigitalTwinEditorState() {
   const restoreHistorySnapshot = useCallback((snapshot) => {
     const nextSiteEnvironment = normalizeSiteEnvironment(snapshot.siteEnvironment);
     const nextObservationWorkflow = normalizeObservationWorkflow(snapshot.observationWorkflow, { legacyLayout: true });
+    const nextViewerPreset = normalizeViewerPreset(snapshot.viewerPreset);
     const nodeIds = new Set(snapshot.hierarchy.nodes.map((node) => node.id));
     const roomIds = new Set(
       snapshot.hierarchy.nodes
@@ -1992,6 +2027,7 @@ export default function useDigitalTwinEditorState() {
     applyRoomScene(activeScene ?? createDefaultRoomScene());
     setHierarchy(nextHierarchy);
     setObservationWorkflow(nextObservationWorkflow);
+    setViewerPreset(nextViewerPreset);
     setRoomScenes(nextRoomScenes);
     setGridSettings(normalizeGridSettings(snapshot.gridSettings));
     setSiteEnvironment(nextSiteEnvironment);
@@ -2075,6 +2111,7 @@ export default function useDigitalTwinEditorState() {
   return {
     hierarchy,
     observationWorkflow,
+    viewerPreset,
     hierarchyPath,
     rooms,
     activeRoom,
@@ -2173,6 +2210,8 @@ export default function useDigitalTwinEditorState() {
       configureObservationWorkflow,
       extendObservationWorkflow,
       updateObservationViewerSettings,
+      updateViewerPreset,
+      updateEquipmentRepresentationOverride,
       selectRoom,
       addRoom,
       selectBuilding,

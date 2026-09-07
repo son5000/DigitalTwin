@@ -1,22 +1,13 @@
 import { useMemo, useState } from "react";
 
 import {
-  AddIcon,
   ChevronDownIcon,
-  CloseIcon,
-  DuctIcon,
-  ElectricalIcon,
-  EquipmentIcon,
+  EquipmentSystemsIcon,
   EquipmentTemplateIcon,
-  LandscapeIcon,
-  MechanicalIcon,
-  PipeIcon,
-  SafetyIcon,
-  SensorIcon,
-  StarIcon,
-  WorldIcon,
+  StructureIcon,
   WorldStructureTypeIcon,
 } from "@/components/icons";
+import CatalogCategoryThumbnail from "@/features/digitalTwin/editor/components/CatalogCategoryThumbnail";
 import { ObjectLibrarySearch } from "@/features/digitalTwin/editor/components/ObjectLibrary";
 import ObjectModelThumbnail from "@/features/digitalTwin/editor/components/ObjectModelThumbnail";
 import {
@@ -34,21 +25,6 @@ import objectStyles from "./ObjectLibrary/ObjectLibrary.module.css";
 import styles from "./FloorWorkspaceCatalog.module.css";
 
 const CATALOG_MODES = Object.freeze({ PLAN: "PLAN", EQUIPMENT: "EQUIPMENT" });
-const EQUIPMENT_CATEGORY_ICONS = Object.freeze({
-  ELECTRICAL: ElectricalIcon,
-  HVAC: DuctIcon,
-  PIPE_WATER: PipeIcon,
-  FIRE_SAFETY: SafetyIcon,
-  COMM_SECURITY: SensorIcon,
-  ENERGY_ENVIRONMENT: LandscapeIcon,
-  GENERAL: MechanicalIcon,
-});
-
-function EquipmentCategoryIcon({ categoryId, ...props }) {
-  const Icon = EQUIPMENT_CATEGORY_ICONS[categoryId] ?? EquipmentIcon;
-  return <Icon {...props} />;
-}
-
 function matchesQuery(definition, normalizedQuery) {
   if (!normalizedQuery) return true;
   return [definition.id, definition.name, definition.nameKo, ...(definition.keywords ?? [])]
@@ -67,41 +43,24 @@ function formatDimensions(definition) {
     : definition.placement;
 }
 
-function CatalogItem({ definition, domain, active, favorite = false, onSelect, onToggleFavorite }) {
-  const isEquipment = domain === CATALOG_MODES.EQUIPMENT;
+function CatalogItem({ definition, active, onSelect }) {
   return (
-    <div className={styles.catalogItem}>
-      <button
-        type="button"
-        className={`${objectStyles.item} ${active ? objectStyles.itemActive : ""}`}
-        aria-pressed={active}
-        title={`${definition.nameKo} · ${definition.description ?? definition.name} · 배치`}
-        onClick={() => onSelect(definition.id)}
-      >
-        <span className={objectStyles.preview} aria-hidden="true">
-          <ObjectModelThumbnail definition={definition} title={definition.nameKo} />
-        </span>
-        <span className={objectStyles.itemText}><strong>{definition.nameKo}</strong><small>{definition.installationBadges?.join(" · ") ?? formatDimensions(definition)}{definition.modelVariants?.length > 1 ? ` · 변형 ${definition.modelVariants.length}` : ""}</small></span>
-        <span className={objectStyles.itemAction} aria-hidden="true">{active ? <CloseIcon size={15} /> : <AddIcon size={15} />}</span>
-      </button>
-      {isEquipment && onToggleFavorite ? (
-        <button
-          type="button"
-          className={`${styles.favoriteButton} ${favorite ? styles.favoriteActive : ""}`}
-          aria-label={`${definition.nameKo} ${favorite ? "즐겨찾기 해제" : "즐겨찾기 추가"}`}
-          aria-pressed={favorite}
-          title={favorite ? "즐겨찾기 해제" : "즐겨찾기 추가"}
-          onClick={() => onToggleFavorite?.(definition.id)}
-        >
-          <StarIcon size={14} filled={favorite} />
-        </button>
-      ) : null}
-    </div>
+    <button
+      type="button"
+      className={`${objectStyles.item} ${active ? objectStyles.itemActive : ""}`}
+      aria-pressed={active}
+      title={`${definition.nameKo} · ${definition.description ?? definition.name} · 배치`}
+      onClick={() => onSelect(definition.id)}
+    >
+      <span className={objectStyles.preview} aria-hidden="true">
+        <ObjectModelThumbnail definition={definition} title={definition.nameKo} />
+      </span>
+      <span className={objectStyles.itemText}><strong>{definition.nameKo}</strong><small>{definition.installationBadges?.join(" · ") ?? formatDimensions(definition)}{definition.modelVariants?.length > 1 ? ` · 변형 ${definition.modelVariants.length}` : ""}</small></span>
+    </button>
   );
 }
 
-function CatalogCategory({ category, definitions, domain, activeTemplateId, favoriteTemplateIds, open, onToggle, onSelect, onToggleFavorite }) {
-  const representative = definitions[0];
+function CatalogCategory({ category, definitions, domain, activeTemplateId, open, onToggle, onSelect }) {
   const families = [...new Map(definitions.map((definition) => [definition.objectType, {
     id: definition.objectType,
     label: definition.objectTypeLabel,
@@ -111,9 +70,7 @@ function CatalogCategory({ category, definitions, domain, activeTemplateId, favo
     <section className={`${objectStyles.category} ${open ? objectStyles.categoryOpen : ""}`}>
       <button type="button" className={objectStyles.categoryTrigger} aria-expanded={open} onClick={onToggle}>
         <span className={objectStyles.categoryIcon} aria-hidden="true">
-          {domain === CATALOG_MODES.EQUIPMENT
-            ? <EquipmentCategoryIcon categoryId={category.id} size={19} />
-            : <WorldStructureTypeIcon definition={representative} size={19} />}
+          <CatalogCategoryThumbnail categoryId={category.id} />
         </span>
         <span className={objectStyles.categoryText}><strong>{category.nameKo}</strong></span>
         <span className={objectStyles.categoryCount}>{definitions.length}</span>
@@ -128,11 +85,8 @@ function CatalogCategory({ category, definitions, domain, activeTemplateId, favo
                   <CatalogItem
                     key={definition.id}
                     definition={definition}
-                    domain={domain}
                     active={definition.id === activeTemplateId}
-                    favorite={favoriteTemplateIds.includes(definition.id)}
                     onSelect={onSelect}
-                    onToggleFavorite={onToggleFavorite}
                   />
                 ))}
               </div>
@@ -145,11 +99,8 @@ function CatalogCategory({ category, definitions, domain, activeTemplateId, favo
                   <CatalogItem
                     key={definition.id}
                     definition={definition}
-                    domain={domain}
                     active={definition.id === activeTemplateId}
-                    favorite={favoriteTemplateIds.includes(definition.id)}
                     onSelect={onSelect}
-                    onToggleFavorite={onToggleFavorite}
                   />
                 ))}
               </div>
@@ -168,7 +119,6 @@ export default function FloorWorkspaceCatalog({
   allowedStructureTemplateIds = [],
   activeStructureTemplateId,
   activeEquipmentTemplateId,
-  favoriteTemplateIds = [],
   floors = [],
   currentFloorId,
   targetFloorIds = [],
@@ -176,7 +126,6 @@ export default function FloorWorkspaceCatalog({
   floorNavigator,
   onSelectStructureTemplate,
   onSelectEquipmentTemplate,
-  onToggleFavorite,
 }) {
   const [query, setQuery] = useState("");
   const [openCategoryIds, setOpenCategoryIds] = useState(["PLAN:SPACE", "EQUIPMENT:CABINET"]);
@@ -215,8 +164,8 @@ export default function FloorWorkspaceCatalog({
     <section className={`${objectStyles.library} ${styles.catalog}`} aria-label="배치할 오브젝트">
       {!equipmentOnly ? (
         <div className={styles.majorTabs} role="tablist" aria-label="오브젝트 대분류">
-          <button type="button" role="tab" aria-selected={!isEquipment} className={!isEquipment ? styles.majorTabActive : ""} onClick={() => onModeChange(CATALOG_MODES.PLAN)}><WorldIcon size={17} />구조</button>
-          <button type="button" role="tab" aria-selected={isEquipment} className={isEquipment ? styles.majorTabActive : ""} onClick={() => onModeChange(CATALOG_MODES.EQUIPMENT)}><EquipmentIcon size={17} />설비</button>
+          <button type="button" role="tab" aria-selected={!isEquipment} className={!isEquipment ? styles.majorTabActive : ""} onClick={() => onModeChange(CATALOG_MODES.PLAN)}><StructureIcon size={22} />구조</button>
+          <button type="button" role="tab" aria-selected={isEquipment} className={isEquipment ? styles.majorTabActive : ""} onClick={() => onModeChange(CATALOG_MODES.EQUIPMENT)}><EquipmentSystemsIcon size={22} />설비</button>
         </div>
       ) : null}
 
@@ -287,11 +236,9 @@ export default function FloorWorkspaceCatalog({
               definitions={category.definitions}
               domain={mode}
               activeTemplateId={activeTemplateId}
-              favoriteTemplateIds={favoriteTemplateIds}
               open={Boolean(normalizedQuery) || openCategoryIds.includes(scopedId)}
               onToggle={() => toggleCategory(category.id)}
               onSelect={selectTemplate}
-              onToggleFavorite={onToggleFavorite}
             />
           );
         })}

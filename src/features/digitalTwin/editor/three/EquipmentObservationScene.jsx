@@ -4,7 +4,10 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
 
 import { getMoveAxisConfiguration, getRotationAxisConfiguration } from "@/features/digitalTwin/editor/constants/transformTools";
+import { ASSET_TYPES } from "@/features/digitalTwin/editor/model/equipmentDetailModel";
+import { EQUIPMENT_REPRESENTATIONS, resolveEquipmentRepresentation } from "@/features/digitalTwin/editor/model/viewerPreset";
 import { createEquipmentObject } from "@/features/digitalTwin/editor/objects/EquipmentFactory";
+import { applyAssetAlignment, loadBindingObject } from "@/features/digitalTwin/editor/three/EquipmentAssetViewer";
 import { disposeObject3D } from "@/features/digitalTwin/editor/three/disposeObject3D";
 
 import styles from "./EquipmentAssetViewer.module.css";
@@ -58,6 +61,8 @@ export default function EquipmentObservationScene({
   sensors = [],
   observationPoints = [],
   bindings = [],
+  assetBindings = [],
+  viewerPreset,
   selectedSensorId = null,
   transformTools,
   theme = "dark",
@@ -72,6 +77,7 @@ export default function EquipmentObservationScene({
     if (!mount || !entries.length) return undefined;
     let frameId;
     let dragging = false;
+    let disposed = false;
     const focusEquipment = entries.find((item) => item.id === focusEquipmentId) ?? (entries.length === 1 ? entries[0] : null);
     const origin = focusEquipment?.position ?? { x: 0, y: 0, z: 0 };
     const scene = new THREE.Scene();
@@ -106,10 +112,65 @@ export default function EquipmentObservationScene({
         },
         visible: true,
       };
-      const object = createEquipmentObject(displayEquipment, { theme, viewerTranslucent: false, enableLod: false });
-      equipmentRoot.add(object);
-      renderedEquipment.set(item.id, { item, object, position: object.position.clone() });
+      const logicalRoot = new THREE.Group();
+      logicalRoot.position.set(displayEquipment.position.x, displayEquipment.position.y, displayEquipment.position.z);
+      logicalRoot.rotation.set(Number(item.rotation?.x) || 0, Number(item.rotation?.y) || 0, Number(item.rotation?.z) || 0);
+      logicalRoot.userData.equipmentId = item.id;
+      const proxy = createEquipmentObject({ ...displayEquipment, position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } }, { theme, viewerTranslucent: false, enableLod: false });
+      logicalRoot.add(proxy);
+      equipmentRoot.add(logicalRoot);
+      renderedEquipment.set(item.id, { item, object: logicalRoot, proxy, actual: null, loading: null, position: logicalRoot.position.clone() });
     });
+    const detailedBindings = new Map();
+    assetBindings.forEach((binding) => {
+      if (![ASSET_TYPES.OBJ, ASSET_TYPES.PLY].includes(binding.assetType)) return;
+      detailedBindings.set(binding.equipmentId, binding);
+    });
+
+    async function ensureDetailed(entry, binding) {
+      if (entry.actual || entry.loading || !binding) return entry.loading;
+      entry.loading = loadBindingObject(binding).then((loaded) => {
+        if (disposed) {
+          disposeObject3D(loaded.object);
+          loaded.revoke();
+          return;
+        }
+        const aligned = new THREE.Group();
+        aligned.add(loaded.object);
+        if (!applyAssetAlignment({ actualObject: loaded.object, aligned }, binding, entry.item)) {
+          disposeObject3D(aligned);
+          loaded.revoke();
+          throw new Error("EMPTY_MODEL");
+        }
+        aligned.userData.releaseAssetSources = loaded.revoke;
+        entry.object.add(aligned);
+        entry.actual = aligned;
+        if (entry.item.id === focusEquipmentId) fitCamera(camera, controls, aligned);
+      }).catch((error) => {
+        console.warn(`[설비 표현] ${entry.item.name ?? entry.item.id} 상세 모델을 표시하지 못해 간략 모델로 복구했습니다.`, error);
+        entry.actual = null;
+      }).finally(() => { entry.loading = null; });
+      return entry.loading;
+    }
+
+    function syncEquipmentRepresentations() {
+      renderedEquipment.forEach((entry, equipmentId) => {
+        const binding = detailedBindings.get(equipmentId);
+        const representation = resolveEquipmentRepresentation({
+          preset: viewerPreset,
+          equipmentId,
+          hasDetailedModel: Boolean(binding),
+          selected: equipmentId === focusEquipmentId,
+          distance: camera.position.distanceTo(entry.object.getWorldPosition(new THREE.Vector3())),
+        });
+        const showDetailed = representation === EQUIPMENT_REPRESENTATIONS.DETAILED;
+        entry.proxy.visible = !showDetailed || !entry.actual;
+        if (entry.actual) entry.actual.visible = showDetailed;
+        else if (showDetailed) void ensureDetailed(entry, binding).then(() => {
+          if (!disposed && entry.actual) { entry.proxy.visible = false; entry.actual.visible = true; }
+        });
+      });
+    }
 
     const bounds = new THREE.Box3().setFromObject(equipmentRoot);
     const size = bounds.getSize(new THREE.Vector3());
@@ -215,6 +276,8 @@ export default function EquipmentObservationScene({
     }
     renderer.domElement.addEventListener("pointerup", handlePointerUp);
     fitCamera(camera, controls, focusEquipment ? renderedEquipment.get(focusEquipment.id).object : equipmentRoot);
+    controls.addEventListener("end", syncEquipmentRepresentations);
+    syncEquipmentRepresentations();
 
     function resize() {
       const rect = mount.getBoundingClientRect();
@@ -233,12 +296,15 @@ export default function EquipmentObservationScene({
     }
     render();
     return () => {
+      disposed = true;
       cancelAnimationFrame(frameId);
       observer.disconnect();
       renderer.domElement.removeEventListener("pointerup", handlePointerUp);
+      controls.removeEventListener("end", syncEquipmentRepresentations);
       transform.detach();
       transform.dispose();
       controls.dispose();
+      root.traverse((object) => object.userData.releaseAssetSources?.());
       disposeObject3D(root);
       floor.geometry.dispose();
       floor.material.dispose();
@@ -247,7 +313,7 @@ export default function EquipmentObservationScene({
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, [bindings, equipment, equipmentList, focusEquipmentId, observationPoints, onSensorChange, onSensorSelect, selectedSensorId, sensors, theme, transformTools]);
+  }, [assetBindings, bindings, equipment, equipmentList, focusEquipmentId, observationPoints, onSensorChange, onSensorSelect, selectedSensorId, sensors, theme, transformTools, viewerPreset]);
 
   return <section className={styles.viewer} aria-label="설비와 센서 위치·화각"><div ref={mountRef} className={styles.canvas} /></section>;
 }

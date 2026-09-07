@@ -1,4 +1,3 @@
-import { AddIcon, CheckIcon } from "@/components/icons";
 import { OBJECT_LIBRARY_DRAG_TYPE } from "@/features/digitalTwin/editor/constants/objectLibraryCatalog";
 
 import ObjectPreview from "./ObjectPreview";
@@ -33,9 +32,6 @@ export default function ObjectItem({ definition, active, onSelect }) {
         {definition.installationBadges?.length ? (
           <small>{definition.installationBadges.join(" · ")}{definition.modelVariants?.length > 1 ? ` · 변형 ${definition.modelVariants.length}` : ""}</small>
         ) : null}
-      </span>
-      <span className={styles.itemAction} aria-hidden="true">
-        {active ? <CheckIcon size={15} /> : <AddIcon size={15} />}
       </span>
     </button>
   );

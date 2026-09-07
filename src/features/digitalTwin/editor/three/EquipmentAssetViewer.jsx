@@ -53,7 +53,8 @@ async function resolveBindingSources(binding) {
   };
 }
 
-async function loadBindingObject(binding) {
+// eslint-disable-next-line react-refresh/only-export-components
+export async function loadBindingObject(binding) {
   const sources = await resolveBindingSources(binding);
   const { source, relatedSource, textureSource, manager, revoke } = sources;
   if (!source) { revoke(); throw new Error("MISSING_LOCAL_FILE"); }
@@ -132,7 +133,8 @@ function fitCamera(camera, controls, object) {
   return true;
 }
 
-function applyAssetAlignment(runtime, binding, equipment) {
+// eslint-disable-next-line react-refresh/only-export-components
+export function applyAssetAlignment(runtime, binding, equipment) {
   if (!runtime?.actualObject || !runtime.aligned || !binding?.alignmentTransform) return false;
   const alignment = binding.alignmentTransform;
   const object = runtime.actualObject;
@@ -176,7 +178,7 @@ function updateDisplayMode(runtime, mode, transformTools) {
   else configureDualTransformControls(runtime.transformControls, transformTools, { camera: runtime.camera });
 }
 
-export default function EquipmentAssetViewer({ equipment, binding, transformTools, theme = "dark", onAlignmentChange }) {
+export default function EquipmentAssetViewer({ equipment, binding, forcedDisplayMode, focusDetail = false, transformTools, theme = "dark", onAlignmentChange }) {
   const mountRef = useRef(null);
   const callbackRef = useRef(onAlignmentChange);
   const runtimeRef = useRef(null);
@@ -184,6 +186,7 @@ export default function EquipmentAssetViewer({ equipment, binding, transformTool
   const bindingRef = useRef(binding);
   const transformToolsRef = useRef(transformTools);
   const themeRef = useRef(theme);
+  const focusSnapshotRef = useRef(null);
   const [loadState, setLoadState] = useState("PROXY");
   const [loadMessage, setLoadMessage] = useState("");
   equipmentRef.current = equipment;
@@ -213,9 +216,10 @@ export default function EquipmentAssetViewer({ equipment, binding, transformTool
     JSON.stringify(equipment.userTexture),
   ].join("|") : "";
   const alignmentKey = binding?.alignmentTransform ? JSON.stringify(binding.alignmentTransform) : "";
-  const displayMode = binding && [ASSET_TYPES.OBJ, ASSET_TYPES.PLY].includes(binding.assetType)
+  const displayMode = forcedDisplayMode ?? (binding && [ASSET_TYPES.OBJ, ASSET_TYPES.PLY].includes(binding.assetType)
     ? binding.displayMode ?? EQUIPMENT_DISPLAY_MODES.ACTUAL
-    : EQUIPMENT_DISPLAY_MODES.PROXY;
+    : EQUIPMENT_DISPLAY_MODES.PROXY);
+  const shouldLoadDetailed = displayMode !== EQUIPMENT_DISPLAY_MODES.PROXY;
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -323,7 +327,7 @@ export default function EquipmentAssetViewer({ equipment, binding, transformTool
   useEffect(() => {
     const runtime = runtimeRef.current;
     const bindingSnapshot = bindingRef.current;
-    const hasRenderableBinding = Boolean(bindingSnapshot && [ASSET_TYPES.OBJ, ASSET_TYPES.PLY].includes(bindingSnapshot.assetType));
+    const hasRenderableBinding = Boolean(shouldLoadDetailed && bindingSnapshot && [ASSET_TYPES.OBJ, ASSET_TYPES.PLY].includes(bindingSnapshot.assetType));
     if (!runtime || !hasRenderableBinding) {
       setLoadState("PROXY");
       return undefined;
@@ -377,7 +381,7 @@ export default function EquipmentAssetViewer({ equipment, binding, transformTool
       revokeSources();
       updateDisplayMode(runtime, EQUIPMENT_DISPLAY_MODES.PROXY, transformToolsRef.current);
     };
-  }, [assetLoadKey]);
+  }, [assetLoadKey, shouldLoadDetailed]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -388,6 +392,24 @@ export default function EquipmentAssetViewer({ equipment, binding, transformTool
   useEffect(() => {
     updateDisplayMode(runtimeRef.current, displayMode, transformTools);
   }, [displayMode, transformTools]);
+
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
+    if (focusDetail) {
+      if (!focusSnapshotRef.current) {
+        focusSnapshotRef.current = { position: runtime.camera.position.clone(), target: runtime.controls.target.clone() };
+      }
+      fitCamera(runtime.camera, runtime.controls, runtime.aligned ?? runtime.proxy);
+      return;
+    }
+    if (!focusSnapshotRef.current) return;
+    runtime.camera.position.copy(focusSnapshotRef.current.position);
+    runtime.controls.target.copy(focusSnapshotRef.current.target);
+    runtime.camera.updateProjectionMatrix();
+    runtime.controls.update();
+    focusSnapshotRef.current = null;
+  }, [focusDetail, loadState]);
 
   const messages = { PROXY: "Proxy Model 표시 중", LOADING: "대용량 스캔 자산을 불러오는 중…", READY: "실제 자산 정합 모드", READY_FALLBACK: "모델 표시 중 · 텍스처 대신 기본 재질 적용", NO_3D: "이미지·텍스처는 하단 카메라 화면에서 확인합니다.", MISSING: "업로드 원본 파일을 다시 연결해 주세요.", UNSUPPORTED: "지원하지 않는 파일 형식입니다.", EMPTY: "파일에 표시할 3D 형상이 없습니다.", WEBGL_ERROR: "WebGL 뷰어를 초기화하지 못했습니다.", ERROR: "자산을 불러오지 못했습니다." };
   return <section className={styles.viewer} aria-label="설비 실제 자산 뷰어"><div ref={mountRef} className={styles.canvas} /><div className={styles.status} data-state={loadState}>{loadMessage || messages[loadState]}</div></section>;

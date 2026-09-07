@@ -159,8 +159,8 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     addAssetBinding, updateAssetBinding, selectAssetBinding,
     addMonitoringDevice, updateMonitoringDevice, selectMonitoringDevice,
     addMonitoringBinding, updateMonitoringBinding, selectMonitoringBinding,
-    toggleFavorite,
     configureObservationWorkflow, extendObservationWorkflow, updateObservationViewerSettings,
+    updateViewerPreset, updateEquipmentRepresentationOverride,
   } = editor.actions;
 
   const activeWizardSteps = useMemo(() => {
@@ -1058,6 +1058,9 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                 selectedSensor={editor.selectedSensorBinding}
                 transformTools={editor.transformTools}
                 theme={theme}
+                viewerPreset={editor.viewerPreset}
+                onViewerPresetChange={updateViewerPreset}
+                onEquipmentRepresentationChange={updateEquipmentRepresentationOverride}
                 onAddEquipment={() => setMonitoringEquipmentPickerOpen(true)}
                 equipmentPicker={(monitoringEquipmentPickerOpen || !editor.selectedFloorEquipment) ? <MonitoringEquipmentPicker
                   equipment={editor.allFloorEquipment}
@@ -1084,6 +1087,8 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                 /> : null}
                 overviewView={<EquipmentObservationScene
                   equipmentList={editor.allFloorEquipment}
+                  assetBindings={editor.equipmentAssetBindings}
+                  viewerPreset={editor.viewerPreset}
                   sensors={editor.sensorBindings}
                   observationPoints={editor.observationPoints}
                   bindings={editor.serverBindings}
@@ -1200,7 +1205,6 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                 allowedStructureTemplateIds={FLOOR_PLAN_TEMPLATE_IDS}
                 activeStructureTemplateId={editor.activeFloorPlanTemplateId}
                 activeEquipmentTemplateId={editor.activeFloorEquipmentTemplateId}
-                favoriteTemplateIds={editor.favoriteTemplateIds}
                 floors={buildingFloors}
                 currentFloorId={selectedFloor?.id}
                 targetFloorIds={targetFloorIds}
@@ -1208,7 +1212,6 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                 floorNavigator={floorNavigator}
                 onSelectStructureTemplate={(id) => { handleWorkspaceModeChange(WORKSPACE_MODES.PLAN); selectFloorPlanTemplate(id); }}
                 onSelectEquipmentTemplate={(id) => { handleWorkspaceModeChange(WORKSPACE_MODES.EQUIPMENT); selectFloorEquipmentTemplate(id); }}
-                onToggleFavorite={toggleFavorite}
               />
             ) : isFloorWorkspaceStep && activeFloatingPanelId === WORLD_PANEL_IDS.OBJECT_LIST ? (
               <FloorObjectList

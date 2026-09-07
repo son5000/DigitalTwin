@@ -1,4 +1,5 @@
-import { ChevronDownIcon, ObjectLibraryIcon } from "@/components/icons";
+import { ChevronDownIcon } from "@/components/icons";
+import CatalogCategoryThumbnail from "@/features/digitalTwin/editor/components/CatalogCategoryThumbnail";
 
 import ObjectSubCategory from "./ObjectSubCategory";
 import styles from "./ObjectLibrary.module.css";
@@ -12,8 +13,8 @@ export default function ObjectCategory({ category, definitions, open, activeTemp
         aria-expanded={open}
         onClick={onToggle}
       >
-        <span className={styles.categoryIcon}><ObjectLibraryIcon category={category} size={19} /></span>
-        <span className={styles.categoryText}><strong>{category.name}</strong><small>{category.description}</small></span>
+        <span className={styles.categoryIcon} aria-hidden="true"><CatalogCategoryThumbnail categoryId={category.id} /></span>
+        <span className={styles.categoryText}><strong>{category.name}</strong></span>
         <span className={styles.categoryCount}>{definitions.length}</span>
         <ChevronDownIcon size={16} className={styles.chevron} />
       </button>

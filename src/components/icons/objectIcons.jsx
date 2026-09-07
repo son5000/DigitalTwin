@@ -4,6 +4,7 @@ export function BoxIcon(props) { return <IconBase {...props}><path d="m12 3 8 4.
 export function CylinderIcon(props) { return <IconBase {...props}><ellipse cx="12" cy="6" rx="6.5" ry="3" /><path d="M5.5 6v12c0 1.7 2.9 3 6.5 3s6.5-1.3 6.5-3V6M5.5 18c0 1.7 2.9 3 6.5 3s6.5-1.3 6.5-3" /></IconBase>; }
 export function CabinetIcon(props) { return <IconBase {...props}><rect x="5" y="3" width="14" height="18" rx="1.5" /><path d="M5 10h14M9 6h6M9 14h6M9 17h6" /></IconBase>; }
 export function MechanicalIcon(props) { return <IconBase {...props}><circle cx="12" cy="12" r="3" /><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" /></IconBase>; }
+export function EquipmentSystemsIcon(props) { return <IconBase {...props}><path d="M3 6v5h6M3 9h6M7 6v5" /><circle cx="15.5" cy="15" r="3.5" /><path d="M15.5 9.5v2M15.5 18.5v2M10 15h2M19 15h2M11.6 11.1l1.4 1.4M18 17.5l1.4 1.4M19.4 11.1 18 12.5M13 17.5l-1.4 1.4" /><path d="m16.5 3-3 5h2l-1 3 4-5h-2l1-3" /></IconBase>; }
 export function PipeIcon(props) { return <IconBase {...props}><path d="M4 8h10a4 4 0 0 1 4 4v8M4 12h10M14 8v4M16 20h4" /></IconBase>; }
 export function DuctIcon(props) { return <IconBase {...props}><path d="M3 8h14l4 4-4 4H3zM7 8v8M17 8v8" /></IconBase>; }
 export function TankIcon(props) { return <IconBase {...props}><ellipse cx="12" cy="5.5" rx="6" ry="2.5" /><path d="M6 5.5v13c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5v-13M9 21v-2M15 21v-2" /></IconBase>; }
