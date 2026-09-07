@@ -417,7 +417,7 @@ export default function CustomBuildingEditorPage({ assetId = null }) {
     ready.thumbnail = createBuildingThumbnail(ready, theme);
     try {
       await save(ready); repository.saveDraft(ready); dirtyRef.current = false; setAsset(ready); setSaveState("도면에서 사용 가능"); setSaveError("");
-      if (useInPlan) { sessionStorage.setItem("digital-twin:pending-custom-template", customBuildingTemplateId(ready.id)); navigateTo("/"); }
+      if (useInPlan) { sessionStorage.setItem("digital-twin:pending-custom-template", customBuildingTemplateId(ready.id)); navigateTo("/editor"); }
     } catch (cause) { setSaveState("저장 실패"); setSaveError(cause instanceof Error ? cause.message : "저장하지 못했습니다."); }
   }
 

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="480" viewBox="0 0 800 480">
+  <g stroke-width="2" stroke-linejoin="round">
+    <path d="m205 339 197 77 173-104-197-77Z" fill="#e3edfc" stroke="#a4bfea"/>
+    <path d="m258 284 135 53V186l-135-53Z" fill="#c9ddf8" stroke="#6e9ddf"/><path d="m393 337 117-72V114l-117 72Z" fill="#91b7ee" stroke="#6e9ddf"/><path d="m258 133 117-72 135 53-117 72Z" fill="#fff" stroke="#6e9ddf"/>
+    <ellipse cx="326" cy="237" rx="37" ry="49" transform="rotate(-20 326 237)" fill="#f8fbff" stroke="#6e9ddf"/>
+    <ellipse cx="326" cy="237" rx="17" ry="24" transform="rotate(-20 326 237)" fill="#91b7ee" stroke="#6e9ddf"/>
+    <path d="m432 196 47-29m-47 45 47-29m-47 45 47-29" stroke="#fff" stroke-width="5"/>
+    <path d="M295 168h-99v-51M480 253h104v-44" fill="none" stroke="#2f6bff"/>
+    <g fill="#2f6bff" stroke="#fff" stroke-width="5"><circle cx="295" cy="168" r="10"/><circle cx="480" cy="253" r="10"/></g>
+    <rect x="64" y="59" width="200" height="80" rx="12" fill="#fff" stroke="#b9cff7"/>
+    <rect x="551" y="118" width="204" height="99" rx="12" fill="#fff" stroke="#b9cff7"/>
+    <path d="m571 192 18-6 16 7 20-17 18 8 20-12 20 9 17-19 16 9" fill="none" stroke="#2f6bff" stroke-width="3"/>
+  </g>
+  <g font-family="sans-serif" fill="#344a69"><text x="84" y="88" font-size="16">온도 센서</text><text x="84" y="119" font-size="24" fill="#2458d6">26.3°C</text><text x="571" y="147" font-size="16">진동 센서</text><text x="571" y="172" font-size="21" fill="#2458d6">1.8 mm/s</text><text x="267" y="453" font-size="18">공조 설비 02 · 실시간 측정</text></g>
+</svg>

@@ -4,6 +4,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
 import { equipmentAssetRepository } from "@/features/digitalTwin/editor/api/equipmentAssetRepository";
 import { ASSET_TYPES, EQUIPMENT_DISPLAY_MODES, unitScale } from "@/features/digitalTwin/editor/model/equipmentDetailModel";
+import { getGroundViewPresentation, GROUND_VIEW_MODES } from "@/features/digitalTwin/editor/model/undergroundModel";
 import { createEquipmentObject } from "@/features/digitalTwin/editor/objects/EquipmentFactory";
 import {
   attachDualTransformControls,
@@ -178,7 +179,7 @@ function updateDisplayMode(runtime, mode, transformTools) {
   else configureDualTransformControls(runtime.transformControls, transformTools, { camera: runtime.camera });
 }
 
-export default function EquipmentAssetViewer({ equipment, binding, forcedDisplayMode, focusDetail = false, transformTools, theme = "dark", onAlignmentChange }) {
+export default function EquipmentAssetViewer({ equipment, binding, forcedDisplayMode, focusDetail = false, groundViewMode = GROUND_VIEW_MODES.VISIBLE, transformTools, theme = "dark", onAlignmentChange }) {
   const mountRef = useRef(null);
   const callbackRef = useRef(onAlignmentChange);
   const runtimeRef = useRef(null);
@@ -243,10 +244,18 @@ export default function EquipmentAssetViewer({ equipment, binding, forcedDisplay
     scene.add(new THREE.HemisphereLight(0xdaf5ff, 0x17232b, 2.1));
     const light = new THREE.DirectionalLight(0xffffff, 2.4); light.position.set(4, 7, 5); scene.add(light);
     const planeSize = Math.max(equipmentRef.current.dimensions?.width ?? 1, equipmentRef.current.dimensions?.depth ?? 1, 1) * 8;
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(planeSize, planeSize),
+      new THREE.MeshStandardMaterial({ color: themeRef.current === "light" ? 0xcbd5da : 0x17242b, roughness: 0.94 }),
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -0.015;
+    ground.receiveShadow = true;
+    scene.add(ground);
     const grid = new THREE.GridHelper(planeSize, 24, 0x456577, 0x243843); scene.add(grid);
     const content = new THREE.Group(); scene.add(content);
     const transformControls = createDualTransformControls(camera, renderer.domElement, scene, { translationSnap: 0.01 });
-    const runtime = { scene, renderer, camera, controls, content, grid, transformControls, proxy: null, aligned: null, actualObject: null, transformTarget: null, disposed: false };
+    const runtime = { scene, renderer, camera, controls, content, ground, grid, transformControls, proxy: null, aligned: null, actualObject: null, transformTarget: null, disposed: false };
     runtimeRef.current = runtime;
     const commitTransform = (control) => {
       if (!control.object || control.object !== runtime.aligned) return;
@@ -296,6 +305,8 @@ export default function EquipmentAssetViewer({ equipment, binding, forcedDisplay
       runtime.proxy = null;
       runtime.aligned = null;
       runtime.actualObject = null;
+      ground.geometry.dispose();
+      ground.material.dispose();
       grid.geometry.dispose();
       grid.material.dispose();
       renderer.dispose();
@@ -308,6 +319,24 @@ export default function EquipmentAssetViewer({ equipment, binding, forcedDisplay
     const runtime = runtimeRef.current;
     if (runtime) runtime.scene.background.set(theme === "light" ? 0xe8eef1 : 0x0b1217);
   }, [theme]);
+
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
+    const presentation = getGroundViewPresentation(groundViewMode);
+    const clippingPlanes = presentation.sectioned
+      ? [new THREE.Plane(new THREE.Vector3(0, 0, -1), 0)]
+      : [];
+    runtime.renderer.localClippingEnabled = presentation.sectioned;
+    runtime.ground.visible = presentation.visible;
+    runtime.grid.visible = presentation.gridVisible;
+    runtime.ground.material.transparent = presentation.transparent;
+    runtime.ground.material.opacity = presentation.opacity;
+    runtime.ground.material.depthWrite = presentation.depthWrite;
+    runtime.ground.material.clippingPlanes = clippingPlanes;
+    runtime.ground.material.clipShadows = presentation.sectioned;
+    runtime.ground.material.needsUpdate = true;
+  }, [groundViewMode]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;

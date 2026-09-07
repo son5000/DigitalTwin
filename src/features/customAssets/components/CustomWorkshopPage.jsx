@@ -45,7 +45,7 @@ export default function CustomWorkshopPage() {
   return (
     <main className={styles.page}>
       <header className={styles.header}>
-        <button type="button" className={styles.backButton} onClick={() => navigateTo("/")}>← 도면으로</button>
+        <button type="button" className={styles.backButton} onClick={() => navigateTo("/editor")}>← 도면으로</button>
         <div className={styles.headerTitle}><span>Custom Asset Studio</span><h1>커스텀 제작소</h1></div>
         <div className={styles.headerActions}>
           {lastOpenedAsset ? <button type="button" onClick={() => navigateTo(getCustomBuildingEditPath(lastOpenedAsset.id))}>마지막 작업 계속</button> : null}

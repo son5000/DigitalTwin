@@ -195,6 +195,15 @@ export default function useFloorEquipmentState({ buildings, floors, currentBuild
     setActiveFloorEquipmentTemplateId(null);
   }, []);
 
+  const removeFloorEquipmentData = useCallback((floorIds = []) => {
+    const removedFloorIds = new Set(floorIds);
+    setEquipmentByFloorId((collections) => Object.fromEntries(
+      Object.entries(collections).filter(([floorId]) => !removedFloorIds.has(floorId)),
+    ));
+    setSelectedFloorEquipmentId(null);
+    setActiveFloorEquipmentTemplateId(null);
+  }, []);
+
   return {
     equipmentByFloorId,
     activeFloorEquipment,
@@ -212,6 +221,7 @@ export default function useFloorEquipmentState({ buildings, floors, currentBuild
       duplicateSelectedFloorEquipment,
       hydrateFloorEquipmentState,
       resetFloorEquipmentState,
+      removeFloorEquipmentData,
     },
   };
 }

@@ -6,11 +6,15 @@ import { CustomAssetProvider } from "@/features/customAssets/components/CustomAs
 import { useCustomAssets } from "@/features/customAssets/components/customAssetContext";
 import CustomWorkshopPage from "@/features/customAssets/components/CustomWorkshopPage";
 import DigitalTwinEditorPage from "@/features/digitalTwin/editor/DigitalTwinEditorPage";
+import LandingPage from "@/features/portal/landing/LandingPage";
+import ObservationPage from "@/features/portal/viewer/ObservationPage";
+import ProjectsPage from "@/features/portal/projects/ProjectsPage";
+import ProjectViewerPage from "@/features/portal/projects/ProjectViewerPage";
 
 function usePathname() {
-  const [pathname, setPathname] = useState(() => window.location.pathname);
+  const [pathname, setPathname] = useState(() => window.location.pathname + window.location.search);
   useEffect(() => {
-    const handleNavigation = () => setPathname(window.location.pathname);
+    const handleNavigation = () => setPathname(window.location.pathname + window.location.search);
     window.addEventListener("popstate", handleNavigation);
     return () => window.removeEventListener("popstate", handleNavigation);
   }, []);
@@ -18,12 +22,20 @@ function usePathname() {
 }
 
 function AppRoute() {
-  const pathname = usePathname();
+  const location = usePathname();
+  const [pathname, search = ""] = location.split("?");
   const { revision } = useCustomAssets();
-  if (pathname === "/custom" || pathname === "/custom/buildings") return <CustomWorkshopPage />;
+  if (pathname === "/") return <LandingPage />;
+  if (pathname === "/projects" || pathname === "/projects/") return <ProjectsPage />;
+  if (pathname === "/viewer" || pathname === "/viewer/") {
+    const projectId = new URLSearchParams(search).get("project");
+    return projectId ? <ProjectViewerPage key={projectId} projectId={projectId} /> : <ObservationPage />;
+  }
+  if (pathname === "/custom" || pathname === "/custom/" || pathname === "/custom/buildings" || pathname === "/custom/buildings/") return <CustomWorkshopPage />;
   if (pathname === "/custom/buildings/new") return <CustomBuildingEditorPage />;
   const editMatch = pathname.match(/^\/custom\/buildings\/([^/]+)\/edit\/?$/);
   if (editMatch) return <CustomBuildingEditorPage assetId={decodeURIComponent(editMatch[1])} />;
+  if (pathname === "/editor" || pathname === "/editor/") return <DigitalTwinEditorPage customAssetRevision={revision} />;
   return <DigitalTwinEditorPage customAssetRevision={revision} />;
 }
 

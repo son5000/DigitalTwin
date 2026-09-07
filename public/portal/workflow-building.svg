@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="480" viewBox="0 0 800 480">
+  <g stroke="#a4bfea" stroke-width="2" stroke-linejoin="round">
+    <path d="M215 165v187M410 237v187M574 135v187" stroke-dasharray="6 7"/>
+    <path d="m215 352 195 72 164-102-195-72Z" fill="#e4edfc"/><path d="m215 352 195 72v15l-195-72Z" fill="#bfd4f5"/><path d="m410 424 164-102v15L410 439Z" fill="#91b7ee"/>
+    <path d="m215 257 195 72 164-102-195-72Z" fill="#edf4ff" stroke="#2f6bff" stroke-width="3"/><path d="m215 257 195 72v15l-195-72Z" fill="#9ec3ff"/><path d="m410 329 164-102v15L410 344Z" fill="#2f6bff"/>
+    <path d="m215 162 195 72 164-102L379 60Z" fill="#fff"/><path d="m215 162 195 72v15l-195-72Z" fill="#bfd4f5"/><path d="m410 234 164-102v15L410 249Z" fill="#91b7ee"/>
+    <path d="m282 120 195 72m-163 7 164-102M282 215l195 72m-163 7 164-102M282 310l195 72m-163 7 164-102" fill="none"/>
+    <path d="M587 143h58M587 239h58M587 334h58" stroke="#2f6bff"/>
+    <circle cx="409" cy="251" r="12" fill="#2f6bff" stroke="#fff" stroke-width="5"/>
+  </g>
+  <g font-family="sans-serif" font-size="20" fill="#344a69"><text x="658" y="150">3F</text><text x="658" y="246" fill="#2458d6">2F</text><text x="658" y="341">1F</text><text x="83" y="66" font-size="18" fill="#2458d6">생산동 A · 층별 공간</text></g>
+</svg>

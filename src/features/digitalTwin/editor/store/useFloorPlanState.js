@@ -596,6 +596,18 @@ export default function useFloorPlanState({ buildings, floors, currentBuilding, 
     setSelectedSpatialEntity(null);
   }, []);
 
+  const removeBuildingFloorPlanData = useCallback((buildingId, floorIds = []) => {
+    const removedFloorIds = new Set(floorIds);
+    setFloorPlansById((plans) => Object.fromEntries(
+      Object.entries(plans).filter(([floorId]) => !removedFloorIds.has(floorId)),
+    ));
+    setVerticalStructuresByBuildingId((structures) => Object.fromEntries(
+      Object.entries(structures).filter(([id]) => id !== buildingId),
+    ));
+    setSelectedFloorPlanStructureId(null);
+    setSelectedSpatialEntity(null);
+  }, []);
+
   const floorPlanSummaryByBuildingId = useMemo(() => Object.fromEntries(buildings.map((building) => {
     const buildingFloorIds = floors.filter((floor) => floor.parentId === building.id).map((floor) => floor.id);
     return [building.id, {
@@ -653,6 +665,7 @@ export default function useFloorPlanState({ buildings, floors, currentBuilding, 
       deleteDoor,
       hydrateFloorPlanState,
       resetFloorPlanState,
+      removeBuildingFloorPlanData,
     },
   };
 }

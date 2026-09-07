@@ -73,8 +73,8 @@ import {
 } from "@/features/digitalTwin/editor/three/buildingIsolation";
 import {
   collectTerrainExcavations,
+  getGroundViewPresentation,
   GROUND_VIEW_MODES,
-  normalizeGroundViewMode,
 } from "@/features/digitalTwin/editor/model/undergroundModel";
 import {
   advanceMovementClock,
@@ -1506,22 +1506,23 @@ export default function SiteOverviewScene({
   useEffect(() => {
     const runtime = runtimeRef.current;
     if (!runtime) return;
-    const mode = normalizeGroundViewMode(groundViewMode);
+    const presentation = getGroundViewPresentation(groundViewMode);
+    const mode = presentation.mode;
     const selectedBuilding = buildings.find((building) => building.id === selectedBuildingId);
     const sectionZ = Number(selectedBuilding?.position?.z) || 0;
     const clippingPlanes = mode === GROUND_VIEW_MODES.SECTION
       ? [new THREE.Plane(new THREE.Vector3(0, 0, -1), sectionZ)]
       : [];
     runtime.renderer.localClippingEnabled = clippingPlanes.length > 0;
-    runtime.ground.visible = mode !== GROUND_VIEW_MODES.HIDDEN;
-    runtime.grid.visible = mode === GROUND_VIEW_MODES.VISIBLE;
+    runtime.ground.visible = presentation.visible;
+    runtime.grid.visible = presentation.gridVisible;
     runtime.ground.traverse((child) => {
       if (!child.isMesh) return;
       const materials = Array.isArray(child.material) ? child.material : [child.material];
       materials.forEach((material) => {
-        material.transparent = mode === GROUND_VIEW_MODES.TRANSLUCENT;
-        material.opacity = mode === GROUND_VIEW_MODES.TRANSLUCENT ? 0.28 : 1;
-        material.depthWrite = mode !== GROUND_VIEW_MODES.TRANSLUCENT;
+        material.transparent = presentation.transparent;
+        material.opacity = presentation.opacity;
+        material.depthWrite = presentation.depthWrite;
         material.clippingPlanes = clippingPlanes;
         material.clipShadows = clippingPlanes.length > 0;
         material.needsUpdate = true;

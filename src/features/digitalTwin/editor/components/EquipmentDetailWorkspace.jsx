@@ -16,7 +16,7 @@ const OVERRIDE_LABELS = Object.freeze({ AUTO: "전역 설정 사용", SIMPLIFIED
 
 export default function EquipmentDetailWorkspace({
   equipment, equipmentCount = 0, assetBindings = [], selectedAsset, overviewView, equipmentPicker,
-  viewerPreset, transformTools, theme, onAddEquipment, onAlignmentChange,
+  viewerPreset, groundViewMode, transformTools, theme, onAddEquipment, onAlignmentChange,
   onViewerPresetChange, onEquipmentRepresentationChange,
 }) {
   const [viewMode, setViewMode] = useState("SELECTED");
@@ -45,7 +45,7 @@ export default function EquipmentDetailWorkspace({
         <button type="button" onClick={onAddEquipment}>설비 추가</button>
       </div>
       <div className={styles.viewer} aria-label="실제 설비 3D 뷰어">
-        {viewMode === "ALL" && overviewView ? overviewView : <EquipmentAssetViewer equipment={equipment} binding={renderableAsset} forcedDisplayMode={forcedDisplayMode} focusDetail={detailFocus} transformTools={transformTools} theme={theme} onAlignmentChange={onAlignmentChange} />}
+        {viewMode === "ALL" && overviewView ? overviewView : <EquipmentAssetViewer equipment={equipment} binding={renderableAsset} forcedDisplayMode={forcedDisplayMode} focusDetail={detailFocus} groundViewMode={groundViewMode} transformTools={transformTools} theme={theme} onAlignmentChange={onAlignmentChange} />}
       </div>
       {equipmentPicker}
     </section>

@@ -126,6 +126,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
   const [movementPlaybackError, setMovementPlaybackError] = useState("");
   const movementClockRef = useRef({ currentTime: 0, duration: 0, status: MOVEMENT_PLAYBACK_STATES.STOPPED, onUiTimeChange: null });
   const buildingSaveRequestRef = useRef(0);
+  const buildingReplacementPendingRef = useRef(false);
   const siteWorldCameraStateRef = useRef(null);
   const layoutReadyRef = useRef(false);
   const hydrateLayoutRef = useRef(null);
@@ -139,7 +140,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
 
   const {
     updateSiteEnvironment, resetLayout, hydrateLayout, updateBuilding,
-    addSiteObjectFromArea, addSiteObjectsFromArea, selectSiteObject, updateSiteObject,
+    addSiteObjectFromArea, addSiteObjectsFromArea, replaceObservationBuildingFromArea, selectSiteObject, updateSiteObject,
     duplicateSelectedSiteEntity, removeSelectedSiteObject, deleteHierarchyNode,
     selectBuilding, navigateToSite, navigateToFloor, selectFloorInBuilding,
     clearSelection, setViewMode, toggleTransformTool, setSnapSize, setGridSnapEnabled,
@@ -185,9 +186,9 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
   const isFloorWorkspaceStep = wizardStepId === WORLD_WIZARD_STEP_IDS.FLOOR_AND_EQUIPMENT;
   const isMonitoringStep = wizardStepId === WORLD_WIZARD_STEP_IDS.MONITORING;
   const userBuildings = useMemo(() => editor.buildings.filter((building) => !building.systemHost), [editor.buildings]);
-  const isEmptyBuildingObservation = isCompositionStep
-    && editor.observationWorkflow.scopeType === OBSERVATION_SCOPE_TYPES.BUILDING
-    && userBuildings.length === 0;
+  const isBuildingObservationMode = isCompositionStep
+    && editor.observationWorkflow.scopeType === OBSERVATION_SCOPE_TYPES.BUILDING;
+  const isEmptyBuildingObservation = isBuildingObservationMode && userBuildings.length === 0;
   const focusedBuilding = editor.selectedBuilding ?? editor.currentBuilding ?? userBuildings[0] ?? editor.buildings[0] ?? null;
   const selectedBuildingId = focusedBuilding?.id ?? null;
   const buildingFloors = useMemo(
@@ -502,20 +503,24 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     }
     const definition = OBJECT_LIBRARY_DEFINITION_MAP[templateId];
     const defaultVariants = getDefaultObjectVariants(definition);
-    if (isEmptyBuildingObservation && definition?.createsBuilding) {
-      const buildingId = addSiteObjectFromArea(templateId, {
-        center: { x: 0, z: 0 },
-        width: definition.width,
-        depth: definition.depth,
-      }, defaultVariants);
+    if (isBuildingObservationMode && definition?.createsBuilding) {
+      if (buildingReplacementPendingRef.current) return;
+      const replacing = userBuildings.length > 0;
+      if (replacing && editor.observationBuildingHasEdits && !window.confirm("기존 건축물의 편집 내용은 저장되지 않습니다. 건축물을 교체하시겠습니까?")) return;
+      buildingReplacementPendingRef.current = true;
+      const area = { center: { x: 0, z: 0 }, width: definition.width, depth: definition.depth };
+      const buildingId = replacing
+        ? replaceObservationBuildingFromArea(area, templateId, defaultVariants)
+        : addSiteObjectFromArea(templateId, area, defaultVariants);
       if (buildingId) {
         setActiveSiteTemplateId(null);
         setActiveSiteVariants({});
         setSiteInteractionMode(SITE_INTERACTION_MODES.NAVIGATE);
-        setSitePlacementNotice("건축물 크기에 맞춰 부지를 자동 생성했습니다.");
+        setSitePlacementNotice(replacing ? "건축물과 부지를 교체했습니다." : "건축물 크기에 맞춰 부지를 자동 생성했습니다.");
         setActiveFloatingPanelId(WORLD_PANEL_IDS.DETAILS);
-        return;
       }
+      window.setTimeout(() => { buildingReplacementPendingRef.current = false; }, 300);
+      return;
     }
     const same = siteInteractionMode === SITE_INTERACTION_MODES.PLACE_OBJECT && activeSiteTemplateId === templateId;
     setActiveSiteTemplateId(same ? null : templateId);
@@ -525,7 +530,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     selectBuilding(null);
     selectSiteObject(null);
     setShowOnlySelectedBuilding(false);
-  }, [activeSiteTemplateId, addSiteObjectFromArea, isEmptyBuildingObservation, selectBuilding, selectSiteObject, siteInteractionMode]);
+  }, [activeSiteTemplateId, addSiteObjectFromArea, editor.observationBuildingHasEdits, isBuildingObservationMode, replaceObservationBuildingFromArea, selectBuilding, selectSiteObject, siteInteractionMode, userBuildings.length]);
   const handleSiteTemplatePlace = useCallback((templateId, area, variants = activeSiteVariants) => {
     const id = templateId && area ? addSiteObjectFromArea(templateId, area, variants) : null;
     if (!id) return;
@@ -1058,6 +1063,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                 selectedSensor={editor.selectedSensorBinding}
                 transformTools={editor.transformTools}
                 theme={theme}
+                groundViewMode={groundViewMode}
                 viewerPreset={editor.viewerPreset}
                 onViewerPresetChange={updateViewerPreset}
                 onEquipmentRepresentationChange={updateEquipmentRepresentationOverride}
@@ -1082,6 +1088,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                   selectedSensorId={editor.selectedSensorBinding?.id}
                   transformTools={editor.transformTools}
                   theme={theme}
+                  groundViewMode={groundViewMode}
                   onSensorSelect={selectMonitoringDevice}
                   onSensorChange={updateMonitoringDevice}
                 /> : null}
@@ -1095,6 +1102,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                   selectedSensorId={editor.selectedSensorBinding?.id}
                   transformTools={editor.transformTools}
                   theme={theme}
+                  groundViewMode={groundViewMode}
                   onSensorSelect={selectMonitoringDevice}
                   onSensorChange={updateMonitoringDevice}
                 />}

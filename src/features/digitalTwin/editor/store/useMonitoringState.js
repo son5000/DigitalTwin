@@ -138,6 +138,20 @@ export default function useMonitoringState({ equipment }) {
     setSelectedAssetBindingId(null); setSelectedSensorBindingId(null); setSelectedObservationPointId(null); setSelectedServerBindingId(null);
   }, []);
 
+  const removeEquipmentMonitoringData = useCallback((removedIds = []) => {
+    const equipmentIds = new Set(removedIds);
+    setEquipmentAssetBindings((items) => items.filter((item) => !equipmentIds.has(item.equipmentId)));
+    setObservationPoints((items) => items.filter((item) => !equipmentIds.has(item.equipmentId)));
+    setServerBindings((items) => items.filter((item) => !equipmentIds.has(item.equipmentId)));
+    setSensorBindings((items) => items
+      .map((item) => ({ ...item, equipmentIds: item.equipmentIds.filter((id) => !equipmentIds.has(id)) }))
+      .filter((item) => item.equipmentIds.length));
+    setSelectedAssetBindingId(null);
+    setSelectedObservationPointId(null);
+    setSelectedSensorBindingId(null);
+    setSelectedServerBindingId(null);
+  }, []);
+
   return {
     equipmentAssetBindings: activeAssetBindings, sensorBindings: activeSensorBindings,
     observationPoints: activeObservationPoints, serverBindings: activeServerBindings,
@@ -150,7 +164,7 @@ export default function useMonitoringState({ equipment }) {
       addObservationPoint, updateObservationPoint, selectObservationPoint: setSelectedObservationPointId,
       addMonitoringDevice, updateMonitoringDevice, selectMonitoringDevice: setSelectedSensorBindingId,
       addMonitoringBinding, updateMonitoringBinding, selectMonitoringBinding: setSelectedServerBindingId,
-      hydrateMonitoringState, resetMonitoringState,
+      hydrateMonitoringState, resetMonitoringState, removeEquipmentMonitoringData,
     },
   };
 }

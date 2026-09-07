@@ -1,0 +1,32 @@
+﻿.dialog { margin: auto; padding: 0; border: 1px solid #e2e8f0; border-radius: 16px; width: min(420px, calc(100% - 32px)); max-height: calc(100dvh - 32px); overflow: auto; overscroll-behavior: contain; color: #0b1730; background: #fff; color-scheme: light; box-shadow: 0 12px 32px #0f172a1f; }
+.dialog::backdrop { background: #040c1a80; backdrop-filter: blur(4px); }
+.card { padding: 40px 32px 32px; position: relative; text-align: center; }
+.close { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 44px; height: 44px; color: #64748b; border-radius: 8px; }
+.close:hover { background: #edf3fb; color: #0b1730; }
+.close:active { background: #e5edf6; }
+.icon { display: grid; place-items: center; width: 56px; height: 56px; margin: 0 auto 20px; border-radius: 16px; background: #edf4ff; color: #2f6bff; }
+.card .title { margin: 0; font-size: 24px; font-weight: 700; line-height: 1.4; letter-spacing: -.04em; word-break: keep-all; }
+.guidance { margin: 12px 0 0; color: #5f6f82; font-size: 14px; line-height: 1.7; word-break: keep-all; }
+.actions { display: grid; gap: 10px; margin-top: 28px; }
+.primary, .secondary { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 44px; padding: 10px 16px; border: 1px solid transparent; border-radius: 8px; font-size: 13px; font-weight: 700; line-height: 1.5; transition: background .15s, border-color .15s, transform .15s; }
+.primary { background: #2f6bff; color: #fff; }
+.primary:hover { background: #2458e6; }
+.primary:active { background: #1e4cc9; transform: scale(.98); }
+.secondary { border-color: #b9cff7; color: #2f6bff; background: #fff; }
+.secondary:hover { background: #edf4ff; border-color: #8cafee; }
+.secondary:active { background: #e2edff; transform: scale(.98); }
+.card :focus-visible { outline: 2px solid #2f6bff; outline-offset: 3px; box-shadow: 0 0 0 3px #2f6bff26; }
+.form { display: grid; gap: 16px; margin-top: 28px; text-align: left; }
+.field { display: grid; gap: 8px; }
+.field label { color: #475d78; font-size: 13px; font-weight: 600; }
+.field input { width: 100%; height: 44px; border: 1px solid #d9e2ed; border-radius: 8px; padding: 0 12px; color: #1c3553; background: #fff; font-size: 14px; }
+.field input::placeholder { color: #68798f; }
+.password { position: relative; }
+.password input { padding-right: 62px; }
+.password button { position: absolute; right: 4px; top: 0; min-width: 48px; height: 44px; border-radius: 6px; color: #526c8c; font-size: 12px; }
+.password button:hover { color: #2f6bff; }
+.switchMode { display: grid; gap: 10px; margin-top: 20px; }
+.switchMode p { margin: 0; color: #5f6f82; font-size: 13px; }
+.error { margin: 0; padding: 12px; border-radius: 8px; background: #fff3f3; color: #a83c3c; font-size: 13px; line-height: 1.6; }
+@media (max-width: 480px) { .card { padding: 36px 24px 24px; } .card .title { font-size: 22px; } }
+@media (prefers-reduced-motion: reduce) { .primary, .secondary { transition: none; } .primary:active, .secondary:active { transform: none; } }

@@ -5,6 +5,7 @@ import { TransformControls } from "three/addons/controls/TransformControls.js";
 
 import { getMoveAxisConfiguration, getRotationAxisConfiguration } from "@/features/digitalTwin/editor/constants/transformTools";
 import { ASSET_TYPES } from "@/features/digitalTwin/editor/model/equipmentDetailModel";
+import { getGroundViewPresentation, GROUND_VIEW_MODES } from "@/features/digitalTwin/editor/model/undergroundModel";
 import { EQUIPMENT_REPRESENTATIONS, resolveEquipmentRepresentation } from "@/features/digitalTwin/editor/model/viewerPreset";
 import { createEquipmentObject } from "@/features/digitalTwin/editor/objects/EquipmentFactory";
 import { applyAssetAlignment, loadBindingObject } from "@/features/digitalTwin/editor/three/EquipmentAssetViewer";
@@ -64,6 +65,7 @@ export default function EquipmentObservationScene({
   assetBindings = [],
   viewerPreset,
   selectedSensorId = null,
+  groundViewMode = GROUND_VIEW_MODES.VISIBLE,
   transformTools,
   theme = "dark",
   onSensorSelect,
@@ -187,6 +189,19 @@ export default function EquipmentObservationScene({
     const grid = new THREE.GridHelper(span, 20, theme === "light" ? 0x6f8792 : 0x557484, theme === "light" ? 0x9fb0b7 : 0x2b424d);
     grid.position.set(center.x, bounds.min.y, center.z);
     scene.add(grid);
+    const groundPresentation = getGroundViewPresentation(groundViewMode);
+    const groundClippingPlanes = groundPresentation.sectioned
+      ? [new THREE.Plane(new THREE.Vector3(0, 0, -1), 0)]
+      : [];
+    renderer.localClippingEnabled = groundPresentation.sectioned;
+    floor.visible = groundPresentation.visible;
+    grid.visible = groundPresentation.gridVisible;
+    floor.material.transparent = groundPresentation.transparent;
+    floor.material.opacity = groundPresentation.opacity;
+    floor.material.depthWrite = groundPresentation.depthWrite;
+    floor.material.clippingPlanes = groundClippingPlanes;
+    floor.material.clipShadows = groundPresentation.sectioned;
+    floor.material.needsUpdate = true;
 
     const sensorPositions = new Map();
     const sensorMarkers = new Map();
@@ -313,7 +328,7 @@ export default function EquipmentObservationScene({
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, [assetBindings, bindings, equipment, equipmentList, focusEquipmentId, observationPoints, onSensorChange, onSensorSelect, selectedSensorId, sensors, theme, transformTools, viewerPreset]);
+  }, [assetBindings, bindings, equipment, equipmentList, focusEquipmentId, groundViewMode, observationPoints, onSensorChange, onSensorSelect, selectedSensorId, sensors, theme, transformTools, viewerPreset]);
 
   return <section className={styles.viewer} aria-label="설비와 센서 위치·화각"><div ref={mountRef} className={styles.canvas} /></section>;
 }

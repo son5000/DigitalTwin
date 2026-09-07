@@ -6,6 +6,8 @@ import {
   createUndergroundConnection,
   formatFloorLevel,
   getBasementFloorCount,
+  getGroundViewPresentation,
+  GROUND_VIEW_MODES,
   isPointInsideExcavation,
 } from "../src/features/digitalTwin/editor/model/undergroundModel.js";
 
@@ -36,4 +38,14 @@ test("지하 출입구는 가장 가까운 건축물의 B1과 안정적인 ID로
   assert.equal(connection.targetFloorId, "b1");
   assert.equal(connection.endPoint.y, -3.6);
   assert.match(connection.id, /^UNDERGROUND_CONNECTION_/);
+});
+
+test("지면 보기 모드는 모든 바닥이 재사용할 공통 표시값으로 변환된다", () => {
+  assert.deepEqual(getGroundViewPresentation(GROUND_VIEW_MODES.VISIBLE), {
+    mode: "VISIBLE", visible: true, gridVisible: true, sectioned: false,
+    transparent: false, opacity: 1, depthWrite: true,
+  });
+  assert.equal(getGroundViewPresentation(GROUND_VIEW_MODES.TRANSLUCENT).opacity, 0.28);
+  assert.equal(getGroundViewPresentation(GROUND_VIEW_MODES.SECTION).sectioned, true);
+  assert.equal(getGroundViewPresentation(GROUND_VIEW_MODES.HIDDEN).visible, false);
 });

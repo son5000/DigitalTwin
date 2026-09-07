@@ -8,7 +8,7 @@ import {
   sortFloorsByLevel,
 } from "@/features/digitalTwin/editor/model/floorDisplay";
 import { isFloorShadowEnabled } from "@/features/digitalTwin/editor/model/shadowPolicy";
-import { GROUND_VIEW_MODES, normalizeGroundViewMode } from "@/features/digitalTwin/editor/model/undergroundModel";
+import { getGroundViewPresentation, GROUND_VIEW_MODES, normalizeGroundViewMode } from "@/features/digitalTwin/editor/model/undergroundModel";
 import { createTextSprite } from "@/features/digitalTwin/editor/objects/createTextSprite";
 import { getBuildingFootprint } from "@/features/digitalTwin/editor/utils/buildingFootprint";
 import { getStairRenderInstances, getVerticalStructureOpeningForFloor, STAIR_SCOPES } from "@/features/digitalTwin/editor/utils/stairStructure";
@@ -206,6 +206,29 @@ function createGroundViewObject(building, floors, mode) {
   return group;
 }
 
+function applyFloorGroundViewMode(runtime, mode) {
+  const presentation = getGroundViewPresentation(mode);
+  const clippingPlanes = presentation.sectioned
+    ? [new THREE.Plane(new THREE.Vector3(0, 0, -1), 0)]
+    : [];
+  runtime.renderer.localClippingEnabled = presentation.sectioned;
+  runtime.floorLayers.forEach((layers) => {
+    layers.slab.visible = presentation.visible;
+    layers.slab.traverse((object) => {
+      if (!object.material) return;
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      materials.forEach((material) => {
+        material.transparent = presentation.transparent;
+        material.opacity = presentation.opacity;
+        material.depthWrite = presentation.depthWrite;
+        material.clippingPlanes = clippingPlanes;
+        material.clipShadows = presentation.sectioned;
+        material.needsUpdate = true;
+      });
+    });
+  });
+}
+
 function resize(runtime) {
   const { width, height } = runtime.container.getBoundingClientRect();
   if (!width || !height) return;
@@ -273,7 +296,7 @@ export default function FloorPlan3DScene({
     light.shadow.camera.top = 40;
     light.shadow.camera.bottom = -40;
     scene.add(light);
-    const runtime = { container, scene, renderer, camera, controls, transformControls, transformTools: DISABLED_TRANSFORM_TOOLS, groundViewRoot, contentRoot, helperRoot, placementRoot, placementPreview: null, floorPickers: [], floorGroups: new Map(), floorLayers: new Map(), floorOffsetTargets: new Map(), floorGuides: [], stairFloorGuides: [], monitoringFloorGuides: [], light, shadowEnabled: true, floorDisplayGap: 0, selectedFloorId: null };
+    const runtime = { container, scene, renderer, camera, controls, transformControls, transformTools: DISABLED_TRANSFORM_TOOLS, groundViewRoot, contentRoot, helperRoot, placementRoot, placementPreview: null, floorPickers: [], floorGroups: new Map(), floorLayers: new Map(), floorOffsetTargets: new Map(), floorGuides: [], stairFloorGuides: [], monitoringFloorGuides: [], light, shadowEnabled: true, floorDisplayGap: 0, selectedFloorId: null, groundViewMode: GROUND_VIEW_MODES.VISIBLE };
     runtimeRef.current = runtime;
     const raycaster = new THREE.Raycaster();
     const start = new THREE.Vector2();
@@ -446,9 +469,11 @@ export default function FloorPlan3DScene({
   useEffect(() => {
     const runtime = runtimeRef.current;
     if (!runtime) return;
+    runtime.groundViewMode = normalizeGroundViewMode(groundViewMode);
     [...runtime.groundViewRoot.children].forEach(disposeObject3D);
     runtime.groundViewRoot.clear();
-    runtime.groundViewRoot.add(createGroundViewObject(building, floors, normalizeGroundViewMode(groundViewMode)));
+    runtime.groundViewRoot.add(createGroundViewObject(building, floors, runtime.groundViewMode));
+    applyFloorGroundViewMode(runtime, runtime.groundViewMode);
   }, [building, floors, groundViewMode]);
 
   useEffect(() => {
@@ -674,6 +699,7 @@ export default function FloorPlan3DScene({
         allowVerticalTranslation: editMode === "EQUIPMENT",
       });
     }
+    applyFloorGroundViewMode(runtime, runtime.groundViewMode);
     applyShadowPolicy(runtime);
   }, [building, currentFloor, editMode, equipmentByFloorId, equipmentTranslucent, floors, monitoringBindings, monitoringDevices, monitoringMode, observationPoints, selectedEquipmentId, selectedSpatialEntity, selectedStructureId, floorPlansById, theme, verticalStructures, viewScope]);
 

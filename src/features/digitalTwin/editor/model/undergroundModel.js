@@ -16,6 +16,20 @@ export function normalizeGroundViewMode(value) {
   return Object.values(GROUND_VIEW_MODES).includes(value) ? value : GROUND_VIEW_MODES.VISIBLE;
 }
 
+export function getGroundViewPresentation(value, translucentOpacity = 0.28) {
+  const mode = normalizeGroundViewMode(value);
+  const translucent = mode === GROUND_VIEW_MODES.TRANSLUCENT;
+  return {
+    mode,
+    visible: mode !== GROUND_VIEW_MODES.HIDDEN,
+    gridVisible: mode === GROUND_VIEW_MODES.VISIBLE,
+    sectioned: mode === GROUND_VIEW_MODES.SECTION,
+    transparent: translucent,
+    opacity: translucent ? translucentOpacity : 1,
+    depthWrite: !translucent,
+  };
+}
+
 export function getBasementFloorCount(building) {
   return Math.min(20, Math.max(0, Math.round(finite(building?.parameters?.basementFloorCount, 0))));
 }

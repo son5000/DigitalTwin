@@ -545,6 +545,19 @@ export default function useDigitalTwinEditorState() {
   const floorPlanEditor = useFloorPlanState({ buildings, floors, currentBuilding, currentFloor, gridSettings });
   const floorEquipmentEditor = useFloorEquipmentState({ buildings, floors, currentBuilding, currentFloor, gridSettings, floorPlansById: floorPlanEditor.floorPlansById });
   const monitoringEditor = useMonitoringState({ equipment: floorEquipmentEditor.allFloorEquipment });
+  const observationBuildingHasEdits = useMemo(() => {
+    if (observationWorkflow.scopeType !== OBSERVATION_SCOPE_TYPES.BUILDING) return false;
+    const userBuildings = buildings.filter((building) => !building.systemHost);
+    if (!userBuildings.length) return false;
+    if (userBuildings.length > 1 || siteEnvironment.sizeMode === OBSERVATION_SITE_SIZE_MODES.CUSTOM) return true;
+    const building = userBuildings[0];
+    if (building.observationPristine !== true) return true;
+    const floorIds = new Set(floors.filter((floor) => floor.parentId === building.id).map((floor) => floor.id));
+    return [...floorIds].some((floorId) => (
+      Boolean(floorPlanEditor.floorPlansById[floorId])
+      || (floorEquipmentEditor.equipmentByFloorId[floorId]?.length ?? 0) > 0
+    )) || (floorPlanEditor.verticalStructuresByBuildingId[building.id]?.length ?? 0) > 0;
+  }, [buildings, floorEquipmentEditor.equipmentByFloorId, floorPlanEditor.floorPlansById, floorPlanEditor.verticalStructuresByBuildingId, floors, observationWorkflow.scopeType, siteEnvironment.sizeMode]);
   const currentRoomScene = useMemo(() => ({
     version: 4,
     world,
@@ -1185,6 +1198,9 @@ export default function useDigitalTwinEditorState() {
           ...current.nodes.map((node) => node.id === parentId
             ? {
                 ...node,
+                observationPristine: observationWorkflow.scopeType === OBSERVATION_SCOPE_TYPES.BUILDING
+                  ? false
+                  : node.observationPristine,
                 parameters: { ...node.parameters, floorCount: siblingCount + 1 },
               }
             : node),
@@ -1205,7 +1221,7 @@ export default function useDigitalTwinEditorState() {
       selectedNodeId: child.id,
       nodes: [...current.nodes, child],
     }));
-  }, [addRoomToFloor, hierarchy.nodes]);
+  }, [addRoomToFloor, hierarchy.nodes, observationWorkflow.scopeType]);
 
   const addRoom = useCallback(() => {
     const floorId = selectedHierarchyNode?.type === HIERARCHY_NODE_TYPES.FLOOR
@@ -1318,16 +1334,31 @@ export default function useDigitalTwinEditorState() {
   const renameHierarchyNode = useCallback((nodeId, name) => {
     const normalizedName = name.trim();
     if (!normalizedName) return;
-    setHierarchy((current) => ({
-      ...current,
-      nodes: current.nodes.map((node) => node.id === nodeId ? { ...node, name: normalizedName } : node),
-    }));
-  }, []);
+    setHierarchy((current) => {
+      const building = findHierarchyAncestor(current.nodes, nodeId, HIERARCHY_NODE_TYPES.BUILDING);
+      return {
+        ...current,
+        nodes: current.nodes.map((node) => {
+          if (node.id === nodeId) return { ...node, name: normalizedName };
+          if (node.id === building?.id && observationWorkflow.scopeType === OBSERVATION_SCOPE_TYPES.BUILDING) {
+            return { ...node, observationPristine: false };
+          }
+          return node;
+        }),
+      };
+    });
+  }, [observationWorkflow.scopeType]);
 
   const updateHierarchyNode = useCallback((nodeId, changes) => {
-    setHierarchy((current) => ({
-      ...current,
-      nodes: current.nodes.map((node) => {
+    setHierarchy((current) => {
+      const building = findHierarchyAncestor(current.nodes, nodeId, HIERARCHY_NODE_TYPES.BUILDING);
+      return {
+        ...current,
+        nodes: current.nodes.map((node) => {
+        if (node.id === building?.id && node.id !== nodeId
+          && observationWorkflow.scopeType === OBSERVATION_SCOPE_TYPES.BUILDING) {
+          return { ...node, observationPristine: false };
+        }
         if (node.id !== nodeId) return node;
 
         const parameters = changes.parameters
@@ -1339,7 +1370,7 @@ export default function useDigitalTwinEditorState() {
             }))
           : node.parameters;
 
-        return {
+        const updated = {
           ...node,
           ...changes,
           parameters,
@@ -1347,9 +1378,14 @@ export default function useDigitalTwinEditorState() {
           rotation: changes.rotation ? { ...node.rotation, ...changes.rotation } : node.rotation,
           appearance: changes.appearance ? { ...node.appearance, ...changes.appearance } : node.appearance,
         };
+        return observationWorkflow.scopeType === OBSERVATION_SCOPE_TYPES.BUILDING
+          && node.type === HIERARCHY_NODE_TYPES.BUILDING
+          ? { ...updated, observationPristine: false }
+          : updated;
       }),
-    }));
-  }, []);
+      };
+    });
+  }, [observationWorkflow.scopeType]);
 
   const addBuildingFromArea = useCallback((area, templateId = "BUILDING", variantOverrides = {}) => {
     const siblingCount = hierarchy.nodes.filter(
@@ -1363,6 +1399,9 @@ export default function useDigitalTwinEditorState() {
       variantOverrides,
     });
     if (!created) return null;
+    if (observationWorkflow.scopeType === OBSERVATION_SCOPE_TYPES.BUILDING) {
+      created.building = { ...created.building, observationPristine: true };
+    }
     const hasUserBuilding = hierarchy.nodes.some(
       (node) => node.type === HIERARCHY_NODE_TYPES.BUILDING && !node.systemHost,
     );
@@ -1388,6 +1427,71 @@ export default function useDigitalTwinEditorState() {
     return created.building.id;
   }, [hierarchy.nodes, hierarchy.rootId, observationWorkflow.scopeType, siteEnvironment]);
 
+  const replaceObservationBuildingFromArea = useCallback((area, templateId = "BUILDING", variantOverrides = {}) => {
+    if (observationWorkflow.scopeType !== OBSERVATION_SCOPE_TYPES.BUILDING) return null;
+    const existingBuildings = hierarchy.nodes.filter(
+      (node) => node.type === HIERARCHY_NODE_TYPES.BUILDING && !node.systemHost,
+    );
+    if (!existingBuildings.length) return addBuildingFromArea(area, templateId, variantOverrides);
+    const created = createBuildingDefinitionFromArea({
+      rootId: hierarchy.rootId,
+      siblingIndex: 0,
+      area,
+      templateId,
+      variantOverrides,
+    });
+    if (!created) return null;
+    created.building = { ...created.building, observationPristine: true };
+    const removedNodeIds = new Set(existingBuildings.flatMap((building) => [
+      ...getHierarchyDescendantIds(hierarchy.nodes, building.id),
+    ]));
+    const removedFloorIds = hierarchy.nodes
+      .filter((node) => removedNodeIds.has(node.id) && node.type === HIERARCHY_NODE_TYPES.FLOOR)
+      .map((node) => node.id);
+    const removedFloorIdSet = new Set(removedFloorIds);
+    const removedEquipmentIds = Object.entries(floorEquipmentEditor.equipmentByFloorId)
+      .filter(([floorId]) => removedFloorIdSet.has(floorId))
+      .flatMap(([, items]) => items.map((item) => item.id));
+    const removedRoomIds = hierarchy.nodes
+      .filter((node) => removedNodeIds.has(node.id) && node.type === HIERARCHY_NODE_TYPES.ROOM)
+      .map((node) => node.id);
+    const nextSiteEnvironment = normalizeSiteEnvironment({
+      ...siteEnvironment,
+      ...calculateObservationSiteSize(created.building),
+      sizeMode: OBSERVATION_SITE_SIZE_MODES.AUTO_BUILDING,
+      autoFitBuildingId: created.building.id,
+    });
+    created.building = clampBuildingToSite(created.building, nextSiteEnvironment).entity;
+    existingBuildings.forEach((building) => {
+      const buildingFloorIds = hierarchy.nodes
+        .filter((node) => node.type === HIERARCHY_NODE_TYPES.FLOOR && node.parentId === building.id)
+        .map((node) => node.id);
+      floorPlanEditor.actions.removeBuildingFloorPlanData(building.id, buildingFloorIds);
+    });
+    floorEquipmentEditor.actions.removeFloorEquipmentData(removedFloorIds);
+    monitoringEditor.actions.removeEquipmentMonitoringData(removedEquipmentIds);
+    setRoomScenes((scenes) => Object.fromEntries(
+      Object.entries(scenes).filter(([roomId]) => !removedRoomIds.includes(roomId)),
+    ));
+    setSiteObjects((items) => items.filter((item) => (
+      !existingBuildings.some((building) => item.placement?.buildingId === building.id
+        || item.undergroundConnection?.targetBuildingId === building.id)
+    )));
+    setSiteEnvironment(nextSiteEnvironment);
+    setHierarchy((current) => ({
+      ...current,
+      activeRoomId: removedNodeIds.has(current.activeRoomId) ? null : current.activeRoomId,
+      selectedNodeId: created.building.id,
+      nodes: [
+        ...current.nodes.filter((node) => !removedNodeIds.has(node.id)),
+        created.building,
+        ...created.floors,
+      ],
+    }));
+    setSelectedSiteObjectId(null);
+    return created.building.id;
+  }, [addBuildingFromArea, floorEquipmentEditor.actions, floorEquipmentEditor.equipmentByFloorId, floorPlanEditor.actions, hierarchy.nodes, hierarchy.rootId, monitoringEditor.actions, observationWorkflow.scopeType, siteEnvironment]);
+
   const updateBuilding = useCallback((buildingId, changes) => {
     const building = hierarchy.nodes.find(
       (node) => node.id === buildingId && node.type === HIERARCHY_NODE_TYPES.BUILDING,
@@ -1403,7 +1507,9 @@ export default function useDigitalTwinEditorState() {
         })
       : siteEnvironment;
     const clampResult = clampBuildingToSite(mergedBuilding, nextSiteEnvironment);
-    const nextBuilding = clampResult.entity;
+    const nextBuilding = observationWorkflow.scopeType === OBSERVATION_SCOPE_TYPES.BUILDING
+      ? { ...clampResult.entity, observationPristine: false }
+      : clampResult.entity;
     if (
       nextSiteEnvironment.width !== siteEnvironment.width
       || nextSiteEnvironment.depth !== siteEnvironment.depth
@@ -1500,7 +1606,7 @@ export default function useDigitalTwinEditorState() {
     if (activeRoomRemoved) {
       applyRoomScene(nextActiveRoomId ? roomScenes[nextActiveRoomId] ?? createDefaultRoomScene() : createDefaultRoomScene());
     }
-  }, [applyRoomScene, currentRoomScene, hierarchy, roomScenes, siteEnvironment]);
+  }, [applyRoomScene, currentRoomScene, hierarchy, observationWorkflow.scopeType, roomScenes, siteEnvironment]);
 
   const addSiteObjectFromArea = useCallback((templateId, area, variantOverrides = {}) => {
     const definition = OBJECT_LIBRARY_DEFINITION_MAP[templateId];
@@ -1804,7 +1910,13 @@ export default function useDigitalTwinEditorState() {
         ]);
         nextNodes = nextNodes.map((node) => {
           if (node.id === targetNode.parentId) {
-            return { ...node, parameters: { ...node.parameters, floorCount: aboveFloors.length, basementFloorCount: basementFloors.length } };
+            return {
+              ...node,
+              observationPristine: observationWorkflow.scopeType === OBSERVATION_SCOPE_TYPES.BUILDING
+                ? false
+                : node.observationPristine,
+              parameters: { ...node.parameters, floorCount: aboveFloors.length, basementFloorCount: basementFloors.length },
+            };
           }
           const update = floorUpdates.get(node.id);
           return update ? { ...node, ...update } : node;
@@ -1818,7 +1930,7 @@ export default function useDigitalTwinEditorState() {
         nodes: nextNodes,
       };
     });
-  }, [hierarchy.nodes, hierarchy.rootId, protectedHierarchyNodeIds, roomScenes]);
+  }, [hierarchy.nodes, hierarchy.rootId, observationWorkflow.scopeType, protectedHierarchyNodeIds, roomScenes]);
 
   const selectTemplate = useCallback(
     (templateId) => {
@@ -2112,6 +2224,7 @@ export default function useDigitalTwinEditorState() {
     hierarchy,
     observationWorkflow,
     viewerPreset,
+    observationBuildingHasEdits,
     hierarchyPath,
     rooms,
     activeRoom,
@@ -2229,6 +2342,7 @@ export default function useDigitalTwinEditorState() {
       renameHierarchyNode,
       updateHierarchyNode,
       addBuildingFromArea,
+      replaceObservationBuildingFromArea,
       updateBuilding,
       addSiteObjectFromArea,
       addSiteObjectsFromArea,

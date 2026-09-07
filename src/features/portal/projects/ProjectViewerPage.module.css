@@ -1,0 +1,32 @@
+.world { min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--portal-bg); }
+.toolbar { min-height: 58px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 18px; border-bottom: 1px solid var(--portal-border); background: var(--portal-header); }
+.toolbar button { min-height: 34px; padding: 0 12px; border: 1px solid var(--portal-border); border-radius: 7px; background: var(--portal-surface); color: var(--portal-muted); font-size: 11px; }
+.toolbar button:hover { color: var(--portal-text); border-color: var(--portal-blue); }
+.viewModes { display: flex; gap: 5px; }
+.viewModes strong { color: var(--portal-text); font-size: 12px; }
+.viewModes button[aria-pressed="true"] { color: var(--portal-text); border-color: var(--portal-blue); background: color-mix(in srgb, var(--portal-blue) 16%, var(--portal-panel)); }
+.scene { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+.scene > section { width: 100%; height: 100%; }
+.worldFooter { min-height: 38px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 18px; border-top: 1px solid var(--portal-border); color: var(--portal-muted); background: var(--portal-header); font-size: 10px; }
+.worldFooter span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inventory { flex-shrink: 0; margin-bottom: 16px; }
+.summaryGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.summaryGrid > div { padding: 10px; border-radius: 7px; background: var(--portal-surface); }
+.summaryGrid dt { color: var(--portal-muted); font-size: 10px; }
+.summaryGrid dd { margin: 5px 0 0; color: var(--portal-text); font-size: 19px; font-weight: 600; }
+.empty { margin: 12px 0; padding: 0 8px; color: var(--portal-muted); font-size: 11px; line-height: 1.7; }
+.scene > .empty { padding: 24px; }
+.dataStatus { display: flex; align-items: flex-start; gap: 10px; margin-top: 18px; padding: 12px; border: 1px solid var(--portal-border); border-radius: 8px; background: var(--portal-surface); }
+.dataStatus > i { width: 7px; height: 7px; flex: 0 0 7px; margin-top: 6px; border-radius: 50%; background: var(--portal-muted); }
+.dataStatus strong { color: var(--portal-text); font-size: 11px; }
+.dataStatus p { margin: 5px 0 0; color: var(--portal-muted); font-size: 10px; line-height: 1.6; }
+.trendEmpty { display: grid; place-items: center; min-height: 104px; margin-top: 14px; padding: 12px; border: 1px dashed var(--portal-border); border-radius: 8px; color: var(--portal-muted); font-size: 11px; text-align: center; }
+.sensorList { display: grid; gap: 6px; margin: 12px 0 0; padding: 0; list-style: none; }
+.sensorList button { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; padding: 9px; border: 1px solid transparent; border-radius: 7px; text-align: left; }
+.sensorList button:hover { background: var(--portal-surface); }
+.sensorList button[aria-pressed="true"] { border-color: var(--portal-blue); background: var(--portal-surface); }
+.sensorList span { min-width: 0; color: var(--portal-text); font-size: 11px; overflow-wrap: anywhere; }
+.sensorList small { display: block; margin-top: 3px; color: var(--portal-muted); font-size: 9px; }
+.sensorList em { flex-shrink: 0; color: var(--portal-muted); font-size: 9px; font-style: normal; }
+@media (max-width: 800px) { .world { height: 100%; } .toolbar { padding-inline: 12px; gap: 8px; } .worldFooter { padding-inline: 12px; } }
+@media (max-width: 460px) { .toolbar button { padding-inline: 8px; font-size: 10px; } .worldFooter span:last-child { display: none; } }
