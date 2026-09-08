@@ -115,6 +115,9 @@ export function createSiteObjectFromArea(templateId, area, sequence = 1, variant
     rotation: { x: 0, y: 0, z: 0 },
     dimensions: { width, height: template.height, depth },
     appearance: { color: template.color, material: template.material },
+    customAssetId: template.customAssetId ?? null,
+    customAssetRevision: template.customAssetRevision ?? null,
+    customAssetSnapshot: template.customAsset ? structuredClone(template.customAsset) : null,
     placementRules: template.placementRules ? structuredClone(template.placementRules) : null,
     placement: template.placementRules ? { mode: null, buildingId: null, localPosition: null } : null,
     parameters: {
@@ -154,6 +157,9 @@ export function normalizeSiteObject(object, index = 0) {
     rotation: { x: 0, y: 0, z: 0, ...object.rotation },
     dimensions: { width, height: Math.max(0.02, finite(object.dimensions?.height, template.height)), depth },
     appearance: { color: template.color, material: template.material, ...object.appearance },
+    customAssetId: object.customAssetId ?? template.customAssetId ?? null,
+    customAssetRevision: object.customAssetRevision ?? template.customAssetRevision ?? null,
+    customAssetSnapshot: object.customAssetSnapshot ?? (template.customAsset ? structuredClone(template.customAsset) : null),
     placementRules: template.placementRules ? { ...template.placementRules, ...object.placementRules } : null,
     placement: template.placementRules ? { mode: null, buildingId: null, localPosition: null, ...object.placement } : null,
     parameters: {

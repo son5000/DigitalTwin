@@ -1,5 +1,8 @@
 import * as THREE from "three";
 
+import { createCustomEquipmentGroup } from "@/features/customAssets/equipment/customEquipmentRenderer";
+import { getRuntimeCustomAsset } from "@/features/customAssets/core/customAssetRegistry";
+
 import {
   MAX_TREE_COUNT,
   TREE_DEFAULT_SPACING,
@@ -1587,6 +1590,7 @@ export function createSiteEnvironmentObject(object, {
   group.userData.siteObjectId = object.id;
   const material = materialFor(object, selected);
   const resolvedEdge = selected ? selectionColor : edgeColor;
+  const customAsset = object.customAssetId ? getRuntimeCustomAsset(object.customAssetId) ?? object.customAssetSnapshot : null;
 
   const generators = {
     BUILDING: () => addEnvironmentBuilding(group, object, material, resolvedEdge),
@@ -1605,6 +1609,14 @@ export function createSiteEnvironmentObject(object, {
     PIPE_TANK: () => addPipeTank(group, object, material, resolvedEdge),
     PARKING: () => addParkingFacility(group, object, material, resolvedEdge),
     OUTDOOR_EQUIPMENT: () => addOutdoorEquipment(group, object, resolvedEdge),
+    CUSTOM_EQUIPMENT: () => {
+      if (!customAsset) return;
+      group.add(createCustomEquipmentGroup(customAsset, { equipmentId: object.id, edgeColor: resolvedEdge, selectionColor, scale: {
+        x: object.dimensions.width / Math.max(0.01, customAsset.bounds.width),
+        y: object.dimensions.height / Math.max(0.01, customAsset.bounds.height),
+        z: object.dimensions.depth / Math.max(0.01, customAsset.bounds.depth),
+      } }));
+    },
     SURFACE: () => {
       if (object.profile === "ROAD") addRoadPath(group, object, material, pathRenderContext);
       else if (object.profile === "WALKWAY") addWalkwayPath(group, object, material, pathRenderContext);

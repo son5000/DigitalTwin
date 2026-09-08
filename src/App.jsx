@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 
 import CustomBuildingEditorPage from "@/features/customAssets/building/CustomBuildingEditorPage";
 import "@/features/customAssets/building/registerBuildingAssetType";
+import CustomEquipmentEditorPage from "@/features/customAssets/equipment/CustomEquipmentEditorPage";
+import "@/features/customAssets/equipment/registerEquipmentAssetType";
 import { CustomAssetProvider } from "@/features/customAssets/components/CustomAssetProvider";
 import { useCustomAssets } from "@/features/customAssets/components/customAssetContext";
 import CustomWorkshopPage from "@/features/customAssets/components/CustomWorkshopPage";
@@ -31,10 +33,13 @@ function AppRoute() {
     const projectId = new URLSearchParams(search).get("project");
     return projectId ? <ProjectViewerPage key={projectId} projectId={projectId} /> : <ObservationPage />;
   }
-  if (pathname === "/custom" || pathname === "/custom/" || pathname === "/custom/buildings" || pathname === "/custom/buildings/") return <CustomWorkshopPage />;
+  if (pathname === "/custom" || pathname === "/custom/" || pathname === "/custom/buildings" || pathname === "/custom/buildings/" || pathname === "/custom/equipment" || pathname === "/custom/equipment/") return <CustomWorkshopPage />;
   if (pathname === "/custom/buildings/new") return <CustomBuildingEditorPage />;
   const editMatch = pathname.match(/^\/custom\/buildings\/([^/]+)\/edit\/?$/);
   if (editMatch) return <CustomBuildingEditorPage assetId={decodeURIComponent(editMatch[1])} />;
+  if (pathname === "/custom/equipment/new") return <CustomEquipmentEditorPage />;
+  const equipmentEditMatch = pathname.match(/^\/custom\/equipment\/([^/]+)\/edit\/?$/);
+  if (equipmentEditMatch) return <CustomEquipmentEditorPage assetId={decodeURIComponent(equipmentEditMatch[1])} />;
   if (pathname === "/editor" || pathname === "/editor/") return <DigitalTwinEditorPage customAssetRevision={revision} />;
   return <DigitalTwinEditorPage customAssetRevision={revision} />;
 }

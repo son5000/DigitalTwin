@@ -57,6 +57,9 @@ export function createTemplateInstanceDefaults(template) {
   return {
     domain: template.domain,
     category: template.category,
+    customAssetId: template.customAssetId ?? null,
+    customAssetRevision: template.customAssetRevision ?? null,
+    customAssetSnapshot: template.customAsset ? structuredClone(template.customAsset) : null,
     parameters,
     dimensions: getDimensionsFromParameters(template, parameters),
     appearance: { ...template.defaultAppearance },
@@ -104,5 +107,8 @@ export function normalizeEquipmentInstance(equipment, template) {
     visible: equipment.visible ?? true,
     locked: equipment.locked ?? false,
     showNameLabel: equipment.showNameLabel === true,
+    customAssetId: equipment.customAssetId ?? template.customAssetId ?? null,
+    customAssetRevision: equipment.customAssetRevision ?? template.customAssetRevision ?? null,
+    customAssetSnapshot: equipment.customAssetSnapshot ?? (template.customAsset ? structuredClone(template.customAsset) : null),
   };
 }

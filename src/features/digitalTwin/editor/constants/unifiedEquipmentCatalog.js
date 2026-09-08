@@ -3,8 +3,14 @@ import {
   EQUIPMENT_SHAPE_TEMPLATES,
 } from "./equipmentShapeTemplates.js";
 import { OBJECT_LIBRARY_DEFINITIONS } from "./objectLibraryCatalog.js";
+import {
+  CUSTOM_EQUIPMENT_CREATE_DEFINITION,
+  getRuntimeCustomEquipmentDefinition,
+  listRuntimeCustomEquipmentDefinitions,
+} from "@/features/customAssets/core/customAssetRegistry";
 
 export const UNIFIED_EQUIPMENT_CATEGORY_IDS = Object.freeze({
+  CUSTOM: "CUSTOM",
   ELECTRICAL: "ELECTRICAL",
   HVAC: "HVAC",
   PIPE_WATER: "PIPE_WATER",
@@ -15,6 +21,7 @@ export const UNIFIED_EQUIPMENT_CATEGORY_IDS = Object.freeze({
 });
 
 export const UNIFIED_EQUIPMENT_CATEGORIES = Object.freeze([
+  ["CUSTOM", "커스텀"],
   ["ELECTRICAL", "전기"],
   ["HVAC", "공조·환기"],
   ["PIPE_WATER", "배관·탱크·수처리"],
@@ -215,12 +222,17 @@ const templateEntries = UNIFIED_EQUIPMENT_TEMPLATES.flatMap((template) => [
   }),
 ]);
 
-export const UNIFIED_EQUIPMENT_TEMPLATE_MAP = Object.freeze(Object.fromEntries(templateEntries));
+const STATIC_UNIFIED_EQUIPMENT_TEMPLATE_MAP = Object.freeze(Object.fromEntries(templateEntries));
+export const UNIFIED_EQUIPMENT_TEMPLATE_MAP = new Proxy(STATIC_UNIFIED_EQUIPMENT_TEMPLATE_MAP, {
+  get(target, property, receiver) { return Reflect.get(target, property, receiver) ?? (property === CUSTOM_EQUIPMENT_CREATE_DEFINITION.id ? CUSTOM_EQUIPMENT_CREATE_DEFINITION : typeof property === "string" ? getRuntimeCustomEquipmentDefinition(property) : undefined); },
+  has(target, property) { return Reflect.has(target, property) || property === CUSTOM_EQUIPMENT_CREATE_DEFINITION.id || (typeof property === "string" && Boolean(getRuntimeCustomEquipmentDefinition(property))); },
+});
 
 export function getUnifiedEquipmentTemplates(allowedIds) {
-  if (!allowedIds?.length) return UNIFIED_EQUIPMENT_TEMPLATES;
+  const templates = [CUSTOM_EQUIPMENT_CREATE_DEFINITION, ...listRuntimeCustomEquipmentDefinitions(), ...UNIFIED_EQUIPMENT_TEMPLATES];
+  if (!allowedIds?.length) return templates;
   const allowed = new Set(allowedIds);
-  return UNIFIED_EQUIPMENT_TEMPLATES.filter((template) => allowed.has(template.id) || template.aliases.some((id) => allowed.has(id)));
+  return templates.filter((template) => template.id === CUSTOM_EQUIPMENT_CREATE_DEFINITION.id || allowed.has(template.id) || template.aliases?.some((id) => allowed.has(id)));
 }
 
 export function resolveUnifiedEquipmentTemplateId(templateId) {

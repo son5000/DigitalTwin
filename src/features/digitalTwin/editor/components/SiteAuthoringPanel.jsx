@@ -21,7 +21,7 @@ export default function SiteAuthoringPanel({
 }) {
   const activeTemplate = OBJECT_LIBRARY_DEFINITION_MAP[activeTemplateId] ?? UNIFIED_EQUIPMENT_TEMPLATE_MAP[activeTemplateId];
   const sourceTemplates = getObjectLibraryDefinitions(allowedTemplateIds);
-  const equipmentCategoryIds = new Set(["INDUSTRIAL_EQUIPMENT", "ELECTRICAL_EQUIPMENT", "SAFETY_FACILITY", "PIPE_TANK", "OUTDOOR_EQUIPMENT"]);
+  const equipmentCategoryIds = new Set(["EQUIPMENT", "INDUSTRIAL_EQUIPMENT", "ELECTRICAL_EQUIPMENT", "SAFETY_FACILITY", "PIPE_TANK", "OUTDOOR_EQUIPMENT"]);
   const templates = [
     ...sourceTemplates.filter((template) => !equipmentCategoryIds.has(template.categoryId)),
     ...getUnifiedEquipmentTemplates(allowedTemplateIds),

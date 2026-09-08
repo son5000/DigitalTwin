@@ -1,5 +1,7 @@
 import * as THREE from "three";
 
+import { createCustomEquipmentGroup } from "@/features/customAssets/equipment/customEquipmentRenderer";
+import { getRuntimeCustomAsset } from "@/features/customAssets/core/customAssetRegistry";
 import { UNIFIED_EQUIPMENT_TEMPLATE_MAP } from "@/features/digitalTwin/editor/constants/unifiedEquipmentCatalog";
 import { SCENE_THEMES } from "@/features/digitalTwin/editor/constants/sceneThemes";
 import { generateBasicShape } from "@/features/digitalTwin/editor/generators/BasicShapeGenerator";
@@ -32,6 +34,7 @@ export function getEquipmentGeometrySignature(
 ) {
   return [
     equipment.shapeTemplateId,
+    equipment.customAssetRevision,
     equipment.name,
     equipment.showNameLabel === true,
     JSON.stringify(equipment.dimensions),
@@ -50,6 +53,7 @@ export function getEquipmentGeometrySignature(
 export function getEquipmentBatchKey(equipment, { theme = "dark", viewerTranslucent = true } = {}) {
   return [
     equipment.shapeTemplateId,
+    equipment.customAssetRevision,
     equipment.showNameLabel === true,
     JSON.stringify(equipment.dimensions),
     JSON.stringify(equipment.parameters),
@@ -79,7 +83,17 @@ export function createEquipmentObject(
   const appearance = dimmed
     ? { ...sourceAppearance, opacity: Math.max(0.08, (sourceAppearance.opacity ?? 1) * 0.5) }
     : sourceAppearance;
-  const visual = generator({
+  const customAsset = equipment.customAssetId ? getRuntimeCustomAsset(equipment.customAssetId) ?? equipment.customAssetSnapshot ?? template?.customAsset : null;
+  const visual = customAsset ? createCustomEquipmentGroup(customAsset, {
+    equipmentId: equipment.id,
+    edgeColor,
+    selectionColor: sceneTheme.selection,
+    scale: {
+      x: equipment.dimensions.width / Math.max(0.01, customAsset.bounds.width),
+      y: equipment.dimensions.height / Math.max(0.01, customAsset.bounds.height),
+      z: equipment.dimensions.depth / Math.max(0.01, customAsset.bounds.depth),
+    },
+  }) : generator({
     type: equipment.shapeTemplateId,
     profile: template?.profile,
     dimensions: equipment.dimensions,

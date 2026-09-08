@@ -53,6 +53,14 @@ const PANEL_TOOL_CONFIG = {
       { id: WORLD_PANEL_IDS.DETAILS, label: "선택 요소 설정", iconKey: "details", requiresSelection: true },
     ],
   },
+  CUSTOM_EQUIPMENT: {
+    leading: [{ id: WORLD_PANEL_IDS.OBJECTS, label: "부품 라이브러리", iconKey: "equipment" }],
+    secondary: [{ id: WORLD_PANEL_IDS.OBJECT_LIST, label: "내부 구성", iconKey: "object-list" }],
+    trailing: [
+      { id: WORLD_PANEL_IDS.SETTINGS, label: "설비 설정", iconKey: "settings" },
+      { id: WORLD_PANEL_IDS.DETAILS, label: "선택 부품 설정", iconKey: "details", requiresSelection: true },
+    ],
+  },
 };
 
 const MOVE_AXIS_UI = Object.freeze({
@@ -262,6 +270,7 @@ export default function EditorToolbar({
   viewerTranslucent,
   viewerTransparencyLabel = "반투명 보기",
   showSelectionActions = false,
+  showGridSnapControl = true,
   showSiteInteractionTools = false,
   showMovementPathTool = false,
   showBuildingIsolationToggle = false,
@@ -327,7 +336,7 @@ export default function EditorToolbar({
 
     return (
       <nav className={styles.toolbar} aria-label={`${hierarchyScopeLabel} 도구`}>
-        {panelTools.leading.length ? <ToolbarGroup label="기타 설정">{panelTools.leading.map((tool) => renderPanelTool(tool))}</ToolbarGroup> : null}
+        {panelTools.leading.length ? <ToolbarGroup label={panelMode === "CUSTOM_EQUIPMENT" ? "설비 도구" : "기타 설정"}>{panelTools.leading.map((tool) => renderPanelTool(tool))}</ToolbarGroup> : null}
         {panelTools.leading.length ? <ToolbarDivider /> : null}
         <ToolbarGroup label="선택·변형">
           {showSiteInteractionTools ? <ToolbarButton
@@ -377,14 +386,13 @@ export default function EditorToolbar({
             ) : null}
           </ToolbarGroup></>
         ) : null}
-        {panelTools.trailing.length ? <><ToolbarDivider /><ToolbarGroup label="층·건축물">{panelTools.trailing.map((tool) => renderPanelTool(tool))}</ToolbarGroup></> : null}
+        {panelTools.trailing.length ? <><ToolbarDivider /><ToolbarGroup label={panelMode === "CUSTOM_EQUIPMENT" ? "설비 설정" : "층·건축물"}>{panelTools.trailing.map((tool) => renderPanelTool(tool))}</ToolbarGroup></> : null}
         <ToolbarDivider />
         <ToolbarGroup label="편집 이력">
           <ToolbarButton actionId={TOOLBAR_ACTION_IDS.UNDO} disabled={!canUndo} disabledReason="되돌릴 작업이 없습니다" onClick={onUndo} />
           <ToolbarButton actionId={TOOLBAR_ACTION_IDS.REDO} disabled={!canRedo} disabledReason="다시 실행할 작업이 없습니다" onClick={onRedo} />
         </ToolbarGroup>
-        <ToolbarDivider />
-        <GridSnapControl enabled={gridSnapEnabled} snapSize={snapSize} onToggle={onGridSnapChange} onSnapSizeChange={onSnapSizeChange} />
+        {showGridSnapControl ? <><ToolbarDivider /><GridSnapControl enabled={gridSnapEnabled} snapSize={snapSize} onToggle={onGridSnapChange} onSnapSizeChange={onSnapSizeChange} /></> : null}
         <ToolbarDivider />
         <OverflowActions
           hasSelection={hasSelection}

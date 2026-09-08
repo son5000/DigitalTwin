@@ -1,9 +1,9 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import {
   UNIFIED_EQUIPMENT_CATEGORIES,
   UNIFIED_EQUIPMENT_TEMPLATE_MAP,
-  UNIFIED_EQUIPMENT_TEMPLATES,
+  getUnifiedEquipmentTemplates,
 } from "@/features/digitalTwin/editor/constants/unifiedEquipmentCatalog";
 import {
   AddIcon,
@@ -66,16 +66,13 @@ export default function EquipmentLibrary({
   const [categoryId, setCategoryId] = useState("ALL");
   const [viewMode, setViewMode] = useState("grid");
   const normalizedQuery = query.trim().toLocaleLowerCase("ko-KR");
-  const filteredTemplates = useMemo(
-    () => UNIFIED_EQUIPMENT_TEMPLATES.filter((template) => {
+  const filteredTemplates = getUnifiedEquipmentTemplates().filter((template) => {
       const matchesCategory = categoryId === "ALL" || template.category === categoryId;
       const searchText = [template.name, template.nameKo, template.id, ...template.keywords]
         .join(" ")
         .toLocaleLowerCase("ko-KR");
       return matchesCategory && (!normalizedQuery || searchText.includes(normalizedQuery));
-    }),
-    [categoryId, normalizedQuery],
-  );
+    });
   const favoriteTemplates = favoriteTemplateIds
     .map((id) => UNIFIED_EQUIPMENT_TEMPLATE_MAP[id])
     .filter(Boolean);

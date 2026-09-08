@@ -1,5 +1,6 @@
 import { CUSTOM_ASSET_SCHEMA_VERSION, CUSTOM_ASSET_STATUS, CUSTOM_ASSET_TYPES } from "./customAssetTypes.js";
 import { normalizeBuildingAssembly } from "../building/buildingAssembly.js";
+import { normalizeCustomEquipment } from "../equipment/customEquipmentModel.js";
 
 export function migrateCustomAsset(source) {
   if (!source || typeof source !== "object" || !source.id) return null;
@@ -16,5 +17,7 @@ export function migrateCustomAsset(source) {
     createdAt: source.createdAt ?? now,
     updatedAt: source.updatedAt ?? now,
   };
-  return migrated.type === CUSTOM_ASSET_TYPES.BUILDING ? normalizeBuildingAssembly(migrated) : migrated;
+  if (migrated.type === CUSTOM_ASSET_TYPES.BUILDING) return normalizeBuildingAssembly(migrated);
+  if (migrated.type === CUSTOM_ASSET_TYPES.EQUIPMENT) return normalizeCustomEquipment(migrated);
+  return migrated;
 }

@@ -6,6 +6,7 @@ import {
 import { EQUIPMENT_MATERIAL_PRESET_IDS } from "@/features/digitalTwin/editor/constants/materialPresets";
 import { degreesToRadians, radiansToDegrees } from "@/features/digitalTwin/editor/utils/editorMath";
 import { ComponentIcon, DeleteIcon, EnterIcon, EquipmentIcon, SnapIcon } from "@/components/icons";
+import { getCustomEquipmentEditPath, navigateTo } from "@/features/customAssets/core/customAssetNavigation";
 
 import NumericField from "./NumericField";
 import MaterialAppearanceEditor from "./MaterialAppearanceEditor";
@@ -126,6 +127,8 @@ export default function EquipmentProperties({
   return (
     <section className={styles.properties}>
       {hasCollision && <div className={styles.warning}>다른 설비와 겹쳐 있습니다.</div>}
+
+      {equipment.customAssetId ? <button type="button" className={styles.partEditorButton} onClick={() => navigateTo(getCustomEquipmentEditPath(equipment.customAssetId))}><ComponentIcon size={16} /> 커스텀 설비 수정</button> : null}
 
       <PropertySection title="기본 정보" summary={template.nameKo} defaultOpen>
         <label className={styles.textField}>

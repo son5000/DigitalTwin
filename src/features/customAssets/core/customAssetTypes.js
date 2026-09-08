@@ -16,6 +16,8 @@ export const CUSTOM_ASSET_STATUS = Object.freeze({
 export const CUSTOM_ASSET_PROJECT_ID = "digital-twin-local";
 export const CUSTOM_BUILDING_TEMPLATE_PREFIX = "CUSTOM_BUILDING:";
 export const CUSTOM_BUILDING_CREATE_ID = "CUSTOM_BUILDING_CREATE";
+export const CUSTOM_EQUIPMENT_TEMPLATE_PREFIX = "CUSTOM_EQUIPMENT:";
+export const CUSTOM_EQUIPMENT_CREATE_ID = "CUSTOM_EQUIPMENT_CREATE";
 
 export function createCustomAssetId(type = CUSTOM_ASSET_TYPES.BUILDING) {
   return `${type}-${crypto.randomUUID()}`;
@@ -25,10 +27,15 @@ export function customBuildingTemplateId(assetId) {
   return `${CUSTOM_BUILDING_TEMPLATE_PREFIX}${assetId}`;
 }
 
+export function customEquipmentTemplateId(assetId) {
+  return `${CUSTOM_EQUIPMENT_TEMPLATE_PREFIX}${assetId}`;
+}
+
 export function getCustomAssetIdFromTemplate(templateId) {
-  return String(templateId ?? "").startsWith(CUSTOM_BUILDING_TEMPLATE_PREFIX)
-    ? String(templateId).slice(CUSTOM_BUILDING_TEMPLATE_PREFIX.length)
-    : null;
+  const value = String(templateId ?? "");
+  if (value.startsWith(CUSTOM_BUILDING_TEMPLATE_PREFIX)) return value.slice(CUSTOM_BUILDING_TEMPLATE_PREFIX.length);
+  if (value.startsWith(CUSTOM_EQUIPMENT_TEMPLATE_PREFIX)) return value.slice(CUSTOM_EQUIPMENT_TEMPLATE_PREFIX.length);
+  return null;
 }
 
 export function cloneCustomAsset(asset) {

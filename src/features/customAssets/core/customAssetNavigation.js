@@ -7,3 +7,7 @@ export function navigateTo(path) {
 export function getCustomBuildingEditPath(assetId) {
   return `/custom/buildings/${encodeURIComponent(assetId)}/edit`;
 }
+
+export function getCustomEquipmentEditPath(assetId) {
+  return `/custom/equipment/${encodeURIComponent(assetId)}/edit`;
+}

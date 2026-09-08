@@ -8,12 +8,14 @@ import {
   WorldStructureTypeIcon,
 } from "@/components/icons";
 import CatalogCategoryThumbnail from "@/features/digitalTwin/editor/components/CatalogCategoryThumbnail";
+import { navigateTo } from "@/features/customAssets/core/customAssetNavigation";
+import { CUSTOM_EQUIPMENT_CREATE_ID } from "@/features/customAssets/core/customAssetTypes";
 import { ObjectLibrarySearch } from "@/features/digitalTwin/editor/components/ObjectLibrary";
 import ObjectModelThumbnail from "@/features/digitalTwin/editor/components/ObjectModelThumbnail";
 import {
   UNIFIED_EQUIPMENT_CATEGORIES,
   UNIFIED_EQUIPMENT_TEMPLATE_MAP,
-  UNIFIED_EQUIPMENT_TEMPLATES,
+  getUnifiedEquipmentTemplates,
 } from "@/features/digitalTwin/editor/constants/unifiedEquipmentCatalog";
 import {
   WORLD_STRUCTURE_GROUPS,
@@ -34,13 +36,13 @@ function matchesQuery(definition, normalizedQuery) {
 }
 
 function formatDimensions(definition) {
-  const dimensions = definition.defaultDimensions ?? definition.defaultParameters;
+  const dimensions = definition.defaultDimensions ?? definition.defaultParameters ?? {};
   const width = dimensions.width ?? dimensions.length;
   const depth = dimensions.depth ?? dimensions.width;
   const height = dimensions.height;
   return [width, depth, height].every(Number.isFinite)
     ? `${width} × ${depth} × ${height} m`
-    : definition.placement;
+    : definition.placement ?? definition.description ?? "";
 }
 
 function CatalogItem({ definition, active, onSelect }) {
@@ -55,7 +57,10 @@ function CatalogItem({ definition, active, onSelect }) {
       <span className={objectStyles.preview} aria-hidden="true">
         <ObjectModelThumbnail definition={definition} title={definition.nameKo} />
       </span>
-      <span className={objectStyles.itemText}><strong>{definition.nameKo}</strong><small>{definition.installationBadges?.join(" · ") ?? formatDimensions(definition)}{definition.modelVariants?.length > 1 ? ` · 변형 ${definition.modelVariants.length}` : ""}</small></span>
+      <span className={objectStyles.itemText}>
+        <strong>{definition.nameKo}</strong>
+        {definition.type !== "CUSTOM_ACTION" ? <small>{definition.catalogDetail ?? definition.installationBadges?.join(" · ") ?? formatDimensions(definition)}{definition.modelVariants?.length > 1 ? ` · 변형 ${definition.modelVariants.length}` : ""}</small> : null}
+      </span>
     </button>
   );
 }
@@ -128,28 +133,38 @@ export default function FloorWorkspaceCatalog({
   onSelectEquipmentTemplate,
 }) {
   const [query, setQuery] = useState("");
-  const [openCategoryIds, setOpenCategoryIds] = useState(["PLAN:SPACE", "EQUIPMENT:CABINET"]);
+  const [openCategoryIds, setOpenCategoryIds] = useState(["PLAN:SPACE", "EQUIPMENT:CUSTOM"]);
   const [recentTemplateIds, setRecentTemplateIds] = useState([]);
   const normalizedQuery = query.trim().toLocaleLowerCase("ko-KR");
   const isEquipment = equipmentOnly || mode === CATALOG_MODES.EQUIPMENT;
-  const templates = useMemo(() => (
+  const templates = (
     isEquipment
-      ? UNIFIED_EQUIPMENT_TEMPLATES
+      ? getUnifiedEquipmentTemplates()
       : WORLD_STRUCTURE_TEMPLATES.filter((template) => allowedStructureTemplateIds.includes(template.id))
-  ).filter((template) => matchesQuery(template, normalizedQuery)), [allowedStructureTemplateIds, isEquipment, normalizedQuery]);
+  ).filter((template) => matchesQuery(template, normalizedQuery));
+  const customEquipmentAction = equipmentOnly
+    ? templates.find((template) => template.id === CUSTOM_EQUIPMENT_CREATE_ID)
+    : null;
+  const categoryTemplates = equipmentOnly
+    ? templates.filter((template) => template.id !== CUSTOM_EQUIPMENT_CREATE_ID)
+    : templates;
   const categories = useMemo(() => (isEquipment
     ? UNIFIED_EQUIPMENT_CATEGORIES
     : WORLD_STRUCTURE_GROUPS
   ).map((category) => ({
     ...category,
-    definitions: templates.filter((template) => (isEquipment ? template.category : template.group) === category.id),
-  })).filter((category) => category.definitions.length), [isEquipment, templates]);
+    definitions: categoryTemplates.filter((template) => (isEquipment ? template.category : template.group) === category.id),
+  })).filter((category) => category.definitions.length), [categoryTemplates, isEquipment]);
   const activeTemplateId = isEquipment ? activeEquipmentTemplateId : activeStructureTemplateId;
   const recentTemplates = recentTemplateIds.map((id) => (
     isEquipment ? UNIFIED_EQUIPMENT_TEMPLATE_MAP[id] : WORLD_STRUCTURE_TEMPLATE_MAP[id]
   )).filter((template) => template && templates.some((item) => item.id === template.id)).slice(0, 5);
 
   function selectTemplate(templateId) {
+    if (templateId === CUSTOM_EQUIPMENT_CREATE_ID) {
+      navigateTo("/custom/equipment");
+      return;
+    }
     setRecentTemplateIds((ids) => [templateId, ...ids.filter((id) => id !== templateId)].slice(0, 8));
     if (isEquipment) onSelectEquipmentTemplate(templateId);
     else onSelectStructureTemplate(templateId);
@@ -200,6 +215,12 @@ export default function FloorWorkspaceCatalog({
             })}
           </div>
         </fieldset>
+      ) : null}
+
+      {customEquipmentAction ? (
+        <div className={objectStyles.itemList}>
+          <CatalogItem definition={customEquipmentAction} active={false} onSelect={selectTemplate} />
+        </div>
       ) : null}
 
       {activeTemplateId ? (

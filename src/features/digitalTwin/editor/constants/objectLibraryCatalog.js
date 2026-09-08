@@ -1,8 +1,11 @@
 import { SITE_OBJECT_GEOMETRY_MODES } from "./siteEnvironmentTemplates.types.js";
 import {
   CUSTOM_BUILDING_CREATE_DEFINITION,
+  CUSTOM_EQUIPMENT_CREATE_DEFINITION,
   getRuntimeCustomBuildingDefinition,
+  getRuntimeCustomEquipmentDefinition,
   listRuntimeCustomBuildingDefinitions,
+  listRuntimeCustomEquipmentDefinitions,
 } from "@/features/customAssets/core/customAssetRegistry";
 
 export const OBJECT_LIBRARY_DRAG_TYPE = "application/x-digital-twin-object";
@@ -33,7 +36,7 @@ const CATEGORY_SOURCE = [
   ["ROAD_FACILITY", "도로 시설", "Road Facility", "도로·보행·경계 시설", "road", [["SURFACE", "노면"], ["ACCESS", "보행 접근"], ["BOUNDARY", "경계·보호"]]],
   ["ENVIRONMENT", "환경", "Environment", "부지의 자연·배경 요소", "environment", [["GROUND", "지면"], ["NATURAL", "자연물"], ["AMENITY", "편의시설"], ["UNDERGROUND", "지하 연결 시설"]]],
   ["LANDSCAPING", "조경", "Landscaping", "산업 단지 조경과 식재", "landscape", [["TREE", "교목"], ["PLANTING", "식재"], ["FURNITURE", "조경 시설"]]],
-  ["EQUIPMENT", "설비", "Equipment", "기능별 통합 설비 카탈로그", "mechanical", [["ELECTRICAL", "전기"], ["HVAC", "공조·환기"], ["PIPE_WATER", "배관·탱크·수처리"], ["FIRE_SAFETY", "소방·안전"], ["COMM_SECURITY", "통신·보안"], ["ENERGY_ENVIRONMENT", "에너지·환경"], ["GENERAL", "일반 설비"]]],
+  ["EQUIPMENT", "설비", "Equipment", "기능별 통합 설비 카탈로그", "mechanical", [["CUSTOM", "내 커스텀"], ["ELECTRICAL", "전기"], ["HVAC", "공조·환기"], ["PIPE_WATER", "배관·탱크·수처리"], ["FIRE_SAFETY", "소방·안전"], ["COMM_SECURITY", "통신·보안"], ["ENERGY_ENVIRONMENT", "에너지·환경"], ["GENERAL", "일반 설비"]]],
   ["LOGISTICS", "물류 시설", "Logistics", "보관·상하역·이송 시설", "logistics", [["STORAGE", "보관"], ["HANDLING", "하역·이송"]]],
   ["PARKING_FACILITY", "주차 시설", "Parking Facility", "주차 구획과 부대시설", "parking", [["PARKING", "주차 구획"], ["CONTROL", "주차 제어"], ["AMENITY", "편의시설"]]],
 ];
@@ -400,11 +403,11 @@ const STATIC_OBJECT_LIBRARY_DEFINITION_MAP = Object.freeze(Object.fromEntries(
 export const OBJECT_LIBRARY_DEFINITION_MAP = new Proxy(STATIC_OBJECT_LIBRARY_DEFINITION_MAP, {
   get(target, property, receiver) {
     return Reflect.get(target, property, receiver)
-      ?? (typeof property === "string" ? getRuntimeCustomBuildingDefinition(property) : undefined);
+      ?? (typeof property === "string" ? getRuntimeCustomBuildingDefinition(property) ?? getRuntimeCustomEquipmentDefinition(property) : undefined);
   },
   has(target, property) {
     return Reflect.has(target, property)
-      || (typeof property === "string" && Boolean(getRuntimeCustomBuildingDefinition(property)));
+      || (typeof property === "string" && Boolean(getRuntimeCustomBuildingDefinition(property) ?? getRuntimeCustomEquipmentDefinition(property)));
   },
 });
 
@@ -414,11 +417,13 @@ export const BUILDING_OBJECT_DEFINITIONS = Object.freeze(
 
 export function getObjectLibraryDefinitions(allowedIds) {
   const customDefinitions = [CUSTOM_BUILDING_CREATE_DEFINITION, ...listRuntimeCustomBuildingDefinitions()];
-  if (!allowedIds?.length) return [...customDefinitions, ...OBJECT_LIBRARY_DEFINITIONS];
+  const customEquipment = [CUSTOM_EQUIPMENT_CREATE_DEFINITION, ...listRuntimeCustomEquipmentDefinitions()];
+  if (!allowedIds?.length) return [...customDefinitions, ...customEquipment, ...OBJECT_LIBRARY_DEFINITIONS];
   const allowed = new Set(allowedIds);
   const staticDefinitions = OBJECT_LIBRARY_DEFINITIONS.filter((definition) => allowed.has(definition.id));
   const allowsBuilding = staticDefinitions.some((definition) => definition.createsBuilding);
-  return allowsBuilding ? [...customDefinitions, ...staticDefinitions] : staticDefinitions;
+  const allowsEquipment = staticDefinitions.some((definition) => definition.categoryId === OBJECT_LIBRARY_CATEGORY_IDS.EQUIPMENT || ["INDUSTRIAL_EQUIPMENT", "ELECTRICAL_EQUIPMENT", "SAFETY_FACILITY", "PIPE_TANK", "OUTDOOR_EQUIPMENT"].includes(definition.categoryId));
+  return [...(allowsBuilding ? customDefinitions : []), ...(allowsEquipment ? customEquipment : []), ...staticDefinitions];
 }
 
 export function getDefaultObjectVariants(definition) {

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRightIcon, FloorGapIcon, FloorSelectIcon, MoonIcon, SaveIcon, SunIcon, WorldIcon } from "@/components/icons";
 import { navigateTo as navigateToAppRoute } from "@/features/customAssets/core/customAssetNavigation";
 import { getRuntimeCustomAsset } from "@/features/customAssets/core/customAssetRegistry";
-import { CUSTOM_BUILDING_CREATE_ID } from "@/features/customAssets/core/customAssetTypes";
+import { CUSTOM_BUILDING_CREATE_ID, CUSTOM_EQUIPMENT_CREATE_ID } from "@/features/customAssets/core/customAssetTypes";
 import { loadLayout, saveLayout } from "@/features/digitalTwin/editor/api/layoutRepository";
 import BuildingDetailNavigator from "@/features/digitalTwin/editor/components/BuildingDetailNavigator";
 import EditorToolbar from "@/features/digitalTwin/editor/components/EditorToolbar";
@@ -139,7 +139,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
   });
 
   const {
-    updateSiteEnvironment, resetLayout, hydrateLayout, updateBuilding,
+    updateSiteEnvironment, resetLayout, hydrateLayout, updateBuilding, updateEquipment,
     addSiteObjectFromArea, addSiteObjectsFromArea, replaceObservationBuildingFromArea, selectSiteObject, updateSiteObject,
     duplicateSelectedSiteEntity, removeSelectedSiteObject, deleteHierarchyNode,
     selectBuilding, navigateToSite, navigateToFloor, selectFloorInBuilding,
@@ -417,6 +417,18 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
   }, [customAssetRevision, editor.buildings, updateBuilding]);
 
   useEffect(() => {
+    const syncEquipment = (equipment, update) => {
+      if (!equipment.customAssetId) return;
+      const customAsset = getRuntimeCustomAsset(equipment.customAssetId);
+      if (!customAsset || customAsset.status !== "ready" || (customAsset.revision === equipment.customAssetRevision && customAsset.updatedAt === equipment.customAssetSnapshot?.updatedAt)) return;
+      update(equipment.id, { customAssetRevision: customAsset.revision, customAssetSnapshot: structuredClone(customAsset) });
+    };
+    editor.equipmentInstances.forEach((equipment) => syncEquipment(equipment, updateEquipment));
+    editor.allFloorEquipment.forEach((equipment) => syncEquipment(equipment, updateFloorEquipment));
+    editor.siteObjects.forEach((equipment) => syncEquipment(equipment, updateSiteObject));
+  }, [customAssetRevision, editor.allFloorEquipment, editor.equipmentInstances, editor.siteObjects, updateEquipment, updateFloorEquipment, updateSiteObject]);
+
+  useEffect(() => {
     if (!isCompositionStep || !hasUnsavedChanges) return undefined;
     const requestId = ++buildingSaveRequestRef.current;
     const timerId = window.setTimeout(() => {
@@ -498,7 +510,11 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
   }, [clearFloorPlacement, clearSitePlacement, isCompositionStep, isFloorWorkspaceStep, redo, siteInteractionMode]);
   const handleSiteTemplateSelect = useCallback((templateId) => {
     if (templateId === CUSTOM_BUILDING_CREATE_ID) {
-      navigateToAppRoute("/custom/buildings/new");
+      navigateToAppRoute("/custom/buildings");
+      return;
+    }
+    if (templateId === CUSTOM_EQUIPMENT_CREATE_ID) {
+      navigateToAppRoute("/custom/equipment");
       return;
     }
     const definition = OBJECT_LIBRARY_DEFINITION_MAP[templateId];

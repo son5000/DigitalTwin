@@ -7,6 +7,7 @@ import {
   SITE_OBJECT_GEOMETRY_MODES,
 } from "@/features/digitalTwin/editor/constants/siteEnvironmentTemplates";
 import { DeleteIcon } from "@/components/icons";
+import { getCustomEquipmentEditPath, navigateTo } from "@/features/customAssets/core/customAssetNavigation";
 import {
   createSiteLinearPathChanges,
   getSiteLinearPathLength,
@@ -101,6 +102,8 @@ export default function SiteObjectProperties({ object, siteEnvironment, siteObje
         <span>환경 요소 / {template.nameKo ?? template.name}</span>
         <h2>{object.name}</h2>
       </header>
+
+      {object.customAssetId ? <div className={styles.section}><button type="button" onClick={() => navigateTo(getCustomEquipmentEditPath(object.customAssetId))}>커스텀 설비 수정</button></div> : null}
 
       <div className={styles.section}>
         <h3>기본 정보</h3>
