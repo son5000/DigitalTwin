@@ -1,12 +1,32 @@
 import * as THREE from "three";
 
+import { UNIFIED_EQUIPMENT_TEMPLATE_MAP } from "@/features/digitalTwin/editor/constants/unifiedEquipmentCatalog";
+import { generateBasicShape } from "@/features/digitalTwin/editor/generators/BasicShapeGenerator";
+import { generateCabinet } from "@/features/digitalTwin/editor/generators/CabinetGenerator";
+import { generateDuct } from "@/features/digitalTwin/editor/generators/DuctGenerator";
+import { generateMechanical } from "@/features/digitalTwin/editor/generators/MechanicalGenerator";
+import { generateTank } from "@/features/digitalTwin/editor/generators/TankGenerator";
+import { generateSemanticEquipment } from "@/features/digitalTwin/editor/generators/SemanticEquipmentGenerator";
 import { SCENE_THEMES } from "@/features/digitalTwin/editor/constants/sceneThemes";
 import { generatePipe } from "@/features/digitalTwin/editor/generators/PipeGenerator";
 import { createPresetMaterial } from "@/features/digitalTwin/editor/three/presetMaterial";
 import { getCustomEquipmentPartDimensions, getPartWorldPort } from "./customEquipmentModel.js";
 
+const PART_GENERATORS = {
+  BASIC: generateBasicShape,
+  CABINET: generateCabinet,
+  MECHANICAL: generateMechanical,
+  PIPE: generatePipe,
+  DUCT: generateDuct,
+  TANK: generateTank,
+  SAFETY: generateSemanticEquipment,
+  SENSOR: generateSemanticEquipment,
+  UTILITY: generateSemanticEquipment,
+  CUSTOM: generateBasicShape,
+};
+
 function createCross(part, edgeColor, selected) {
-  const { width, depth } = getCustomEquipmentPartDimensions(part.type, part.parameters);
+  const { width, depth } = getCustomEquipmentPartDimensions(part.type, part.parameters, part.dimensions);
   const radius = part.parameters.diameter / 2;
   const material = createPresetMaterial({ ...part.appearance, emissive: selected ? edgeColor : 0x000000, emissiveIntensity: selected ? 0.18 : 0 });
   const group = new THREE.Group();
@@ -20,8 +40,23 @@ function createCross(part, edgeColor, selected) {
 
 function createPartVisual(part, { selected, edgeColor }) {
   if (part.type === "PIPE_CROSS") return createCross(part, edgeColor, selected);
-  const dimensions = getCustomEquipmentPartDimensions(part.type, part.parameters);
-  return generatePipe({ type: part.templateId, dimensions, parameters: part.parameters, appearance: part.appearance, edgeColor, sceneTheme: SCENE_THEMES.dark, label: null, showEdges: selected });
+  const template = UNIFIED_EQUIPMENT_TEMPLATE_MAP[part.templateId];
+  const dimensions = getCustomEquipmentPartDimensions(part.type, part.parameters, part.dimensions);
+  const generator = part.partKind === "PIPE"
+    ? generatePipe
+    : PART_GENERATORS[template?.generatorKey ?? template?.floorCategory ?? template?.category] ?? generateBasicShape;
+  return generator({
+    type: part.templateId,
+    profile: template?.profile,
+    dimensions,
+    parameters: part.parameters,
+    appearance: part.appearance,
+    appearanceSlots: part.appearanceSlots,
+    edgeColor,
+    sceneTheme: SCENE_THEMES.dark,
+    label: null,
+    showEdges: selected,
+  });
 }
 
 function addPortMarkers(root, asset, selectedPartId, selectedPortId, edgeColor) {
@@ -37,13 +72,14 @@ function addPortMarkers(root, asset, selectedPartId, selectedPortId, edgeColor) 
 }
 
 export function createCustomEquipmentGroup(asset, {
-  selectedPartId = null, selectedPortId = null, showPorts = false, exposeParts = false,
+  selectedPartId = null, selectedPartIds = [], selectedPortId = null, showPorts = false, exposeParts = false,
   edgeColor = SCENE_THEMES.dark.equipmentEdge, selectionColor = SCENE_THEMES.dark.selection,
   opacity = 1, previewPartId = null, scale = { x: 1, y: 1, z: 1 }, equipmentId = null,
 } = {}) {
   const root = new THREE.Group(); root.name = asset.name; root.userData = { customAssetId: asset.id, equipmentId, customEquipment: true };
+  const selectedIds = new Set(selectedPartIds);
   asset.parts.forEach((part) => {
-    const holder = new THREE.Group(); const selected = selectedPartId === part.id;
+    const holder = new THREE.Group(); const selected = selectedPartId === part.id || selectedIds.has(part.id);
     holder.name = part.name; holder.position.set(part.position.x - (asset.origin?.x ?? 0), part.position.y - (asset.origin?.y ?? 0), part.position.z - (asset.origin?.z ?? 0)); holder.rotation.set(part.rotation.x, part.rotation.y, part.rotation.z);
     holder.userData = exposeParts ? { customEquipmentPartId: part.id } : { equipmentId, customAssetId: asset.id };
     const visual = createPartVisual(part, { selected, edgeColor: selected ? selectionColor : edgeColor });

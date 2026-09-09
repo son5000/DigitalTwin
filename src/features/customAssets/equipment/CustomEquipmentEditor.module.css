@@ -99,11 +99,44 @@
 .panelTitle { display: grid; gap: 2px; margin-bottom: 12px; }
 .panelTitle strong { color: var(--color-heading); font-size: var(--editor-font-size-md); font-weight: var(--editor-font-weight-semibold); }
 .panelTitle small { color: var(--color-text-subtle); }
+.libraryTools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(96px, .7fr);
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.libraryTools input,
+.libraryTools select {
+  min-width: 0;
+  min-height: 36px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  background: var(--color-input);
+}
+
+.emptyLibrary { margin: 12px 0 0; color: var(--color-text-muted); text-align: center; }
+.selectionTools { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; margin-bottom: 8px; }
+.selectionTools button {
+  min-width: 0;
+  min-height: 34px;
+  padding: 5px 7px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  background: var(--color-surface-raised);
+  cursor: pointer;
+}
+.selectionTools button:hover:not(:disabled),
+.selectionTools button[aria-pressed="true"] { border-color: var(--state-selected-border); background: var(--state-selected); }
+.selectionTools button:disabled { cursor: not-allowed; opacity: .42; }
 
 .parts { display: grid; gap: 6px; }
 .parts button,
 .partTree button,
 .ports button {
+.partTree button strong { min-width: 0; overflow: hidden; flex: 1; text-overflow: ellipsis; white-space: nowrap; }
+.groupBadge { flex: 0 0 auto; padding: 2px 5px; border-radius: 999px; color: var(--color-accent-strong); background: var(--state-selected); font-size: var(--editor-font-size-xs); }
   width: 100%;
   min-height: 42px;
   display: flex;
