@@ -77,6 +77,14 @@
   backdrop-filter: blur(10px);
 }
 
+.observationLabels { position: absolute; inset: 0; z-index: 6; pointer-events: none; overflow: hidden; }
+.observationFloorLabel { position: absolute; top: 0; left: 0; width: 174px; height: 46px; padding: 6px 9px; border: 1px solid var(--portal-border, #718391); border-radius: 7px; background: var(--portal-panel, #17242b); color: var(--portal-text, #e7f0fb); text-align: left; pointer-events: auto; cursor: pointer; box-shadow: 0 2px 9px #0002; }
+.observationFloorLabel strong, .observationFloorLabel span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.observationFloorLabel strong { font-size: 11px; }
+.observationFloorLabel span { margin-top: 3px; font-size: 10px; color: var(--portal-muted, #a3b7c4); }
+.observationFloorLabel[aria-pressed="true"] { border-color: #ff7900; box-shadow: inset 3px 0 #ff7900; }
+.observationFloorLabel[hidden] { display: none; }
+
 .movementEditStatus {
   top: var(--editor-overlay-top-secondary, 62px);
   left: 50%;

@@ -82,7 +82,7 @@ export function cancelCameraFocus(runtime) {
   if (runtime) runtime.cameraFocus = null;
 }
 
-export function focusCameraOnObject(runtime, object, { padding = DEFAULT_PADDING } = {}) {
+export function focusCameraOnObject(runtime, object, { padding = DEFAULT_PADDING, duration = 0, onComplete } = {}) {
   const camera = runtime?.activeCamera ?? runtime?.camera;
   const controls = runtime?.orbitControls;
   if (!runtime || !object || !camera || !controls) return false;
@@ -119,6 +119,49 @@ export function focusCameraOnObject(runtime, object, { padding = DEFAULT_PADDING
     target: center,
     zoom: targetZoom,
   };
+  if (duration) animateCameraFocus(runtime, runtime.cameraFocus, { duration, onComplete });
+  return true;
+}
+
+export function animateCameraFocus(runtime, target, { duration = 650, onComplete } = {}) {
+  const camera = runtime.activeCamera ?? runtime.camera;
+  runtime.cameraFocus = {
+    ...target, camera, duration, onComplete, startedAt: performance.now(),
+    fromPosition: camera.position.clone(), fromTarget: runtime.orbitControls.target.clone(), fromZoom: camera.zoom,
+  };
+}
+
+// Fit a supplied content box to the visible viewport without changing the lens or clipping planes.
+export function focusCameraOnBounds(runtime, bounds, { padding = 1.12, duration = 500, onComplete, viewportInsets = {}, direction, centerTarget = false } = {}) {
+  const camera = runtime?.activeCamera ?? runtime?.camera;
+  const controls = runtime?.orbitControls;
+  if (!camera?.isPerspectiveCamera || !controls || bounds.isEmpty()
+    || ![...bounds.min.toArray(), ...bounds.max.toArray()].every(Number.isFinite)) return false;
+  const center = bounds.getCenter(new THREE.Vector3());
+  const front = parseDirection(direction)?.normalize() ?? getViewDirection(camera, controls);
+  const right = new THREE.Vector3().crossVectors(camera.up, front).normalize();
+  if (right.lengthSq() < 1e-8) right.set(1, 0, 0);
+  const up = new THREE.Vector3().crossVectors(front, right).normalize();
+  const { halfWidth, halfHeight, halfDepth } = getBoundsExtents(bounds, center, right, up, front);
+  const width = runtime.container?.clientWidth || 1;
+  const height = runtime.container?.clientHeight || 1;
+  const left = Math.min(viewportInsets.left || 0, width * 0.4);
+  const rightInset = Math.min(viewportInsets.right || 0, width * 0.4);
+  const top = Math.min(viewportInsets.top || 0, height * 0.4);
+  const bottom = Math.min(viewportInsets.bottom || 0, height * 0.4);
+  const tanV = Math.tan(THREE.MathUtils.degToRad(camera.getEffectiveFOV()) / 2);
+  const tanH = tanV * Math.max(camera.aspect, 0.01);
+  const horizontalRatio = centerTarget ? getSafeHalfRatio(width, left, rightInset) : (width - left - rightInset) / width;
+  const verticalRatio = centerTarget ? getSafeHalfRatio(height, top, bottom) : (height - top - bottom) / height;
+  const distance = Math.max(
+    Math.max(halfWidth, 0.1) * padding / (tanH * horizontalRatio),
+    Math.max(halfHeight, 0.1) * padding / (tanV * verticalRatio),
+  ) + halfDepth;
+  const targetDistance = THREE.MathUtils.clamp(distance, controls.minDistance || 0.1, controls.maxDistance ?? Infinity);
+  const target = centerTarget ? center : center.clone()
+    .addScaledVector(right, -(left - rightInset) / width * targetDistance * tanH)
+    .addScaledVector(up, -(bottom - top) / height * targetDistance * tanV);
+  animateCameraFocus(runtime, { position: target.clone().addScaledVector(front, targetDistance), target, zoom: null }, { duration, onComplete });
   return true;
 }
 
@@ -173,6 +216,19 @@ export function updateCameraFocus(runtime, smoothing = 0.12) {
   const controls = runtime?.orbitControls;
   if (!focus || !camera || !controls || focus.camera !== camera) {
     cancelCameraFocus(runtime);
+    return;
+  }
+
+  if (focus.duration) {
+    const progress = Math.min(1, (performance.now() - focus.startedAt) / focus.duration);
+    const eased = progress * progress * (3 - 2 * progress);
+    camera.position.lerpVectors(focus.fromPosition, focus.position, eased);
+    controls.target.lerpVectors(focus.fromTarget, focus.target, eased);
+    if (focus.zoom !== null && camera.isOrthographicCamera) {
+      camera.zoom = THREE.MathUtils.lerp(focus.fromZoom, focus.zoom, eased);
+      camera.updateProjectionMatrix();
+    }
+    if (progress === 1) { cancelCameraFocus(runtime); focus.onComplete?.(); }
     return;
   }
 

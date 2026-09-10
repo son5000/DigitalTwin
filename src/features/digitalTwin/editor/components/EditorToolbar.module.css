@@ -1,6 +1,6 @@
 .toolbar {
   position: absolute;
-  top: var(--editor-overlay-gap, 12px);
+  top: var(--editor-overlay-toolbar-top, var(--editor-overlay-gap, 12px));
   left: var(--editor-overlay-gap, 12px);
   z-index: 7;
   display: flex;

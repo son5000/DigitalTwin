@@ -12,7 +12,7 @@ export default function AssetDetailPanel({ asset, open, onClose }) {
   const status = assetStatuses[asset.status];
   const maxTrend = Math.max(...asset.trend, 1);
 
-  return <aside className={`${styles.detailPanel} ${open ? styles.detailPanelOpen : ""}`} aria-label="선택 설비 상세">
+  return <aside className={`${styles.detailPanel} ${open ? styles.detailPanelOpen : ""}`} aria-label="선택 설비 상세" inert={!open}>
     <div className={styles.detailHeader}>
       <div><span>선택 설비</span><h2>{asset.name}</h2><p>{asset.location}</p></div>
       <button type="button" className={styles.iconButton} onClick={onClose} aria-label="상세 패널 닫기"><CloseIcon size={18} /></button>

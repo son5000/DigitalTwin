@@ -1,3 +1,6 @@
+import { bindViewerCamera } from "./bindViewerCamera";
+import { invalidateWorldSnapshot, scheduleWorldSnapshot } from "./captureWorldSnapshot";
+import { SCENE_THEMES } from "@/features/digitalTwin/editor/constants/sceneThemes";
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -8,6 +11,8 @@ import { ASSET_TYPES } from "@/features/digitalTwin/editor/model/equipmentDetail
 import { getGroundViewPresentation, GROUND_VIEW_MODES } from "@/features/digitalTwin/editor/model/undergroundModel";
 import { EQUIPMENT_REPRESENTATIONS, resolveEquipmentRepresentation } from "@/features/digitalTwin/editor/model/viewerPreset";
 import { createEquipmentObject } from "@/features/digitalTwin/editor/objects/EquipmentFactory";
+import { normalizeEquipmentPart } from "@/features/digitalTwin/editor/constants/partTemplates";
+import { createPartObject } from "@/features/digitalTwin/editor/world/PartFactory";
 import { applyAssetAlignment, loadBindingObject } from "@/features/digitalTwin/editor/three/EquipmentAssetViewer";
 import { disposeObject3D } from "@/features/digitalTwin/editor/three/disposeObject3D";
 
@@ -55,14 +60,20 @@ function findSensorId(object, root) {
   return null;
 }
 
+const EMPTY_ITEMS = [];
+
 export default function EquipmentObservationScene({
+  snapshotRequest,
+  onSnapshot,
   equipment,
-  equipmentList = [],
+  equipmentList = EMPTY_ITEMS,
   focusEquipmentId,
-  sensors = [],
-  observationPoints = [],
-  bindings = [],
-  assetBindings = [],
+  selectedPartId = null,
+  onEquipmentSelect,
+  sensors = EMPTY_ITEMS,
+  observationPoints = EMPTY_ITEMS,
+  bindings = EMPTY_ITEMS,
+  assetBindings = EMPTY_ITEMS,
   viewerPreset,
   selectedSensorId = null,
   groundViewMode = GROUND_VIEW_MODES.VISIBLE,
@@ -70,6 +81,8 @@ export default function EquipmentObservationScene({
   theme = "dark",
   onSensorSelect,
   onSensorChange,
+  onCameraControlsChange,
+  onZoomChange,
 }) {
   const mountRef = useRef(null);
 
@@ -107,6 +120,8 @@ export default function EquipmentObservationScene({
     entries.forEach((item) => {
       const displayEquipment = {
         ...item,
+        dimensions: { width: 1, height: 1, depth: 1, ...item.dimensions },
+        appearance: { color: "#6f8f9d", opacity: 1, ...item.appearance },
         position: {
           x: (Number(item.position?.x) || 0) - (Number(origin.x) || 0),
           y: (Number(item.position?.y) || 0) - (Number(origin.y) || 0),
@@ -118,8 +133,17 @@ export default function EquipmentObservationScene({
       logicalRoot.position.set(displayEquipment.position.x, displayEquipment.position.y, displayEquipment.position.z);
       logicalRoot.rotation.set(Number(item.rotation?.x) || 0, Number(item.rotation?.y) || 0, Number(item.rotation?.z) || 0);
       logicalRoot.userData.equipmentId = item.id;
-      const proxy = createEquipmentObject({ ...displayEquipment, position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } }, { theme, viewerTranslucent: false, enableLod: false });
+      const proxy = createEquipmentObject({ ...displayEquipment, position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } }, {
+        theme, viewerTranslucent: false, enableLod: false,
+        selected: Boolean(onEquipmentSelect && item.id === focusEquipmentId),
+        exposeParts: Boolean(onEquipmentSelect), selectedPartId: item.id === focusEquipmentId ? selectedPartId : null,
+      });
       logicalRoot.add(proxy);
+      const selectedPart = !item.customAssetId && item.id === focusEquipmentId && Array.isArray(item.parts)
+        ? item.parts.find((part) => part?.id === selectedPartId) : null;
+      if (selectedPart) {
+        logicalRoot.add(createPartObject(normalizeEquipmentPart(selectedPart), displayEquipment, { selected: true, theme, selectionColor: "#ffc14d" }));
+      }
       equipmentRoot.add(logicalRoot);
       renderedEquipment.set(item.id, { item, object: logicalRoot, proxy, actual: null, loading: null, position: logicalRoot.position.clone() });
     });
@@ -147,7 +171,9 @@ export default function EquipmentObservationScene({
         aligned.userData.releaseAssetSources = loaded.revoke;
         entry.object.add(aligned);
         entry.actual = aligned;
-        if (entry.item.id === focusEquipmentId) fitCamera(camera, controls, aligned);
+        invalidateWorldSnapshot(snapshotRequest);
+        requestSnapshot();
+        if (entry.item.id === focusEquipmentId && !selectedPartId) fitCamera(camera, controls, aligned);
       }).catch((error) => {
         console.warn(`[설비 표현] ${entry.item.name ?? entry.item.id} 상세 모델을 표시하지 못해 간략 모델로 복구했습니다.`, error);
         entry.actual = null;
@@ -165,11 +191,11 @@ export default function EquipmentObservationScene({
           selected: equipmentId === focusEquipmentId,
           distance: camera.position.distanceTo(entry.object.getWorldPosition(new THREE.Vector3())),
         });
-        const showDetailed = representation === EQUIPMENT_REPRESENTATIONS.DETAILED;
+        const showDetailed = representation === EQUIPMENT_REPRESENTATIONS.DETAILED && !(equipmentId === focusEquipmentId && selectedPartId);
         entry.proxy.visible = !showDetailed || !entry.actual;
         if (entry.actual) entry.actual.visible = showDetailed;
         else if (showDetailed) void ensureDetailed(entry, binding).then(() => {
-          if (!disposed && entry.actual) { entry.proxy.visible = false; entry.actual.visible = true; }
+          if (!disposed && entry.actual && !(equipmentId === focusEquipmentId && selectedPartId)) { entry.proxy.visible = false; entry.actual.visible = true; }
         });
       });
     }
@@ -282,15 +308,37 @@ export default function EquipmentObservationScene({
     });
 
     const raycaster = new THREE.Raycaster();
+    let pointerStart = null;
+    function handlePointerDown(event) { pointerStart = { x: event.clientX, y: event.clientY }; }
     function handlePointerUp(event) {
-      if (dragging) return;
+      if (dragging || !pointerStart || event.button !== 0 || Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 5) return;
+      pointerStart = null;
       raycaster.setFromCamera(pointer(event, renderer.domElement), camera);
       const hit = raycaster.intersectObjects([...sensorMarkers.values()], true)[0];
       const sensorId = hit ? findSensorId(hit.object, root) : null;
-      if (sensorId) onSensorSelect?.(sensorId);
+      if (sensorId) { onSensorSelect?.(sensorId); return; }
+      if (!onEquipmentSelect) return;
+      const visible = (object) => {
+        for (let current = object; current; current = current.parent) if (!current.visible) return false;
+        return true;
+      };
+      let object = raycaster.intersectObject(equipmentRoot, true).find((entry) => visible(entry.object))?.object;
+      let partId = null;
+      while (object && object !== equipmentRoot) {
+        partId ??= object.userData.customEquipmentPartId ?? object.userData.partId;
+        if (object.userData.equipmentId) { onEquipmentSelect(object.userData.equipmentId, partId); return; }
+        object = object.parent;
+      }
+      onEquipmentSelect(null);
     }
+    renderer.domElement.addEventListener("pointerdown", handlePointerDown);
     renderer.domElement.addEventListener("pointerup", handlePointerUp);
-    fitCamera(camera, controls, focusEquipment ? renderedEquipment.get(focusEquipment.id).object : equipmentRoot);
+    let focusObject = focusEquipment ? renderedEquipment.get(focusEquipment.id).object : equipmentRoot;
+    if (selectedPartId) focusObject.traverse((object) => {
+      if ((object.isGroup && object.userData.customEquipmentPartId === selectedPartId) || (object.isMesh && object.userData.partId === selectedPartId)) focusObject = object;
+    });
+    fitCamera(camera, controls, focusObject);
+    const disconnectViewerCamera = bindViewerCamera(controls, onCameraControlsChange, onZoomChange);
     controls.addEventListener("end", syncEquipmentRepresentations);
     syncEquipmentRepresentations();
 
@@ -310,11 +358,30 @@ export default function EquipmentObservationScene({
       frameId = requestAnimationFrame(render);
     }
     render();
+    let cancelSnapshot = () => {};
+    function requestSnapshot() {
+      cancelSnapshot();
+      cancelSnapshot = scheduleWorldSnapshot({
+      request: snapshotRequest, onSnapshot,
+      isReady: () => ![...renderedEquipment.values()].some((entry) => entry.loading),
+      getSource: () => {
+        const roots = snapshotRequest.scope === "SINGLE_EQUIPMENT"
+          ? [renderedEquipment.get(snapshotRequest.targetId)?.object]
+          : [equipmentRoot, floor];
+        if (roots.some((object) => !object)) return null;
+        return { renderer, scene, roots, selectionColors: [SCENE_THEMES[theme].selection, "#ffc14d"] };
+      },
+      });
+    }
+    requestSnapshot();
     return () => {
+      cancelSnapshot();
+      disconnectViewerCamera();
       disposed = true;
       cancelAnimationFrame(frameId);
       observer.disconnect();
       renderer.domElement.removeEventListener("pointerup", handlePointerUp);
+      renderer.domElement.removeEventListener("pointerdown", handlePointerDown);
       controls.removeEventListener("end", syncEquipmentRepresentations);
       transform.detach();
       transform.dispose();
@@ -328,7 +395,7 @@ export default function EquipmentObservationScene({
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, [assetBindings, bindings, equipment, equipmentList, focusEquipmentId, groundViewMode, observationPoints, onSensorChange, onSensorSelect, selectedSensorId, sensors, theme, transformTools, viewerPreset]);
+  }, [snapshotRequest, onSnapshot, assetBindings, bindings, equipment, equipmentList, focusEquipmentId, selectedPartId, onEquipmentSelect, groundViewMode, observationPoints, onCameraControlsChange, onZoomChange, onSensorChange, onSensorSelect, selectedSensorId, sensors, theme, transformTools, viewerPreset]);
 
   return <section className={styles.viewer} aria-label="설비와 센서 위치·화각"><div ref={mountRef} className={styles.canvas} /></section>;
 }

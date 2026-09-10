@@ -20,15 +20,13 @@ import styles from "./EditorToolbar.module.css";
 
 const PANEL_TOOL_CONFIG = {
   SPACE: {
-    leading: [{ id: WORLD_PANEL_IDS.OBJECTS, label: "오브젝트", iconKey: "objects" }],
-    secondary: [
+    leading: [
+      { id: WORLD_PANEL_IDS.OBJECTS, label: "오브젝트", iconKey: "objects" },
       { id: WORLD_PANEL_IDS.OBJECT_LIST, label: "오브젝트 목록", iconKey: "object-list" },
-      { id: WORLD_PANEL_IDS.TERRAIN, label: "지형 고도", iconKey: "terrain" },
-      { id: WORLD_PANEL_IDS.SETTINGS, label: "부지 설정", iconKey: "settings" },
+      { id: WORLD_PANEL_IDS.TERRAIN, label: "지형·부지 관리", iconKey: "terrain" },
     ],
-    trailing: [
-      { id: WORLD_PANEL_IDS.DETAILS, label: "오브젝트 설정", iconKey: "details", requiresSelection: true },
-    ],
+    secondary: [],
+    trailing: [],
   },
   INTERIOR: {
     leading: [{ id: WORLD_PANEL_IDS.OBJECTS, label: "도면 도구", iconKey: "objects" }],
@@ -41,9 +39,12 @@ const PANEL_TOOL_CONFIG = {
     trailing: [{ id: WORLD_PANEL_IDS.DETAILS, label: "설비 상세", iconKey: "details", requiresSelection: true }],
   },
   FLOOR: {
-    leading: [{ id: WORLD_PANEL_IDS.OBJECTS, label: "오브젝트", iconKey: "objects" }],
-    secondary: [{ id: WORLD_PANEL_IDS.OBJECT_LIST, label: "오브젝트 목록", iconKey: "object-list" }],
-    trailing: [{ id: WORLD_PANEL_IDS.DETAILS, label: "선택 항목 설정", iconKey: "details", requiresSelection: true }],
+    leading: [
+      { id: WORLD_PANEL_IDS.OBJECTS, label: "오브젝트", iconKey: "objects" },
+      { id: WORLD_PANEL_IDS.OBJECT_LIST, label: "오브젝트 목록", iconKey: "object-list" },
+    ],
+    secondary: [],
+    trailing: [],
   },
   CUSTOM_BUILDING: {
     leading: [{ id: WORLD_PANEL_IDS.OBJECTS, label: "형상 도구", iconKey: "objects" }],
@@ -314,6 +315,11 @@ export default function EditorToolbar({
   onRedo,
 }) {
   const isViewer = editorMode === EDITOR_MODES.VIEWER;
+  const handleToolbarClickCapture = (event) => {
+    const overflowMenu = event.currentTarget.querySelector("." + styles.overflow);
+    const clickedInsideOverflow = event.target instanceof Element && event.target.closest("." + styles.overflow);
+    if (overflowMenu?.open && !clickedInsideOverflow) overflowMenu.open = false;
+  };
 
   if (hierarchyScope || focusedScope) {
     const panelTools = PANEL_TOOL_CONFIG[panelMode] ?? { leading: [], secondary: [], trailing: [] };
@@ -335,8 +341,8 @@ export default function EditorToolbar({
     };
 
     return (
-      <nav className={styles.toolbar} aria-label={`${hierarchyScopeLabel} 도구`}>
-        {panelTools.leading.length ? <ToolbarGroup label={panelMode === "CUSTOM_EQUIPMENT" ? "설비 도구" : "기타 설정"}>{panelTools.leading.map((tool) => renderPanelTool(tool))}</ToolbarGroup> : null}
+      <nav className={styles.toolbar} aria-label={`${hierarchyScopeLabel} 도구`} onClickCapture={handleToolbarClickCapture}>
+        {panelTools.leading.length ? <ToolbarGroup label={panelMode === "SPACE" ? "공간 구성" : panelMode === "FLOOR" ? "도면·설비" : panelMode === "CUSTOM_EQUIPMENT" ? "설비 도구" : "기타 설정"}>{panelTools.leading.map((tool) => renderPanelTool(tool))}</ToolbarGroup> : null}
         {panelTools.leading.length ? <ToolbarDivider /> : null}
         <ToolbarGroup label="선택·변형">
           {showSiteInteractionTools ? <ToolbarButton
@@ -423,7 +429,7 @@ export default function EditorToolbar({
   }
 
   return (
-    <nav className={`${styles.toolbar} ${isViewer ? styles.viewerToolbar : ""}`} aria-label="월드 편집 도구">
+    <nav className={`${styles.toolbar} ${isViewer ? styles.viewerToolbar : ""}`} aria-label="월드 편집 도구" onClickCapture={handleToolbarClickCapture}>
       <ModeSelector editorMode={editorMode} onEditorModeChange={onEditorModeChange} />
       <ToolbarDivider />
       <ToolbarGroup label="편집 이력">

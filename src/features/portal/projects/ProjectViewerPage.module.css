@@ -1,5 +1,5 @@
-.world { min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--portal-bg); }
-.toolbar { min-height: 58px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 18px; border-bottom: 1px solid var(--portal-border); background: var(--portal-header); }
+.world { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--portal-bg); }
+.toolbar { position: absolute; z-index: 20; top: 82px; left: 80px; right: 12px; border-radius: 12px; flex-wrap: wrap; min-height: 58px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 18px; border-bottom: 1px solid var(--portal-border); background: var(--portal-header); }
 .toolbar button { min-height: 34px; padding: 0 12px; border: 1px solid var(--portal-border); border-radius: 7px; background: var(--portal-surface); color: var(--portal-muted); font-size: 11px; }
 .toolbar button:hover { color: var(--portal-text); border-color: var(--portal-blue); }
 .viewModes { display: flex; gap: 5px; }
@@ -7,7 +7,7 @@
 .viewModes button[aria-pressed="true"] { color: var(--portal-text); border-color: var(--portal-blue); background: color-mix(in srgb, var(--portal-blue) 16%, var(--portal-panel)); }
 .scene { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
 .scene > section { width: 100%; height: 100%; }
-.worldFooter { min-height: 38px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 18px; border-top: 1px solid var(--portal-border); color: var(--portal-muted); background: var(--portal-header); font-size: 10px; }
+.worldFooter { position: absolute; z-index: 20; left: 80px; right: 12px; bottom: 78px; border-radius: 12px; min-height: 38px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 18px; border-top: 1px solid var(--portal-border); color: var(--portal-muted); background: var(--portal-header); font-size: 10px; }
 .worldFooter span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .inventory { flex-shrink: 0; margin-bottom: 16px; }
 .summaryGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }
@@ -28,5 +28,12 @@
 .sensorList span { min-width: 0; color: var(--portal-text); font-size: 11px; overflow-wrap: anywhere; }
 .sensorList small { display: block; margin-top: 3px; color: var(--portal-muted); font-size: 9px; }
 .sensorList em { flex-shrink: 0; color: var(--portal-muted); font-size: 9px; font-style: normal; }
-@media (max-width: 800px) { .world { height: 100%; } .toolbar { padding-inline: 12px; gap: 8px; } .worldFooter { padding-inline: 12px; } }
+.buildingControls label { display: block; margin: 12px 0; color: var(--portal-muted); font-size: 11px; }
+.buildingControls output { float: right; color: var(--portal-text); }
+.buildingControls input { display: block; width: 100%; margin-top: 8px; accent-color: var(--portal-blue); }
+.buildingControls > div { display: flex; flex-wrap: wrap; gap: 6px; }
+.buildingControls button { border: 1px solid var(--portal-border); border-radius: 6px; background: var(--portal-surface); padding: 7px; font-size: 10px; cursor: pointer; }
+.buildingControls button:disabled { opacity: 0.5; cursor: default; }
+.equipmentNames { margin: 10px 0; padding-left: 22px; color: var(--portal-muted); font-size: 11px; line-height: 1.8; }
+@media (max-width: 800px) { .world { height: 100%; } .toolbar { top: 108px; padding-inline: 12px; gap: 8px; } .worldFooter { padding-inline: 12px; } }
 @media (max-width: 460px) { .toolbar button { padding-inline: 8px; font-size: 10px; } .worldFooter span:last-child { display: none; } }

@@ -67,7 +67,7 @@ export function getEquipmentBatchKey(equipment, { theme = "dark", viewerTransluc
 
 export function createEquipmentObject(
   equipment,
-  { selected = false, colliding = false, dimmed = false, theme = "dark", viewerTranslucent = true, enableLod = true } = {},
+  { selected = false, colliding = false, dimmed = false, theme = "dark", viewerTranslucent = true, enableLod = true, exposeParts = false, selectedPartId = null } = {},
 ) {
   const sceneTheme = SCENE_THEMES[theme];
   const template = UNIFIED_EQUIPMENT_TEMPLATE_MAP[equipment.shapeTemplateId];
@@ -85,6 +85,8 @@ export function createEquipmentObject(
     : sourceAppearance;
   const customAsset = equipment.customAssetId ? getRuntimeCustomAsset(equipment.customAssetId) ?? equipment.customAssetSnapshot ?? template?.customAsset : null;
   const visual = customAsset ? createCustomEquipmentGroup(customAsset, {
+    exposeParts,
+    selectedPartId,
     equipmentId: equipment.id,
     edgeColor,
     selectionColor: sceneTheme.selection,

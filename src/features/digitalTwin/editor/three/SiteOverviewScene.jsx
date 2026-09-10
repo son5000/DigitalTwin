@@ -1,3 +1,6 @@
+import { bindViewerCamera } from "./bindViewerCamera";
+import { scheduleWorldSnapshot } from "./captureWorldSnapshot";
+import { createBuildingObservation } from "./buildingObservation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -433,7 +436,8 @@ function measureCameraSafeInsets(runtime) {
       bottom: Math.abs(canvasBounds.bottom - bounds.bottom),
       left: Math.abs(bounds.left - canvasBounds.left),
     };
-    const edge = Object.entries(distances).sort((left, right) => left[1] - right[1])[0][0];
+    const declaredEdge = element.getAttribute("data-camera-safe-ui");
+    const edge = Object.hasOwn(distances, declaredEdge) ? declaredEdge : Object.entries(distances).sort((left, right) => left[1] - right[1])[0][0];
     if (edge === "top") insets.top = Math.max(insets.top, bounds.bottom - canvasBounds.top + 12);
     if (edge === "right") insets.right = Math.max(insets.right, canvasBounds.right - bounds.left + 12);
     if (edge === "bottom") insets.bottom = Math.max(insets.bottom, canvasBounds.bottom - bounds.top + 12);
@@ -606,6 +610,9 @@ function updatePlacementGhosts(root, templateId, variants, theme, plan) {
 }
 
 export default function SiteOverviewScene({
+  buildingObservation,
+  snapshotRequest,
+  onSnapshot,
   siteEnvironment = DEFAULT_SITE_ENVIRONMENT,
   buildings,
   floors,
@@ -621,6 +628,9 @@ export default function SiteOverviewScene({
   movementPlayback = { status: MOVEMENT_PLAYBACK_STATES.STOPPED, currentTime: 0, revision: 0 },
   movementClockRef: externalMovementClockRef = null,
   cameraStateRef,
+  showSceneControls = true,
+  onCameraControlsChange,
+  onZoomChange,
   interactionMode,
   placementTemplateId,
   placementVariants,
@@ -650,6 +660,7 @@ export default function SiteOverviewScene({
   onMovementEditComplete,
 }) {
   const containerRef = useRef(null);
+  const observationLabelsRef = useRef(null);
   const runtimeRef = useRef(null);
   const lastFocusedSelectionKeyRef = useRef(null);
   const gridSettingsRef = useRef(gridSettings);
@@ -742,10 +753,12 @@ export default function SiteOverviewScene({
     const runtime = runtimeRef.current;
     if (!runtime) return;
     runtime.renderer.domElement.style.cursor = interactionMode === SITE_INTERACTION_MODES.NAVIGATE ? "grab" : "crosshair";
-    if (runtime.terrainEdit && interactionMode !== SITE_INTERACTION_MODES.EDIT_TERRAIN) {
-      updateTerrainMesh(runtime.ground, siteEnvironmentRef.current, collectTerrainFeatures(siteObjectsRef.current), excavationsRef.current);
-      syncTerrainPicker(runtime.groundPicker, runtime.ground);
-      runtime.terrainEdit = null;
+    if (interactionMode !== SITE_INTERACTION_MODES.EDIT_TERRAIN) {
+      if (runtime.terrainEdit) {
+        updateTerrainMesh(runtime.ground, siteEnvironmentRef.current, collectTerrainFeatures(siteObjectsRef.current), excavationsRef.current);
+        syncTerrainPicker(runtime.groundPicker, runtime.ground);
+        runtime.terrainEdit = null;
+      }
       updateTerrainBrushCursor(runtime.terrainBrushCursor, null, terrainBrushRef.current, false);
     }
     runtime.areaStart = null;
@@ -868,6 +881,11 @@ export default function SiteOverviewScene({
       movementStats: { frameCount: 0, objectUpdates: 0, errors: 0, uiUpdates: 0, totalFrameMs: 0, maxFrameMs: 0 },
     };
     runtimeRef.current = runtime;
+    runtime.buildingObservation = createBuildingObservation(runtime, {
+      labelRoot: observationLabelsRef.current, labelClass: styles.observationFloorLabel,
+      onSelectFloor: (id) => handlersRef.current.onSelectFloor?.(id),
+      getInsets: () => measureCameraSafeInsets(runtime),
+    });
     syncMovementConfigs(runtime, siteObjectsRef.current, movementClockRef);
     if (import.meta.env.DEV) {
       const debug = window.__DIGITAL_TWIN_MOVEMENT_DEBUG__ ?? { activeRafLoops: 0, rafLoopStarts: 0, pageRenderCount: 0 };
@@ -991,7 +1009,10 @@ export default function SiteOverviewScene({
       }
       if (interactionModeRef.current === SITE_INTERACTION_MODES.EDIT_TERRAIN) {
         const point = hitGround(event);
-        if (!point) return;
+        if (!point) {
+          updateTerrainBrushCursor(runtime.terrainBrushCursor, null, terrainBrushRef.current, false);
+          return;
+        }
         updateTerrainBrushCursor(runtime.terrainBrushCursor, point, terrainBrushRef.current, true);
         if (!runtime.terrainEdit) return;
         const minimumStrokeDistance = Math.max(0.15, runtime.terrainEdit.draft.resolution * 0.22);
@@ -1138,10 +1159,14 @@ export default function SiteOverviewScene({
       }
       if (pointerStart.distanceTo(new THREE.Vector2(event.clientX, event.clientY)) > 5 || dualTransformIsActive(transformControls)) return;
       raycaster.setFromCamera(getPointer(event, renderer.domElement), runtime.activeCamera);
+      const observationFloorId = runtime.buildingObservation.pick(raycaster);
+      if (observationFloorId) return handlersRef.current.onSelectFloor(observationFloorId);
       const intersections = raycaster.intersectObjects(objectRoot.children.filter((object) => object.visible), true);
-      const intersection = intersections[0];
-      const floorIntersection = intersections.find((item) => findUserData(item.object, "floorId", objectRoot));
-      const floorId = floorIntersection ? findUserData(floorIntersection.object, "floorId", objectRoot) : null;
+      const intersection = intersections.find(({ object }) => {
+        for (let item = object; item && item !== objectRoot; item = item.parent) if (!item.visible) return false;
+        return true;
+      });
+      const floorId = intersection ? findUserData(intersection.object, "floorId", objectRoot) : null;
       if (floorId) return handlersRef.current.onSelectFloor(floorId);
       const buildingId = intersection ? findUserData(intersection.object, "buildingId", objectRoot) : null;
       const siteObjectId = intersection ? findUserData(intersection.object, "siteObjectId", objectRoot) : null;
@@ -1151,14 +1176,18 @@ export default function SiteOverviewScene({
     function handleDoubleClick(event) {
       if (interactionModeRef.current !== SITE_INTERACTION_MODES.NAVIGATE) return;
       raycaster.setFromCamera(getPointer(event, renderer.domElement), runtime.activeCamera);
+      const observationFloorId = runtime.buildingObservation.pick(raycaster);
+      if (observationFloorId) return handlersRef.current.onEnterFloor(observationFloorId);
       const intersections = raycaster.intersectObjects(
         [...runtime.buildingObjects.values()].filter((object) => object.visible),
         true,
       );
-      const floorIntersection = intersections.find((item) => findUserData(item.object, "floorId", objectRoot));
-      const floorId = floorIntersection ? findUserData(floorIntersection.object, "floorId", objectRoot) : null;
+      const intersection = intersections.find(({ object }) => {
+        for (let item = object; item && item !== objectRoot; item = item.parent) if (!item.visible) return false;
+        return true;
+      });
+      const floorId = intersection ? findUserData(intersection.object, "floorId", objectRoot) : null;
       if (floorId) return handlersRef.current.onEnterFloor(floorId);
-      const [intersection] = intersections;
       const buildingId = intersection ? findUserData(intersection.object, "buildingId", objectRoot) : null;
       if (buildingId) handlersRef.current.onEnterBuilding(buildingId);
     }
@@ -1296,6 +1325,30 @@ export default function SiteOverviewScene({
         setPathSnapInfo(null);
       }
     }
+    function handleContextMenu(event) {
+      if (interactionModeRef.current !== SITE_INTERACTION_MODES.PLACE_OBJECT) return;
+      event.preventDefault();
+      event.stopPropagation();
+      runtime.placementPointerDown = false;
+      runtime.placementAreaStart = null;
+      runtime.placementDragArea = null;
+      runtime.areaStart = null;
+      runtime.areaEnd = null;
+      runtime.orbitControls.enabled = true;
+      if (runtime.placementPreview) runtime.placementPreview.visible = false;
+      updateGridSnapMarker(runtime.gridSnapMarker, { x: 0, z: 0 }, false);
+      updateAreaGuide(runtime.areaGuide, null, false);
+      clearPlacementGhosts(runtime.placementGhostRoot);
+      setLiveArea(null);
+      handlersRef.current.onCancelPlacement?.();
+    }
+
+    function handlePointerLeave() {
+      if (interactionModeRef.current === SITE_INTERACTION_MODES.EDIT_TERRAIN) {
+        updateTerrainBrushCursor(runtime.terrainBrushCursor, null, terrainBrushRef.current, false);
+      }
+    }
+
     function handlePointerCancel(event) {
       if (runtime.movementWaypointDrag || runtime.movementPointerDown) {
         runtime.movementWaypointDrag = null;
@@ -1351,6 +1404,8 @@ export default function SiteOverviewScene({
 
     renderer.domElement.addEventListener("pointerdown", handlePointerDown);
     renderer.domElement.addEventListener("pointermove", handlePointerMove);
+    renderer.domElement.addEventListener("pointerleave", handlePointerLeave);
+    renderer.domElement.addEventListener("contextmenu", handleContextMenu);
     window.addEventListener("pointerup", handlePointerUp);
     window.addEventListener("pointercancel", handlePointerCancel);
     renderer.domElement.addEventListener("lostpointercapture", handlePointerCancel);
@@ -1417,8 +1472,10 @@ export default function SiteOverviewScene({
         runtime.movementStats.uiUpdates += 1;
       }
       updateCameraFocus(runtime);
+      runtime.buildingObservation.update(frameTime, delta);
       orbitControls.update();
-      clampCameraTargetToSite(runtime);
+      if (!runtime.buildingObservation.isActive()) clampCameraTargetToSite(runtime);
+      runtime.buildingObservation.updateLabels();
       renderer.render(scene, runtime.activeCamera);
       const frameMs = performance.now() - frameStartedAt;
       runtime.movementStats.frameCount += 1;
@@ -1429,6 +1486,7 @@ export default function SiteOverviewScene({
     renderFrame();
 
     return () => {
+      runtime.buildingObservation.dispose();
       runtimeRef.current = null;
       cancelAnimationFrame(animationFrameId);
       if (import.meta.env.DEV && window.__DIGITAL_TWIN_MOVEMENT_DEBUG__) {
@@ -1438,6 +1496,8 @@ export default function SiteOverviewScene({
       removeCameraFocusCancellation();
       renderer.domElement.removeEventListener("pointerdown", handlePointerDown);
       renderer.domElement.removeEventListener("pointermove", handlePointerMove);
+      renderer.domElement.removeEventListener("pointerleave", handlePointerLeave);
+      renderer.domElement.removeEventListener("contextmenu", handleContextMenu);
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerCancel);
       renderer.domElement.removeEventListener("lostpointercapture", handlePointerCancel);
@@ -1604,6 +1664,7 @@ export default function SiteOverviewScene({
     const pathNetwork = autoConnectEnabled
       ? resolveSitePathNetwork(networkObjects)
       : { junctions: [], renderContextsByObjectId: {} };
+    runtime.buildingObservation.releaseShell();
     const buildingIds = new Set(buildings.map((building) => building.id));
     runtime.buildingObjects.forEach((object, id) => {
       if (!buildingIds.has(id)) {
@@ -1770,6 +1831,7 @@ export default function SiteOverviewScene({
       : selectedSiteObjectId
         ? `site-object:${selectedSiteObjectId}`
         : null;
+    if (buildingObservation?.data || runtime.buildingObservation.isActive()) return;
     const selectedObject = runtime.buildingObjects.get(selectedBuildingId)
       ?? runtime.siteEnvironmentObjects.get(selectedSiteObjectId);
     if (!selectedObject) {
@@ -1806,7 +1868,7 @@ export default function SiteOverviewScene({
       focusCameraOnObject(runtime, selectedObject);
     }
     lastFocusedSelectionKeyRef.current = selectionKey;
-  }, [buildings, focusMode, focusRequestKey, selectedBuildingId, selectedSiteObjectId, viewMode]);
+  }, [buildingObservation, buildings, focusMode, focusRequestKey, selectedBuildingId, selectedSiteObjectId, viewMode]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -1857,6 +1919,11 @@ export default function SiteOverviewScene({
     }
     runtime.orbitControls.update();
   }, []);
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime) return undefined;
+    return bindViewerCamera(runtime.orbitControls, onCameraControlsChange, onZoomChange, handleCameraReset);
+  }, [handleCameraReset, onCameraControlsChange, onZoomChange, viewMode]);
   const handleAutoConnectToggle = useCallback(() => {
     const nextEnabled = !autoConnectEnabled;
     setAutoConnectEnabled(nextEnabled);
@@ -1883,9 +1950,33 @@ export default function SiteOverviewScene({
     if (cameraStateRef) cameraStateRef.current = null;
   }, [cameraStateRef, focusMode]);
 
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    runtime?.buildingObservation.sync(buildingObservation?.data ?? null, {
+      ...buildingObservation,
+      focusAfterClose: runtime.siteEnvironmentObjects.get(selectedSiteObjectId),
+    });
+  }, [buildingObservation, buildings, floors, selectedSiteObjectId, siteEnvironment, siteObjects, theme]);
+
+  useEffect(() => scheduleWorldSnapshot({
+    request: snapshotRequest, onSnapshot,
+    getSource: () => {
+      const runtime = runtimeRef.current;
+      if (!runtime) return null;
+      const roots = snapshotRequest.scope === "BUILDING"
+        ? [runtime.buildingObjects.get(snapshotRequest.targetId)]
+        : [runtime.ground, ...runtime.buildingObjects.values(), runtime.siteConnectionRoot,
+          ...siteObjects.filter((object) => object.assetKind !== "TERRAIN").map((object) => runtime.siteEnvironmentObjects.get(object.id))];
+      if (roots.some((object) => !object)) return null;
+      return { renderer: runtime.renderer, scene: runtime.scene, roots, selectionColors: [SCENE_THEMES[theme].selection] };
+    },
+  }), [snapshotRequest, onSnapshot, buildings, floors, siteEnvironment, siteObjects, theme]);
+
   return (
     <section className={styles.viewport} aria-label={`부지 ${viewMode === VIEW_MODES.LAYOUT_2D ? "2D" : "3D"} 편집 화면`}>
       <div ref={containerRef} className={styles.canvasMount} />
+      <div ref={observationLabelsRef} className={styles.observationLabels} aria-label="건축물 층별 정보" />
+      {showSceneControls && <>
       <div className={styles.sceneStatus}><span /> {viewMode === VIEW_MODES.LAYOUT_2D ? "평면 편집" : "공간 편집"}</div>
       {interactionMode === SITE_INTERACTION_MODES.EDIT_MOVEMENT_PATH ? (
         <div className={styles.movementEditStatus} role="status">
@@ -1927,6 +2018,7 @@ export default function SiteOverviewScene({
           {areaPlacementPlan ? <span>{areaPlacementPlan.canPlace ? `예상 배치 ${areaPlacementPlan.count}개` : areaPlacementPlan.message}</span> : null}
         </div>
       )}
+      </>}
     </section>
   );
 }
