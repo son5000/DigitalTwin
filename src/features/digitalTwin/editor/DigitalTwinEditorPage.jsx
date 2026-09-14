@@ -224,7 +224,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     addAssetBinding, updateAssetBinding, selectAssetBinding,
     addMonitoringDevice, updateMonitoringDevice, selectMonitoringDevice,
     addMonitoringBinding, updateMonitoringBinding, selectMonitoringBinding,
-    configureObservationWorkflow, extendObservationWorkflow, updateObservationViewerSettings,
+    configureObservationWorkflow, updateObservationViewerSettings,
     updateViewerPreset, updateEquipmentRepresentationOverride,
   } = editor.actions;
 
@@ -854,15 +854,27 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     }
   }, [enterStep]);
   const handleObservationScopeSelect = useCallback((scopeType, options = {}) => {
-    const result = showObservationScopeSelector && editor.observationWorkflow.configured
-      ? extendObservationWorkflow(scopeType, options)
-      : configureObservationWorkflow(scopeType, options).workflow;
+    const result = configureObservationWorkflow(scopeType, {
+      ...options,
+      viewerSettings: {
+        ...editor.observationWorkflow.viewerSettings,
+        ...options.viewerSettings,
+        mode: getObservationScopeDefinition(scopeType).viewerMode,
+      },
+    }).workflow;
     const firstStepId = result.activeStepIds[0] ?? WORLD_WIZARD_STEP_IDS.MONITORING;
+    resetSiteInteraction();
+    clearFloorPlacement();
+    setShowOnlySelectedBuilding(false);
+    setWorkspaceMode(scopeType === OBSERVATION_SCOPE_TYPES.MULTI_EQUIPMENT ? WORKSPACE_MODES.EQUIPMENT : WORKSPACE_MODES.PLAN);
+    setMonitoringEquipmentPickerOpen(false);
+    setMonitoringEquipmentNotice("");
+    if (firstStepId === WORLD_WIZARD_STEP_IDS.COMPOSITION) navigateToSite();
     setWizardStepId(firstStepId);
     setStepTransitionPrompt(null);
     setShowObservationScopeSelector(false);
     setActiveFloatingPanelId(firstStepId === WORLD_WIZARD_STEP_IDS.MONITORING ? WORLD_PANEL_IDS.DETAILS : WORLD_PANEL_IDS.OBJECTS);
-  }, [configureObservationWorkflow, editor.observationWorkflow.configured, extendObservationWorkflow, showObservationScopeSelector]);
+  }, [clearFloorPlacement, configureObservationWorkflow, editor.observationWorkflow.viewerSettings, navigateToSite, resetSiteInteraction]);
   const handlePrimaryAction = useCallback(() => {
     const currentIndex = activeWizardSteps.findIndex((step) => step.id === wizardStepId);
     const nextStep = activeWizardSteps[currentIndex + 1];

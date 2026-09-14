@@ -1,3 +1,5 @@
+import { useState } from "react";
+import PhotoProjectionLab from "@/features/digitalTwin/editor/components/PhotoProjectionLab";
 import ObjectModelThumbnail from "@/features/digitalTwin/editor/components/ObjectModelThumbnail";
 import FloorWorkspaceCatalog from "@/features/digitalTwin/editor/components/FloorWorkspaceCatalog";
 import { UNIFIED_EQUIPMENT_TEMPLATE_MAP } from "@/features/digitalTwin/editor/constants/unifiedEquipmentCatalog";
@@ -16,6 +18,7 @@ export default function MonitoringEquipmentPicker({
   onAddTemplate,
   onUploadAsset,
 }) {
+  const [developerModeOpen, setDeveloperModeOpen] = useState(false);
   function handleUpload(event) {
     const files = Array.from(event.target.files ?? []);
     if (files.length) onUploadAsset?.(files);
@@ -52,6 +55,7 @@ export default function MonitoringEquipmentPicker({
       {notice ? <p className={styles.notice} role="status">{notice}</p> : null}
 
       <div className={styles.libraryHost}>
+        <button type="button" className={styles.developerButton} onClick={() => setDeveloperModeOpen(true)}>개발자모드 · 사진 투영 테스트</button>
         <FloorWorkspaceCatalog
           mode="EQUIPMENT"
           equipmentOnly
@@ -59,6 +63,7 @@ export default function MonitoringEquipmentPicker({
           onSelectEquipmentTemplate={(templateId) => onAddTemplate?.(templateId)}
         />
       </div>
+      {developerModeOpen ? <PhotoProjectionLab onClose={() => setDeveloperModeOpen(false)} /> : null}
     </section>
   );
 }

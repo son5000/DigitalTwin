@@ -75,6 +75,9 @@
 .notice { color: var(--color-accent-strong); background: var(--state-selected); }
 
 .libraryHost { min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+.developerButton { display: block; width: calc(100% - 20px); min-height: 40px; margin: 10px; padding: 8px 12px; text-align: left; color: var(--color-primary); background: var(--color-input); border: 1px solid var(--color-border-strong); border-radius: 6px; font-size: var(--editor-font-size-sm); font-weight: 600; cursor: pointer; }
+.developerButton:hover { background: var(--state-selected); border-color: var(--color-primary); }
+.developerButton:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 
 @media (orientation: portrait), (max-width: 900px), (max-height: 660px) and (orientation: landscape) {
   .picker {
