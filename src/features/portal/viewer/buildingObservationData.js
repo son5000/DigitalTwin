@@ -31,5 +31,8 @@ export function getBuildingObservationData(layout, building, hierarchy) {
       summary: `${facilities.slice(0, 2).join(" · ") || (hasPlan ? "저장된 도면" : "도면 없음")} · 설비 ${allEquipment.length}개`,
     };
   });
-  return { building, floors: floorData, verticalStructures: items(layout.verticalStructuresByBuildingId?.[building.id]) };
+  const equipmentIds = new Set(floorData.flatMap((floor) => floor.allEquipment.map((item) => item.id)));
+  return { building, floors: floorData, verticalStructures: items(layout.verticalStructuresByBuildingId?.[building.id]),
+    assetBindings: items(layout.equipmentAssetBindings).filter((binding) => equipmentIds.has(binding.equipmentId)),
+  };
 }

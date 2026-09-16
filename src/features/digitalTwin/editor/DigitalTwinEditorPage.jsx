@@ -192,6 +192,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
   const buildingSaveRequestRef = useRef(0);
   const buildingReplacementPendingRef = useRef(false);
   const siteWorldCameraStateRef = useRef(null);
+  const representativeSnapshotRef = useRef(null);
   const layoutReadyRef = useRef(false);
   const hydrateLayoutRef = useRef(null);
 
@@ -226,6 +227,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     addMonitoringBinding, updateMonitoringBinding, selectMonitoringBinding,
     configureObservationWorkflow, updateObservationViewerSettings,
     updateViewerPreset, updateEquipmentRepresentationOverride,
+    setRepresentativeImage,
   } = editor.actions;
 
   const activeWizardSteps = useMemo(() => {
@@ -893,6 +895,18 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     const saved = loadLayout();
     setSaveStatus(saved && hydrateLayout(saved) ? "저장된 월드를 불러왔습니다" : "저장된 배치가 없습니다");
   }, [hydrateLayout]);
+  const handleRepresentativeSnapshot = useCallback(() => {
+    try {
+      const image = representativeSnapshotRef.current?.();
+      if (!image) throw new Error("SNAPSHOT_UNAVAILABLE");
+      setRepresentativeImage(image);
+      const payload = saveLayout({ ...editor.layoutDocument, representativeImage: image });
+      setHasUnsavedChanges(false);
+      setSaveStatus(`대표 이미지 저장 · ${new Date(payload.savedAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}`);
+    } catch {
+      setSaveStatus("대표 이미지를 저장하지 못했습니다");
+    }
+  }, [editor.layoutDocument, setRepresentativeImage]);
   const handleReset = useCallback(() => {
     resetLayout();
     setWizardStepId(WORLD_WIZARD_STEP_IDS.COMPOSITION);
@@ -1157,6 +1171,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                 selectedFloorId={null}
                 interiorBuildingId={null}
                 focusRequestKey={editor.navigationContext.transitionId} focusMode={showOnlySelectedBuilding} cameraStateRef={siteWorldCameraStateRef}
+                snapshotCaptureRef={representativeSnapshotRef}
                 buildingsTranslucent={buildingsTranslucent}
                 groundViewMode={groundViewMode} movementPlayback={movementPlayback} movementClockRef={movementClockRef}
                 interactionMode={siteInteractionMode} placementTemplateId={activeSiteTemplateId} placementVariants={activeSiteVariants}
@@ -1317,6 +1332,8 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
             onDuplicate={isCompositionStep ? duplicateSelectedSiteEntity : isMonitoringStep ? handleMonitoringDuplicate : workspaceMode === WORKSPACE_MODES.PLAN ? duplicateSelectedFloorPlanStructure : duplicateSelectedFloorEquipment}
             onDelete={isCompositionStep ? handleDeleteSiteSelection : isMonitoringStep ? handleMonitoringDelete : workspaceMode === WORKSPACE_MODES.PLAN ? removeSelectedFloorPlanStructure : removeSelectedFloorEquipment}
             onReset={handleReset} onLoad={handleLoad} onSave={handlePrimaryAction} onUndo={handleUndo} onRedo={handleRedo}
+            onCaptureSnapshot={isCompositionStep ? handleRepresentativeSnapshot : undefined}
+            captureSnapshotDisabled={editor.viewMode !== VIEW_MODES.VIEW_3D}
           />
           {isCompositionStep && selectedMovableObject?.movement ? <MovementTimeline key={selectedMovableObject.id} object={selectedMovableObject} playback={movementPlayback} movementClockRef={movementClockRef} error={movementPlaybackError} onChange={handleMovementPlaybackChange} /> : null}
           {isCompositionStep || isFloorWorkspaceStep ? (

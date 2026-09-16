@@ -5,15 +5,26 @@ export const WORLD_TREE_TYPES = Object.freeze({
   SINGLE_EQUIPMENT: { label: "단일 설비", rootType: "EQUIPMENT", placeholder: "/portal/workflow-sensors.svg" },
 });
 const LABELS = { SITE: "부지", BUILDING: "건축물", FLOOR: "층", ROOM: "공간", EQUIPMENT: "설비", PART: "구성요소", SITE_OBJECT: "부지 객체" };
+const EQUIPMENT_SITE_ASSET_KINDS = new Set(["OUTDOOR_EQUIPMENT", "CUSTOM_EQUIPMENT", "INDUSTRIAL", "ELECTRICAL", "LOGISTICS", "PIPE_TANK"]);
 const list = (value) => Array.isArray(value) ? value.filter((item) => item && typeof item.id === "string" && item.id) : [];
+const isEquipmentSiteObject = (item) => EQUIPMENT_SITE_ASSET_KINDS.has(item?.assetKind);
 export const worldNodeKey = (type, id, equipmentId) => JSON.stringify([type, equipmentId ?? null, id]);
 
 // A read-only projection of the saved relationships; never written back to the editor.
 export function createWorldTree(layout = {}, resolveAsset = () => null) {
   const hierarchy = list(layout.hierarchy?.nodes);
+  const hierarchyById = new Map(hierarchy.map((item) => [item.id, item]));
+  const spatialOwner = (id) => ["ROOM", "FLOOR"].includes(hierarchyById.get(id)?.type) ? id : null;
+  function equipmentOwner(item, containerId) {
+    // Explicit saved ownership, collection ownership, then the hierarchy record.
+    // A missing room can still resolve through floorId; never infer a floor by name.
+    return spatialOwner(item.roomId) ?? spatialOwner(item.floorId) ?? spatialOwner(item.parentId)
+      ?? spatialOwner(containerId) ?? spatialOwner(hierarchyById.get(item.id)?.parentId)
+      ?? item.parentId ?? hierarchyById.get(item.id)?.parentId ?? null;
+  }
   const equipmentEntries = new Map();
   const addEquipment = (items, parentId) => list(items).forEach((item) => {
-    if (!equipmentEntries.has(item.id)) equipmentEntries.set(item.id, { item, parentId: item.roomId ?? item.floorId ?? parentId });
+    if (!equipmentEntries.has(item.id)) equipmentEntries.set(item.id, { item, parentId: equipmentOwner(item, parentId) });
   });
   Object.entries(layout.equipmentByFloorId ?? {}).forEach(([id, items]) => addEquipment(items, id));
   Object.entries(layout.roomScenes ?? {}).forEach(([id, scene]) => addEquipment(scene?.equipment, id));
@@ -39,11 +50,20 @@ export function createWorldTree(layout = {}, resolveAsset = () => null) {
     if (!equipmentId) byId.set(item.id, node);
     return node;
   }
-  hierarchy.forEach((item) => { if (LABELS[item.type]) add(item, item.type, item.parentId); });
+  hierarchy.forEach((item) => {
+    if (LABELS[item.type] && (item.type !== "SITE_OBJECT" || isEquipmentSiteObject(item))) {
+      add(item, item.type, item.type === "EQUIPMENT" ? equipmentOwner(item) : item.parentId);
+    }
+  });
   const site = [...nodes.values()].find((node) => node.type === "SITE");
-  siteObjects.forEach((item) => add(item, "SITE_OBJECT", item.parentId ?? site?.id));
+  siteObjects.filter((item) => isEquipmentSiteObject({ ...item, type: "SITE_OBJECT" }))
+    .forEach((item) => add(item, "SITE_OBJECT", item.parentId ?? site?.id));
   equipmentEntries.forEach(({ item, parentId }) => {
     const node = add(item, "EQUIPMENT", parentId);
+    // add() reuses stable keys: a hierarchy placeholder may already exist with an
+    // outdated building-level parent. Apply the actual instance's saved ownership.
+    node.parentId = parentId;
+    node.item = item;
     const asset = resolveAsset(item.customAssetId) ?? item.customAssetSnapshot;
     node.asset = asset;
     list(asset?.parts ?? item.parts).forEach((part) => {
@@ -120,4 +140,14 @@ export function toggleTreeNode(expanded, key) {
   const next = new Set(expanded);
   if (next.has(key)) next.delete(key); else next.add(key);
   return next;
+}
+
+export function getViewerEquipmentContext(tree, node) {
+  if (!node) return null;
+  const owner = node.type === "PART" ? tree.nodes.get(worldNodeKey("EQUIPMENT", node.equipmentId)) : node;
+  const outdoor = owner?.type === "SITE_OBJECT" && isEquipmentSiteObject(owner.item);
+  if (owner?.type !== "EQUIPMENT" && !outdoor) return null;
+  const ancestors = getTreeAncestors(tree, owner.key).map((key) => tree.nodes.get(key));
+  return { node: owner, item: owner.item, outdoor, floor: ancestors.find((item) => item.type === "FLOOR"),
+    building: ancestors.find((item) => item.type === "BUILDING") };
 }

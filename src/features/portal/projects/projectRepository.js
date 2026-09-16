@@ -72,7 +72,9 @@ export function getProjectDetails(project) {
   return {
     name: name || "이름 없는 월드",
     scope: names[scope] ?? names.SITE,
-    thumbnail: `/portal/workflow-${image}.svg`,
+    thumbnail: typeof layout.representativeImage === "string" && layout.representativeImage.startsWith("data:image/")
+      ? layout.representativeImage
+      : `/portal/workflow-${image}.svg`,
     modified: Number.isNaN(date.getTime()) ? "수정일 정보 없음" : date.toLocaleString("ko-KR", { dateStyle: "medium", timeStyle: "short" }),
     status: "로컬 저장됨",
   };

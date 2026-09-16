@@ -12,11 +12,13 @@ import LandingPage from "@/features/portal/landing/LandingPage";
 import ObservationPage from "@/features/portal/viewer/ObservationPage";
 import ProjectsPage from "@/features/portal/projects/ProjectsPage";
 import ProjectViewerPage from "@/features/portal/projects/ProjectViewerPage";
+import { getOperationsSection } from "@/features/portal/viewer/operationsNavigation";
 
 function usePathname() {
-  const [pathname, setPathname] = useState(() => window.location.pathname + window.location.search);
+  const readLocation = () => ({ url: window.location.pathname + window.location.search, record: window.history.state?.operationsRecord ?? null });
+  const [pathname, setPathname] = useState(readLocation);
   useEffect(() => {
-    const handleNavigation = () => setPathname(window.location.pathname + window.location.search);
+    const handleNavigation = () => setPathname(readLocation());
     window.addEventListener("popstate", handleNavigation);
     return () => window.removeEventListener("popstate", handleNavigation);
   }, []);
@@ -25,13 +27,14 @@ function usePathname() {
 
 function AppRoute() {
   const location = usePathname();
-  const [pathname, search = ""] = location.split("?");
+  const [pathname, search = ""] = location.url.split("?");
   const { revision } = useCustomAssets();
   if (pathname === "/") return <LandingPage />;
   if (pathname === "/projects" || pathname === "/projects/") return <ProjectsPage />;
-  if (pathname === "/viewer" || pathname === "/viewer/") {
+  const operationsSection = getOperationsSection(pathname);
+  if (pathname === "/viewer" || pathname === "/viewer/" || operationsSection) {
     const projectId = new URLSearchParams(search).get("project");
-    return projectId ? <ProjectViewerPage key={projectId} projectId={projectId} /> : <ObservationPage />;
+    return projectId ? <ProjectViewerPage key={projectId} projectId={projectId} operationsSection={operationsSection} operationsRecord={location.record} /> : <ObservationPage operationsSection={operationsSection} operationsRecord={location.record} />;
   }
   if (pathname === "/custom" || pathname === "/custom/" || pathname === "/custom/buildings" || pathname === "/custom/buildings/" || pathname === "/custom/equipment" || pathname === "/custom/equipment/") return <CustomWorkshopPage />;
   if (pathname === "/custom/buildings/new") return <CustomBuildingEditorPage />;

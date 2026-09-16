@@ -11,7 +11,7 @@
 .empty h2 { font-size: 21px; margin-bottom: 10px; }
 .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; }
 .card { overflow: hidden; border: 1px solid #dbe5f2; border-radius: 16px; background: #fff; box-shadow: 0 10px 28px #1c36580a; }
-.thumbnail { display: block; width: 100%; height: 180px; object-fit: contain; background: #edf4fc; }
+.thumbnail { display: block; width: 100%; height: 180px; object-fit: cover; background: #edf4fc; }
 .cardBody { padding: 24px; }
 .status { display: inline-block; background: #edf4ff; color: #2458d6; border-radius: 20px; padding: 5px 10px; font-size: 11px; }
 .card h2 { font-size: 20px; margin: 15px 0 8px; overflow-wrap: anywhere; }

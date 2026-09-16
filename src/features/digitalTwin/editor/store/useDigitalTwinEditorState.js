@@ -53,6 +53,7 @@ import {
   snapValue,
 } from "@/features/digitalTwin/editor/utils/editorMath";
 import { placeObjectsInArea } from "@/features/digitalTwin/editor/utils/siteAreaPlacement";
+import { createSequentialCopyName } from "@/features/digitalTwin/editor/utils/objectCopyName";
 import {
   findPipeSnapCandidate,
   resolvePipeSnap,
@@ -416,6 +417,7 @@ export default function useDigitalTwinEditorState() {
   const [navigationContext, setNavigationContext] = useState(createInitialNavigationContext);
   const [observationWorkflow, setObservationWorkflow] = useState(createUnconfiguredObservationWorkflow);
   const [viewerPreset, setViewerPreset] = useState(createViewerPreset);
+  const [representativeImage, setRepresentativeImage] = useState(null);
   const [historyAvailability, setHistoryAvailability] = useState({ canUndo: false, canRedo: false });
   const snapSize = gridSettings.baseSize;
   const scanTimersRef = useRef(new Map());
@@ -1036,6 +1038,7 @@ export default function useDigitalTwinEditorState() {
     setNavigationContext(createInitialNavigationContext());
     setObservationWorkflow(createUnconfiguredObservationWorkflow());
     setViewerPreset(createViewerPreset());
+    setRepresentativeImage(null);
     resetWorldStructures();
     floorPlanEditor.actions.resetFloorPlanState();
     floorEquipmentEditor.actions.resetFloorEquipmentState();
@@ -1084,6 +1087,7 @@ export default function useDigitalTwinEditorState() {
       },
     });
     setViewerPreset(normalizedPreset);
+    setRepresentativeImage(typeof layout?.representativeImage === "string" ? layout.representativeImage : null);
     setRoomScenes(nextRoomScenes);
     setSiteEnvironment(nextSiteEnvironment);
     setSiteBoundaryNotice("");
@@ -1786,7 +1790,7 @@ export default function useDigitalTwinEditorState() {
       const normalizedDuplicate = normalizeSiteObject({
         ...structuredClone(selectedSiteObject),
         id: `SITE_OBJECT_${crypto.randomUUID()}`,
-        name: `${selectedSiteObject.name} 복사본`,
+        name: createSequentialCopyName(selectedSiteObject.name, siteObjects),
         position: {
           ...selectedSiteObject.position,
           x: selectedSiteObject.position.x + Math.max(1, gridSettings.baseSize),
@@ -2068,13 +2072,14 @@ export default function useDigitalTwinEditorState() {
     serverBindings: monitoringEditor.serverBindings,
     observationWorkflow,
     viewerPreset,
+    representativeImage,
     observationConfig: {
       equipmentAssetBindings: monitoringEditor.equipmentAssetBindings,
       sensorBindings: monitoringEditor.sensorBindings,
       observationPoints: monitoringEditor.observationPoints,
       serverBindings: monitoringEditor.serverBindings,
     },
-  }), [currentRoomScene, floorEquipmentEditor.equipmentByFloorId, floorPlanEditor.floorPlansById, floorPlanEditor.verticalStructuresByBuildingId, gridSettings, hierarchy, monitoringEditor.equipmentAssetBindings, monitoringEditor.observationPoints, monitoringEditor.sensorBindings, monitoringEditor.serverBindings, observationWorkflow, roomScenes, siteEnvironment, siteObjects, viewerPreset]);
+  }), [currentRoomScene, floorEquipmentEditor.equipmentByFloorId, floorPlanEditor.floorPlansById, floorPlanEditor.verticalStructuresByBuildingId, gridSettings, hierarchy, monitoringEditor.equipmentAssetBindings, monitoringEditor.observationPoints, monitoringEditor.sensorBindings, monitoringEditor.serverBindings, observationWorkflow, representativeImage, roomScenes, siteEnvironment, siteObjects, viewerPreset]);
 
   const commitHistorySnapshot = useCallback((snapshot) => {
     const currentSnapshot = historyCurrentRef.current;
@@ -2224,6 +2229,7 @@ export default function useDigitalTwinEditorState() {
     hierarchy,
     observationWorkflow,
     viewerPreset,
+    representativeImage,
     observationBuildingHasEdits,
     hierarchyPath,
     rooms,
@@ -2325,6 +2331,7 @@ export default function useDigitalTwinEditorState() {
       updateObservationViewerSettings,
       updateViewerPreset,
       updateEquipmentRepresentationOverride,
+      setRepresentativeImage,
       selectRoom,
       addRoom,
       selectBuilding,

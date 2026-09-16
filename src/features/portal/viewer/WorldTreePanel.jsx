@@ -3,16 +3,18 @@ import { ChevronRightIcon } from "@/components/icons/actionIcons";
 import { getTreeAncestors, toggleTreeNode } from "./worldTreeModel";
 import styles from "./WorldTreePanel.module.css";
 
-function Snapshot({ tree, snapshot }) {
+function Snapshot({ tree, snapshot, representativeImage }) {
   const [failed, setFailed] = useState(false);
-  const source = !failed && snapshot?.url ? snapshot.url : tree.config.placeholder;
-  return <figure className={styles.snapshot}>
+  const source = !failed && (representativeImage || snapshot?.url)
+    ? representativeImage || snapshot.url
+    : tree.config.placeholder;
+  return <div className={styles.snapshot}>
     <img src={source} alt={`${tree.root?.label ?? tree.config.label} 대표 이미지`} onError={() => setFailed(true)} />
-    <figcaption>{snapshot?.url && !failed ? `${tree.config.label} · 실제 월드 스냅샷` : snapshot?.failed || failed ? "스냅샷을 불러오지 못했습니다" : "월드 스냅샷 준비 중"}</figcaption>
-  </figure>;
+    <div className={styles.snapshotCaption}>{representativeImage && !failed ? `${tree.config.label} · 대표 이미지` : snapshot?.url && !failed ? `${tree.config.label} · 실제 월드 스냅샷` : snapshot?.failed || failed ? "스냅샷을 불러오지 못했습니다" : "월드 스냅샷 준비 중"}</div>
+  </div>;
 }
 
-export default function WorldTreePanel({ tree, snapshot, selectedKey, selectionVersion, onSelect }) {
+export default function WorldTreePanel({ tree, snapshot, representativeImage, selectedKey, selectionVersion, onSelect }) {
   const [expansion, setExpansion] = useState(() => ({ selectedKey, selectionVersion, keys: new Set([...tree.roots.map((node) => node.key), ...getTreeAncestors(tree, selectedKey)]) }));
   const containerRef = useRef(null);
   let expanded = expansion.keys;
@@ -36,7 +38,7 @@ export default function WorldTreePanel({ tree, snapshot, selectedKey, selectionV
     </li>;
   }
   return <section className={styles.panel} aria-label="월드 계층">
-    <Snapshot key={snapshot?.url ?? tree.scope} tree={tree} snapshot={snapshot} />
+    <Snapshot key={representativeImage ?? snapshot?.url ?? tree.scope} tree={tree} snapshot={snapshot} representativeImage={representativeImage} />
     <div ref={containerRef} className={styles.scroll}>
       {tree.roots.length ? <ul className={styles.tree} aria-label={`${tree.config.label} 계층`}>{tree.roots.map(renderNode)}</ul> : <p className={styles.empty}>등록된 월드 객체가 없습니다.</p>}
     </div>

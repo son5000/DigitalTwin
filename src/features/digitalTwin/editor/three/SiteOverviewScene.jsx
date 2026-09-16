@@ -1,6 +1,8 @@
 import { bindViewerCamera } from "./bindViewerCamera";
-import { scheduleWorldSnapshot } from "./captureWorldSnapshot";
+import { captureWorldSnapshot, scheduleWorldSnapshot } from "./captureWorldSnapshot";
 import { createBuildingObservation } from "./buildingObservation";
+import { createEquipmentRenderObjects } from "./equipmentInstancing";
+import { focusEquipmentInWorld } from "./viewerEquipmentFocus";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -609,10 +611,16 @@ function updatePlacementGhosts(root, templateId, variants, theme, plan) {
   });
 }
 
+const EMPTY_VIEWER_EQUIPMENT = [];
+
 export default function SiteOverviewScene({
   buildingObservation,
+  equipmentFocus = null,
+  worldEquipment = EMPTY_VIEWER_EQUIPMENT,
+  enableObjectLod = true,
   snapshotRequest,
   onSnapshot,
+  snapshotCaptureRef,
   siteEnvironment = DEFAULT_SITE_ENVIRONMENT,
   buildings,
   floors,
@@ -1473,6 +1481,15 @@ export default function SiteOverviewScene({
       }
       updateCameraFocus(runtime);
       runtime.buildingObservation.update(frameTime, delta);
+      if (runtime.viewerEquipmentRoot) runtime.viewerEquipmentRoot.visible = !runtime.buildingObservation.isActive();
+      const request = runtime.viewerEquipmentFocus;
+      if (request && !runtime.buildingObservation.isActive() && runtime.focusedEquipmentRequest !== request) {
+        const object = request.outdoor ? runtime.siteEnvironmentObjects.get(request.item.id) : runtime.viewerEquipmentRoot;
+        if (object && focusEquipmentInWorld(runtime, object, request.item, {
+          equipmentId: request.outdoor ? null : request.item.id,
+          parent: request.outdoor ? null : object, viewportInsets: measureCameraSafeInsets(runtime),
+        })) runtime.focusedEquipmentRequest = request;
+      }
       orbitControls.update();
       if (!runtime.buildingObservation.isActive()) clampCameraTargetToSite(runtime);
       runtime.buildingObservation.updateLabels();
@@ -1731,7 +1748,7 @@ export default function SiteOverviewScene({
         ...(pathNetwork.renderContextsByObjectId[siteObject.id] ?? {}),
         verticalPath: verticalPathsByObjectId.get(siteObject.id) ?? null,
       };
-      const signature = getSiteObjectSignature(siteObject, selected, theme, pathRenderContext);
+      const signature = getSiteObjectSignature(siteObject, selected, theme, pathRenderContext, enableObjectLod);
       let object = runtime.siteEnvironmentObjects.get(siteObject.id);
       if (!object || object.userData.geometrySignature !== signature) {
         if (object) {
@@ -1741,7 +1758,7 @@ export default function SiteOverviewScene({
         }
         object = createSiteEnvironmentObject(siteObject, {
           selected, theme, selectionColor: SCENE_THEMES[theme].selection, edgeColor: siteTheme.edge,
-          pathRenderContext,
+          pathRenderContext, enableLod: enableObjectLod,
         });
         configureMovementAnimation(object);
         runtime.siteEnvironmentObjects.set(siteObject.id, object);
@@ -1780,7 +1797,7 @@ export default function SiteOverviewScene({
         allowVerticalTranslation: runtime.activeCamera.isPerspectiveCamera,
       });
     } else detachDualTransformControls(runtime.transformControls);
-  }, [autoConnectEnabled, buildings, buildingsTranslucent, floors, interactionMode, interiorBuildingId, selectedBuildingId, selectedFloorId, selectedSiteObjectId, siteEnvironment, siteObjects, theme]);
+  }, [autoConnectEnabled, buildings, buildingsTranslucent, enableObjectLod, floors, interactionMode, interiorBuildingId, selectedBuildingId, selectedFloorId, selectedSiteObjectId, siteEnvironment, siteObjects, theme]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -1831,7 +1848,7 @@ export default function SiteOverviewScene({
       : selectedSiteObjectId
         ? `site-object:${selectedSiteObjectId}`
         : null;
-    if (buildingObservation?.data || runtime.buildingObservation.isActive()) return;
+    if (equipmentFocus || buildingObservation?.data || runtime.buildingObservation.isActive()) return;
     const selectedObject = runtime.buildingObjects.get(selectedBuildingId)
       ?? runtime.siteEnvironmentObjects.get(selectedSiteObjectId);
     if (!selectedObject) {
@@ -1868,7 +1885,7 @@ export default function SiteOverviewScene({
       focusCameraOnObject(runtime, selectedObject);
     }
     lastFocusedSelectionKeyRef.current = selectionKey;
-  }, [buildingObservation, buildings, focusMode, focusRequestKey, selectedBuildingId, selectedSiteObjectId, viewMode]);
+  }, [equipmentFocus, buildingObservation, buildings, focusMode, focusRequestKey, selectedBuildingId, selectedSiteObjectId, viewMode]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -1958,6 +1975,26 @@ export default function SiteOverviewScene({
     });
   }, [buildingObservation, buildings, floors, selectedSiteObjectId, siteEnvironment, siteObjects, theme]);
 
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime) return undefined;
+    const root = new THREE.Group();
+    const entries = worldEquipment.filter((item) => item.visible !== false).map((item) => ({ equipment: {
+      ...item, position: { x: 0, y: 0, z: 0, ...item.position }, rotation: { x: 0, y: 0, z: 0, ...item.rotation },
+      dimensions: { width: 1, height: 1, depth: 1, ...item.dimensions }, appearance: { color: "#6f8f9d", opacity: 1, ...item.appearance },
+    }, baseY: 0 }));
+    createEquipmentRenderObjects(entries, { theme, enableLod: false }).forEach((object) => root.add(object));
+    runtime.scene.add(root); runtime.viewerEquipmentRoot = root;
+    return () => { root.removeFromParent(); disposeObject3D(root); runtime.viewerEquipmentRoot = null; };
+  }, [worldEquipment, theme]);
+
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
+    runtime.viewerEquipmentFocus = equipmentFocus;
+    if (!equipmentFocus) runtime.focusedEquipmentRequest = null;
+  }, [equipmentFocus]);
+
   useEffect(() => scheduleWorldSnapshot({
     request: snapshotRequest, onSnapshot,
     getSource: () => {
@@ -1971,6 +2008,25 @@ export default function SiteOverviewScene({
       return { renderer: runtime.renderer, scene: runtime.scene, roots, selectionColors: [SCENE_THEMES[theme].selection] };
     },
   }), [snapshotRequest, onSnapshot, buildings, floors, siteEnvironment, siteObjects, theme]);
+
+  useEffect(() => {
+    if (!snapshotCaptureRef) return undefined;
+    snapshotCaptureRef.current = () => {
+      const runtime = runtimeRef.current;
+      if (!runtime) throw new Error("SNAPSHOT_SCENE_UNAVAILABLE");
+      const roots = [runtime.ground, ...runtime.buildingObjects.values(), runtime.siteConnectionRoot,
+        ...siteObjects.filter((object) => object.assetKind !== "TERRAIN").map((object) => runtime.siteEnvironmentObjects.get(object.id))];
+      if (roots.some((object) => !object)) throw new Error("SNAPSHOT_CONTENT_UNAVAILABLE");
+      return captureWorldSnapshot({
+        renderer: runtime.renderer,
+        scene: runtime.scene,
+        camera: runtime.activeCamera,
+        roots,
+        selectionColors: [SCENE_THEMES[theme].selection],
+      });
+    };
+    return () => { snapshotCaptureRef.current = null; };
+  }, [buildings, floors, siteEnvironment, siteObjects, snapshotCaptureRef, theme]);
 
   return (
     <section className={styles.viewport} aria-label={`부지 ${viewMode === VIEW_MODES.LAYOUT_2D ? "2D" : "3D"} 편집 화면`}>

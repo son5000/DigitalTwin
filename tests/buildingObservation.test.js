@@ -7,6 +7,11 @@ import { focusCameraOnBounds } from "../src/features/digitalTwin/editor/three/ca
 
 let server;
 let createBuildingObservation;
+let createEquipmentRenderObjects;
+let equipmentTemplates;
+let disposeObject3D;
+let createWorldStructureObject;
+let sceneTheme;
 const originalDocument = globalThis.document;
 before(async () => {
   server = await createServer({
@@ -15,7 +20,79 @@ before(async () => {
     resolve: { alias: { "@": fileURLToPath(new URL("../src", import.meta.url)) } },
   });
   ({ createBuildingObservation } = await server.ssrLoadModule("/src/features/digitalTwin/editor/three/buildingObservation.js"));
+  ({ createEquipmentRenderObjects } = await server.ssrLoadModule("/src/features/digitalTwin/editor/three/equipmentInstancing.js"));
+  ({ UNIFIED_EQUIPMENT_TEMPLATE_MAP: equipmentTemplates } = await server.ssrLoadModule("/src/features/digitalTwin/editor/constants/unifiedEquipmentCatalog.js"));
+  ({ disposeObject3D } = await server.ssrLoadModule("/src/features/digitalTwin/editor/three/disposeObject3D.js"));
+  ({ createWorldStructureObject } = await server.ssrLoadModule("/src/features/digitalTwin/editor/world/WorldStructureFactory.js"));
+  sceneTheme = (await server.ssrLoadModule("/src/features/digitalTwin/editor/constants/sceneThemes.js")).SCENE_THEMES.light;
   globalThis.document = { createElement: () => ({ setAttribute() {}, append() {}, addEventListener() {}, remove() {} }) };
+});
+
+test("건축물 격리는 진입·층 선택·다른 건물 전환 내내 유지되고 원래 숨김 상태를 복원한다", () => {
+  const f = fixture();
+  const other = f.shell.clone(); const hidden = f.shell.clone(); hidden.visible = false;
+  const road = new THREE.Group(); const hiddenObject = new THREE.Group(); hiddenObject.visible = false;
+  f.runtime.buildingObjects.set("other", other); f.runtime.buildingObjects.set("hidden", hidden);
+  f.runtime.scene.add(other, hidden);
+  f.runtime.siteEnvironmentObjects.set("road", road); f.runtime.siteEnvironmentObjects.set("hidden", hiddenObject);
+  f.runtime.grid.visible = false;
+  try {
+    f.observation.sync(f.data, { ...f.settings, floorId: null });
+    assert.equal(other.visible, false); assert.equal(road.visible, false); assert.equal(f.runtime.ground.visible, false);
+    f.observation.sync(f.data, f.settings); f.settle();
+    assert.equal(f.shell.visible, true); assert.equal(other.visible, false);
+    other.visible = true; road.visible = true; f.settle();
+    assert.equal(other.visible, false); assert.equal(road.visible, false);
+    const next = { ...f.data, building: { ...f.data.building, id: "other" } };
+    f.observation.sync(next, f.settings); f.settle();
+    assert.equal(f.shell.visible, false); assert.equal(other.visible, true);
+    assert.equal(f.runtime.scene.getObjectByName("BuildingObservation:building").visible, false);
+    f.observation.sync(null, {}); f.settle();
+    assert.equal(f.shell.visible, true); assert.equal(other.visible, true); assert.equal(hidden.visible, false);
+    assert.equal(road.visible, true); assert.equal(hiddenObject.visible, false);
+    assert.equal(f.runtime.ground.visible, true); assert.equal(f.runtime.grid.visible, false);
+  } finally { f.observation.dispose(); }
+});
+
+test("관측 설비는 거리와 무관하게 원본을 유지하고 에디터의 기본 LOD와 인스턴싱은 유지한다", () => {
+  const templates = Object.values(equipmentTemplates).filter((template) => template.lod);
+  assert.ok(templates.length > 0);
+  for (const template of templates.slice(0, 5)) {
+    const equipment = { id: template.id, name: "", shapeTemplateId: template.id, dimensions: { width: 2, height: 1, depth: 1 }, parameters: {},
+      position: { x: 2, y: 0, z: 3 }, rotation: { x: 0, y: 0.4, z: 0 }, appearance: { color: "#78563b", opacity: 0.8 }, visible: true };
+    const entries = [{ equipment, baseY: 4 }];
+    const [editor] = createEquipmentRenderObjects(entries, { theme: "light" });
+    const [viewer] = createEquipmentRenderObjects(entries, { theme: "light", enableLod: false });
+    const lods = []; editor.traverse((object) => { if (object.isLOD) lods.push(object); });
+    assert.ok(lods.length > 0, template.id);
+    viewer.traverse((object) => assert.ok(!object.isLOD, template.id));
+    const camera = new THREE.PerspectiveCamera(); camera.position.set(2000, 2000, 2000); camera.updateMatrixWorld();
+    lods.forEach((lod) => { lod.update(camera); assert.equal(lod.getCurrentLevel(), 1); });
+    assert.deepEqual(viewer.position.toArray(), [2, 4, 3]); assert.equal(viewer.rotation.y, 0.4);
+    disposeObject3D(editor); disposeObject3D(viewer);
+    const batch = createEquipmentRenderObjects([0, 1, 2].map((i) => ({ equipment: { ...equipment, id: `${template.id}-${i}` }, baseY: 0 })), { theme: "light", enableLod: false });
+    assert.equal(batch.length, 1); assert.equal(batch[0].userData.instancedEquipmentBatch, true);
+    batch[0].traverse((object) => assert.ok(!object.isLOD));
+    disposeObject3D(batch[0]);
+  }
+});
+
+test("책상과 선반은 건축물 관측에서 박스 LOD 없이 렌더링되며 에디터 LOD는 유지된다", () => {
+  for (const type of ["OFFICE_DESK", "STORAGE_SHELF"]) {
+    const structure = { id: type, type, name: type, parameters: { width: 1.4, height: 0.8, depth: 0.7 }, position: { x: 1, y: 0, z: 2 }, rotation: { x: 0, y: 0, z: 0 }, appearance: { color: "#8D694B", opacity: 1 }, visible: true };
+    const editor = createWorldStructureObject(structure, { selected: false, theme: "light", sceneTheme });
+    assert.equal(editor.children[0].isLOD, true);
+    disposeObject3D(editor);
+    const f = fixture(); f.data.floors[0].plan.structures = [structure];
+    try {
+      f.observation.sync(f.data, f.settings); f.settle();
+      const root = f.runtime.scene.getObjectByName("BuildingObservation:building");
+      root.traverse((object) => assert.ok(!object.isLOD));
+      const object = root.getObjectByName(type); let meshes = 0;
+      object.traverse((child) => { if (child.isMesh) meshes += 1; });
+      assert.ok(meshes > 1, type);
+    } finally { f.observation.dispose(); }
+  }
 });
 after(async () => {
   globalThis.document = originalDocument;
@@ -72,7 +149,8 @@ test("층은 가까운 앞사선으로 돌출하며 외곽선과 함께 이동�
     assert.equal(outline.parent, selected);
     assert.equal(outline.geometry.attributes.position.count, 7);
     assert.ok(slab.material.emissive.r > slab.material.emissive.b);
-    const baselineOutline = outline.material.color.clone();
+    assert.equal(outline.material.color.getHexString(), "ff7900");
+    const baselineOutline = new THREE.Color(sceneTheme.wallEdge);
     assert.equal(f.shell.material.opacity, 0);
     assert.equal(root.children.filter((group) => group.children.some((child) => child.userData.floorBoundary)).length, 3);
     f.observation.sync(f.data, { ...f.settings, floorId: "floor-3" }); f.settle();
@@ -108,6 +186,33 @@ test("동일 층 재클릭, 표시값 변경, 데이터 재생성은 카메라�
   } finally { f.observation.dispose(); }
 });
 
+test("층별 월드를 유지하며 선택한 설비로 이동하고 표시값 갱신은 포커스를 재시작하지 않는다", () => {
+  const f = fixture();
+  const template = Object.values(equipmentTemplates).find((item) => item.lod);
+  f.data.floors[1].equipment = [0, 1, 2].map((index) => ({ id: `target-${index}`, name: "", shapeTemplateId: template.id,
+    dimensions: { width: 2, height: 1, depth: 1 }, position: { x: index * 5, y: 0, z: 0 }, rotation: { x: 0, y: Math.PI / 2, z: 0 },
+    appearance: { color: "#498daf", opacity: 1 }, parameters: {}, visible: true,
+  }));
+  const settings = { ...f.settings, equipmentId: "target-1" };
+  try {
+    f.observation.sync(f.data, settings); f.settle();
+    const root = f.runtime.scene.getObjectByName("BuildingObservation:building");
+    const floor = root.getObjectByName("2층");
+    const target = f.runtime.cameraFocus;
+    assert.equal(target.duration, 700);
+    assert.equal(root.visible, true);
+    assert.equal(root.children.length, 3);
+    const localTarget = floor.worldToLocal(target.target.clone());
+    assert.ok(Math.abs(localTarget.x - 5) < 2);
+    assert.ok(Math.abs(localTarget.z) < 2);
+    f.observation.sync(f.data, { ...settings, opacity: 0.2 }); f.settle();
+    assert.equal(f.runtime.cameraFocus, target);
+    f.observation.sync(f.data, { ...settings, equipmentId: "target-2", selectionVersion: 2 }); f.settle();
+    assert.notEqual(f.runtime.cameraFocus, target);
+    assert.equal(root.visible, true);
+  } finally { f.observation.dispose(); }
+});
+
 test("관측 종료 시 외벽 원본 재질과 기본 뷰를 복원한다", () => {
   const f = fixture();
   const original = f.shell.material;
@@ -119,6 +224,146 @@ test("관측 종료 시 외벽 원본 재질과 기본 뷰를 복원한다", () 
     assert.equal(f.shell.material, original);
     assert.equal(original.opacity, 1);
     assert.equal(f.runtime.ground.visible, true);
+  } finally { f.observation.dispose(); }
+});
+
+test("층 강조는 바닥·외곽선에만 적용하고 설비·내부 구조물의 재질과 텍스처를 복원한다", () => {
+  for (const theme of ["light", "dark"]) {
+    const f = fixture();
+    const settings = { ...f.settings, theme };
+    try {
+      f.observation.sync(f.data, { ...settings, floorId: null });
+      const root = f.runtime.scene.getObjectByName("BuildingObservation:building");
+      const floor = root.getObjectByName("2층");
+      const texture = new THREE.Texture();
+      const material = new THREE.MeshStandardMaterial({ color: "#268ad3", map: texture, opacity: 0.65, transparent: true });
+      const equipment = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), [material, material.clone()]);
+      equipment.position.y = 1;
+      const original = equipment.material;
+      floor.add(equipment); // Also covers material arrays used by registered 3D models.
+      const wall = new THREE.Mesh(new THREE.BoxGeometry(1, 2, 0.2), new THREE.MeshStandardMaterial({ color: "#658c53" }));
+      wall.position.y = 1;
+      floor.add(wall);
+      const wallMaterial = wall.material;
+      const slab = floor.children[0].children[0];
+      const boundary = floor.children.find((child) => child.userData.floorBoundary);
+      const slabMaterial = slab.material;
+      const boundaryMaterial = boundary.material;
+      f.runtime.cameraFocus = null;
+      f.observation.sync(f.data, settings); f.settle();
+      for (const entry of equipment.material) {
+        assert.equal(entry.color.getHex(), material.color.getHex());
+        assert.equal(entry.emissive.getHex(), material.emissive.getHex());
+        assert.equal(entry.opacity, 0.65);
+        assert.equal(entry.map, texture);
+        assert.equal(entry.depthWrite, material.depthWrite);
+      }
+      assert.equal(wall.material.color.getHex(), wallMaterial.color.getHex());
+      assert.equal(wall.material.transparent, false);
+      assert.equal(wall.material.opacity, 1);
+      assert.equal(boundary.material.color.getHexString(), "ff7900");
+      assert.ok(slab.material.emissiveIntensity < 0.05);
+      slab.geometry.computeBoundingBox();
+      assert.ok(Math.abs(slab.geometry.boundingBox.min.y + 0.16) < 1e-6);
+      assert.ok(Math.abs(slab.geometry.boundingBox.max.y) < 1e-6);
+      f.observation.sync(f.data, { ...settings, floorId: "floor-1" }); f.settle();
+      assert.equal(slab.material.color.getHex(), slabMaterial.color.getHex());
+      assert.equal(boundary.material.color.getHex(), boundaryMaterial.color.getHex());
+      assert.equal(slab.material.opacity, 0.92);
+      assert.equal(slab.material.depthWrite, false);
+      assert.ok(Math.abs(equipment.material[0].opacity - 0.65 * 0.28) < 1e-6);
+      assert.equal(equipment.material[0].color.getHex(), material.color.getHex());
+      f.observation.sync(f.data, { ...settings, floorId: null, gap: 0 }); f.settle();
+      assert.equal(equipment.material[0].opacity, 0.65);
+      assert.equal(wall.material.transparent, false);
+      f.observation.sync(null, {}); f.settle();
+      assert.equal(equipment.material, original);
+      assert.equal(wall.material, wallMaterial);
+      assert.equal(slab.material, slabMaterial);
+      assert.equal(boundary.material, boundaryMaterial);
+      assert.equal(material.color.getHexString(), "268ad3");
+    } finally { f.observation.dispose(); }
+  }
+});
+
+test("두께가 있는 바닥판도 저장된 구멍을 막지 않는다", () => {
+  const f = fixture();
+  f.data.floors[1].plan.floorFootprint.regions[0].holes = [[
+    { x: -2, z: -2 }, { x: 2, z: -2 }, { x: 2, z: 2 }, { x: -2, z: 2 },
+  ]];
+  try {
+    f.observation.sync(f.data, f.settings); f.settle();
+    const slab = f.runtime.scene.getObjectByName("BuildingObservation:building").getObjectByName("2층").children[0].children[0];
+    const raycaster = new THREE.Raycaster();
+    const down = new THREE.Vector3(0, -1, 0).transformDirection(slab.matrixWorld);
+    raycaster.set(slab.localToWorld(new THREE.Vector3(0, 2, 0)), down);
+    assert.equal(raycaster.intersectObject(slab).length, 0);
+    raycaster.set(slab.localToWorld(new THREE.Vector3(-5, 2, 0)), down);
+    assert.ok(raycaster.intersectObject(slab).length > 0);
+  } finally { f.observation.dispose(); }
+});
+
+test("회전·이동·줌과 층 전환 중 반투명 바닥의 깊이 설정이 유지되고 위·아래에서 모두 보인다", () => {
+  const f = fixture();
+  try {
+    f.observation.sync(f.data, f.settings); f.settle();
+    const root = f.runtime.scene.getObjectByName("BuildingObservation:building");
+    const slabs = root.children.map((floor) => floor.children[0].children[0]);
+    const materials = slabs.map((slab) => slab.material);
+    for (const floorId of [null, "floor-1", "floor-3", null]) {
+      for (const angle of [0, Math.PI / 2, Math.PI]) {
+        f.shell.rotation.y = angle;
+        f.shell.position.set(angle * 10, 6, -angle * 5);
+        f.runtime.activeCamera.position.set(100, 20, 100).multiplyScalar(0.5 + angle);
+        f.observation.sync(f.data, { ...f.settings, floorId }); f.settle();
+        for (const [index, slab] of slabs.entries()) {
+          assert.equal(slab.material, materials[index]);
+          assert.equal(slab.material.transparent, true);
+          assert.equal(slab.material.depthTest, true);
+          assert.equal(slab.material.depthWrite, false);
+          assert.equal(slab.renderOrder, f.shell.renderOrder);
+          assert.equal(slab.material.polygonOffset, true);
+          assert.equal(slab.material.side, THREE.FrontSide);
+          // Front-side rendering must retain the bottom cap as well as the top:
+          // orbiting below the building must not make the floor disappear.
+          for (const sign of [-1, 1]) {
+            const origin = slab.localToWorld(new THREE.Vector3(-5, sign * 2, 0));
+            const direction = new THREE.Vector3(0, -sign, 0).transformDirection(slab.matrixWorld);
+            assert.ok(new THREE.Raycaster(origin, direction).intersectObject(slab).length > 0);
+          }
+        }
+      }
+    }
+  } finally { f.observation.dispose(); }
+});
+
+test("가까운 정면에서도 바닥의 보정된 깊이가 바닥 위 설비보다 앞으로 나오지 않는다", () => {
+  const f = fixture();
+  try {
+    f.observation.sync(f.data, f.settings); f.settle();
+    const slab = f.runtime.scene.getObjectByName("BuildingObservation:building").getObjectByName("2층").children[0].children[0];
+    const camera = f.runtime.activeCamera;
+    const { clientWidth: width, clientHeight: height } = f.runtime.container;
+    const project = (point) => {
+      const ndc = point.clone().project(camera);
+      return new THREE.Vector3((ndc.x + 1) * width / 2, (ndc.y + 1) * height / 2, (ndc.z + 1) / 2);
+    };
+    for (const distance of [2, 4, 8]) for (const clearance of [0.001, 0.01, 0.1]) {
+      const equipmentPoint = slab.localToWorld(new THREE.Vector3(0, clearance, 0));
+      camera.position.copy(slab.localToWorld(new THREE.Vector3(0, 1.2, distance)));
+      camera.lookAt(equipmentPoint); camera.updateMatrixWorld(true);
+      const direction = equipmentPoint.clone().sub(camera.position).normalize();
+      const hit = new THREE.Raycaster(camera.position, direction).intersectObject(slab)[0];
+      assert.ok(hit);
+      // Raster depth bias is factor * max depth slope + units * depth resolution.
+      const [a, b, c] = [[-1, 0, -1], [1, 0, -1], [1, 0, 1]]
+        .map((point) => project(slab.localToWorld(new THREE.Vector3(...point))));
+      const normal = b.clone().sub(a).cross(c.clone().sub(a));
+      const slope = Math.max(Math.abs(normal.x / normal.z), Math.abs(normal.y / normal.z));
+      const biasedDepth = project(hit.point).z + slab.material.polygonOffsetFactor * slope
+        + slab.material.polygonOffsetUnits / (2 ** 24 - 1);
+      assert.ok(biasedDepth > project(equipmentPoint).z, `distance=${distance}, clearance=${clearance}`);
+    }
   } finally { f.observation.dispose(); }
 });
 

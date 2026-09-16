@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createProject, openProject, readProjects, PROJECT_STORAGE_KEY } from "../src/features/portal/projects/projectRepository.js";
+import { createProject, getProjectDetails, openProject, readProjects, PROJECT_STORAGE_KEY } from "../src/features/portal/projects/projectRepository.js";
 import { LAYOUT_STORAGE_KEY } from "../src/features/digitalTwin/editor/model/layoutInitialization.js";
 
 function storageWith(layout) {
@@ -58,4 +58,14 @@ test("failed activation rolls back the working document and registry", () => {
   assert.throws(() => createProject(storage));
   assert.equal(storage.getItem(LAYOUT_STORAGE_KEY), previous);
   assert.equal(storage.getItem(PROJECT_STORAGE_KEY), null);
+});
+
+test("saved representative image replaces the project card fallback", () => {
+  const fallback = getProjectDetails({ id: "fallback", layout: world("기본 이미지") });
+  const captured = getProjectDetails({
+    id: "captured",
+    layout: { ...world("대표 이미지"), representativeImage: "data:image/png;base64,captured" },
+  });
+  assert.equal(fallback.thumbnail, "/portal/workflow-site.svg");
+  assert.equal(captured.thumbnail, "data:image/png;base64,captured");
 });

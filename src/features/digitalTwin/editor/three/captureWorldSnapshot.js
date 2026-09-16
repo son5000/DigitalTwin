@@ -92,7 +92,25 @@ export function createSnapshotCamera(content, aspect = WIDTH / HEIGHT) {
   return camera;
 }
 
-export function captureWorldSnapshot({ renderer, ...options }) {
+function createSnapshotCameraFromView(sourceCamera, aspect = WIDTH / HEIGHT) {
+  sourceCamera.updateWorldMatrix(true, false);
+  const camera = sourceCamera.clone();
+  sourceCamera.matrixWorld.decompose(camera.position, camera.quaternion, camera.scale);
+  if (camera.isPerspectiveCamera) {
+    camera.aspect = aspect;
+  } else if (camera.isOrthographicCamera) {
+    const centerX = (camera.left + camera.right) / 2;
+    const halfHeight = (camera.top - camera.bottom) / 2;
+    const halfWidth = halfHeight * aspect;
+    camera.left = centerX - halfWidth;
+    camera.right = centerX + halfWidth;
+  }
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld(true);
+  return camera;
+}
+
+export function captureWorldSnapshot({ renderer, camera: sourceCamera, ...options }) {
   const snapshot = createSnapshotScene(options);
   const target = new THREE.WebGLRenderTarget(WIDTH, HEIGHT, { samples: 4 });
   target.texture.colorSpace = THREE.SRGBColorSpace;
@@ -102,7 +120,9 @@ export function captureWorldSnapshot({ renderer, ...options }) {
     scissorTest: renderer.getScissorTest(), xr: renderer.xr.enabled, autoClear: renderer.autoClear,
   };
   try {
-    const camera = createSnapshotCamera(snapshot.content);
+    const camera = sourceCamera
+      ? createSnapshotCameraFromView(sourceCamera)
+      : createSnapshotCamera(snapshot.content);
     renderer.xr.enabled = false;
     renderer.autoClear = true;
     renderer.setRenderTarget(target);

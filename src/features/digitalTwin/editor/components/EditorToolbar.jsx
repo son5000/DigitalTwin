@@ -206,6 +206,8 @@ function OverflowActions({
   onReset,
   onLoad,
   onSave,
+  onCaptureSnapshot,
+  captureSnapshotDisabled,
 }) {
   return (
     <details className={styles.overflow}>
@@ -253,6 +255,16 @@ function OverflowActions({
             <ToolbarButton menuItem iconKey="delete" label="삭제" shortcut="Delete" disabled={!hasSelection} disabledReason="삭제할 항목을 먼저 선택하세요" onClick={onDelete} />
             <ToolbarDivider />
           </>
+        ) : null}
+        {onCaptureSnapshot ? (
+          <ToolbarButton
+            menuItem
+            iconKey="view-3d"
+            label="현재 시점을 대표 이미지로 저장"
+            disabled={captureSnapshotDisabled}
+            disabledReason="3D 보기에서 대표 이미지를 저장할 수 있습니다"
+            onClick={onCaptureSnapshot}
+          />
         ) : null}
         <ToolbarButton menuItem iconKey="reset" label="초기화" onClick={onReset} />
         <ToolbarButton menuItem iconKey="import" label="불러오기" onClick={onLoad} />
@@ -311,6 +323,8 @@ export default function EditorToolbar({
   onReset,
   onLoad,
   onSave,
+  onCaptureSnapshot,
+  captureSnapshotDisabled = false,
   onUndo,
   onRedo,
 }) {
@@ -423,6 +437,8 @@ export default function EditorToolbar({
           onReset={onReset}
           onLoad={onLoad}
           onSave={onSave}
+          onCaptureSnapshot={onCaptureSnapshot}
+          captureSnapshotDisabled={captureSnapshotDisabled}
         />
       </nav>
     );
@@ -463,6 +479,8 @@ export default function EditorToolbar({
             onReset={onReset}
             onLoad={onLoad}
             onSave={onSave}
+            onCaptureSnapshot={onCaptureSnapshot}
+            captureSnapshotDisabled={captureSnapshotDisabled}
           />
         </>
       ) : null}

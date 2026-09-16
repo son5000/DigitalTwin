@@ -189,7 +189,7 @@ export function getWorldStructureSignature(structure, { selected, theme }) {
   ].join("|");
 }
 
-export function createWorldStructureObject(structure, { selected, theme, sceneTheme }) {
+export function createWorldStructureObject(structure, { selected, theme, sceneTheme, enableLod = true }) {
   const dimensions = getWorldStructureDimensions(structure);
   const edgeColor = selected ? sceneTheme.worldSelection : sceneTheme.worldEdge;
   const definition = WORLD_STRUCTURE_TEMPLATE_MAP[structure.type];
@@ -219,7 +219,7 @@ export function createWorldStructureObject(structure, { selected, theme, sceneTh
             ? "OPENING"
             : "OTHER";
   object.userData.geometrySignature = getWorldStructureSignature(structure, { selected, theme });
-  if (definition.lod && !selected && ["FURNITURE", "ENVIRONMENT"].includes(definition.group)) {
+  if (enableLod && definition.lod && !selected && ["FURNITURE", "ENVIRONMENT"].includes(definition.group)) {
     const lod = new THREE.LOD();
     const lowProxy = new THREE.Mesh(
       new THREE.BoxGeometry(dimensions.width, dimensions.height, dimensions.depth),

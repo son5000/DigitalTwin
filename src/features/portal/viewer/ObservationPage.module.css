@@ -87,6 +87,7 @@
 .bodyCollapsed.bodyDetailClosed { position: absolute; inset: 0; width: 100%; height: 100%; }
 .body > main { position: absolute; inset: 0; width: 100%; height: 100%; }
 .page [hidden] { display: none; }
+.worldViewInactive, .worldViewInactive * { visibility: hidden !important; }
 .page:has(.topPanel:not([hidden])) { --drawer-top: 146px; }
 .page:has(footer:not([hidden])) { --drawer-bottom: 156px; }
 .topPanel { position: absolute; z-index: 20; top: max(12px, env(safe-area-inset-top)); left: 80px; right: max(12px, env(safe-area-inset-right)); }
@@ -186,18 +187,88 @@
 .mobileScrim { display: none; }
 
 .worldMenu { position: absolute; z-index: 30; top: max(12px, env(safe-area-inset-top)); left: max(12px, env(safe-area-inset-left)); width: 56px; display: flex; flex-direction: column; gap: 8px; max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
-.worldMenuItems { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 6px 4px 10px; min-height: 0; overflow-y: auto; scrollbar-width: none; }
-.appIcon { position: relative; width: 48px; height: 48px; flex: 0 0 48px; display: grid; place-items: center; align-self: center; border: 1px solid rgb(255 255 255 / 65%); border-radius: 15px; background: var(--icon-color, #315b88); color: #fff !important; box-shadow: 0 4px 10px rgb(0 0 0 / 32%), inset 0 1px rgb(255 255 255 / 25%); cursor: pointer; transition: transform .15s, box-shadow .15s; }
-.appIcon[data-tone="blue"] { --icon-color: #2364d9; }
-.appIcon[data-tone="teal"] { --icon-color: #087c80; border-radius: 12px; }
-.appIcon[data-tone="purple"] { --icon-color: #7846be; }
-.appIcon[data-tone="amber"] { --icon-color: #956009; border-radius: 12px; }
-.appIcon[data-tone="red"] { --icon-color: #bb3545; border-radius: 50%; }
-.appIcon[data-tone="slate"] { --icon-color: #394e68; border-radius: 50%; }
-.appIcon:hover { transform: translateY(-2px); box-shadow: 0 6px 14px rgb(0 0 0 / 40%), inset 0 0 0 2px rgb(255 255 255 / 35%); }
-.appIcon[aria-pressed="true"], .appIcon[aria-expanded="true"] { box-shadow: 0 0 0 3px var(--portal-cyan), 0 4px 14px rgb(0 0 0 / 45%); }
+.worldMenuItems { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 6px 4px 10px; min-height: 0; overflow: visible; }
+.worldMenuGroup { position: relative; display: grid; place-items: center; }
+.worldSubmenu { position: absolute; z-index: 2; top: 50%; left: 50%; width: 0; height: 0; overflow: visible; pointer-events: none; }
+.worldSubmenu .appIcon { position: absolute; top: calc(var(--menu-y) - 24px); left: calc(var(--menu-x) - 24px); margin: 0; pointer-events: auto; opacity: 0; animation: worldMenuPetal .42s cubic-bezier(.2, .82, .24, 1.18) var(--menu-delay) forwards; }
+.worldSubmenu .appIcon:nth-child(1) { --menu-x: 50px; --menu-y: -82px; --menu-start-x: -50px; --menu-start-y: 82px; --menu-delay: 0ms; }
+.worldSubmenu .appIcon:nth-child(2) { --menu-x: 91px; --menu-y: -30px; --menu-start-x: -91px; --menu-start-y: 30px; --menu-delay: 45ms; }
+.worldSubmenu .appIcon:nth-child(3) { --menu-x: 91px; --menu-y: 30px; --menu-start-x: -91px; --menu-start-y: -30px; --menu-delay: 90ms; }
+.worldSubmenu .appIcon:nth-child(4) { --menu-x: 50px; --menu-y: 82px; --menu-start-x: -50px; --menu-start-y: -82px; --menu-delay: 135ms; }
+.operationsButton > svg { width: 26px; height: 26px; flex-basis: 26px; }
+@keyframes worldMenuPetal {
+  0% { opacity: 0; transform: translate(var(--menu-start-x), var(--menu-start-y)) scale(.18) rotate(-46deg); }
+  72% { opacity: 1; transform: translate(0, 0) scale(1.09) rotate(5deg); }
+  100% { opacity: 1; transform: none; }
+}
+.worldMenu {
+  --menu-surface: #172333;
+  --menu-ink: #c4cedb;
+  --menu-border: #354255;
+  --menu-hover-surface: #223246;
+  --menu-hover-ink: #f0f4f9;
+  --menu-active-surface: #293f59;
+  --menu-active-ink: #deebfc;
+  --menu-accent: #718eaf;
+  --menu-shadow: rgb(0 0 0 / 20%);
+}
+.page[data-theme="light"] .worldMenu {
+  --menu-surface: #f8fafc;
+  --menu-ink: #475569;
+  --menu-border: #cbd5e1;
+  --menu-hover-surface: #edf1f6;
+  --menu-hover-ink: #1e293b;
+  --menu-active-surface: #e5edf6;
+  --menu-active-ink: #294769;
+  --menu-accent: #8198b3;
+  --menu-shadow: rgb(15 23 42 / 10%);
+}
+.appIcon { position: relative; width: 48px; height: 48px; flex: 0 0 48px; display: grid; place-items: center; align-self: center; border: 1px solid var(--menu-border); border-radius: 14px; background: var(--menu-surface); color: var(--menu-ink) !important; box-shadow: 0 2px 7px var(--menu-shadow); cursor: pointer; transition: color .15s, background .15s, border-color .15s, box-shadow .15s; }
+.appIcon > svg { width: 24px; height: 24px; flex: 0 0 24px; overflow: visible; stroke-width: 1.5; shape-rendering: geometricPrecision; }
+.appIcon:hover { border-color: var(--menu-accent); background: var(--menu-hover-surface); color: var(--menu-hover-ink) !important; box-shadow: 0 3px 9px var(--menu-shadow); }
+.appIcon[aria-pressed="true"], .appIcon[aria-expanded="true"] { border-color: var(--menu-accent); background: var(--menu-active-surface); color: var(--menu-active-ink) !important; box-shadow: inset 0 0 0 1px var(--menu-accent), 0 2px 7px var(--menu-shadow); }
+.page .appIcon:focus-visible { outline: 2px solid var(--menu-accent); outline-offset: 3px; }
 .appIcon:disabled { cursor: default; opacity: .65; transform: none; }
 .unreadBadge { position: absolute; top: -4px; right: -3px; min-width: 18px; height: 18px; padding: 0 4px; display: grid; place-items: center; border: 1px solid white; border-radius: 12px; background: #db243f; color: white; font-size: 10px; }
+.servicePanel { position: absolute; z-index: 32; top: var(--drawer-top); right: 12px; bottom: 12px; width: min(360px, calc(100% - 92px)); padding: 22px; overflow: auto; border: 1px solid var(--portal-border); border-radius: 16px; background: var(--portal-panel); color: var(--portal-text); box-shadow: 0 16px 42px rgb(0 0 0 / 34%); }
+.serviceHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding-bottom: 18px; border-bottom: 1px solid var(--portal-border); }
+.serviceHeader span { color: var(--portal-muted); font-size: 10px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
+.serviceHeader h2 { margin: 6px 0 0; font-size: 21px; letter-spacing: -.03em; }
+.serviceSection { padding: 18px 0; border-bottom: 1px solid var(--portal-border); }
+.serviceSection:last-child { border-bottom: 0; }
+.serviceSectionTitle { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 13px; }
+.serviceSectionTitle strong { font-size: 13px; }
+.serviceSectionTitle span { color: var(--portal-muted); font-size: 11px; }
+.serviceSectionTitle b { min-width: 24px; padding: 3px 7px; border-radius: 10px; background: rgb(240 103 103 / 14%); color: #f08a8a; font-size: 11px; text-align: center; }
+.notificationList { display: grid; gap: 9px; margin: 0; padding: 0; list-style: none; }
+.notificationList li { display: grid; grid-template-columns: 8px minmax(0, 1fr); gap: 11px; padding: 12px; border: 1px solid var(--portal-border); border-radius: 9px; background: var(--portal-surface); }
+.notificationList li > i { width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; background: #65dbe8; }
+.notificationList li[data-severity="warning"] > i { background: #f4b759; }
+.notificationList li[data-severity="danger"] > i { background: #f06767; }
+.notificationList strong, .notificationList p, .notificationList small { display: block; }
+.notificationList strong { font-size: 12px; }
+.notificationList p { margin: 5px 0; color: var(--portal-muted); font-size: 11px; line-height: 1.55; }
+.notificationList small { color: var(--portal-faint); font-size: 10px; }
+.serviceEmpty { padding: 26px 14px; border: 1px dashed var(--portal-border); border-radius: 9px; text-align: center; }
+.serviceEmpty strong { font-size: 12px; }
+.serviceEmpty p { margin: 7px 0 0; color: var(--portal-muted); font-size: 11px; line-height: 1.5; }
+.segmented { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.segmented button, .serviceAction { min-height: 38px; border: 1px solid var(--portal-border); border-radius: 8px; background: var(--portal-surface); color: var(--portal-muted); cursor: pointer; }
+.segmented button[aria-pressed="true"] { border-color: var(--portal-blue); background: color-mix(in srgb, var(--portal-blue) 18%, var(--portal-surface)); color: var(--portal-text); }
+.settingRow { display: flex; align-items: center; justify-content: space-between; gap: 18px; cursor: pointer; }
+.settingRow strong, .settingRow small { display: block; }
+.settingRow strong { font-size: 12px; }
+.settingRow small { margin-top: 5px; color: var(--portal-muted); font-size: 10px; }
+.settingRow input { width: 36px; height: 20px; accent-color: var(--portal-blue); }
+.serviceAction { width: 100%; color: var(--portal-text); font-size: 11px; }
+.profileCard { display: grid; justify-items: center; padding: 24px 12px 18px; }
+.profileCard > div { width: 58px; height: 58px; display: grid; place-items: center; border-radius: 50%; background: #d9eefb; color: #176a99; font-size: 21px; font-weight: 800; }
+.profileCard strong { margin-top: 12px; font-size: 15px; }
+.profileCard span { margin-top: 5px; color: var(--portal-muted); font-size: 11px; }
+.profileDetails { margin: 0; }
+.profileDetails > div { display: flex; justify-content: space-between; gap: 16px; padding: 9px 0; }
+.profileDetails dt { color: var(--portal-muted); font-size: 11px; }
+.profileDetails dd { margin: 0; color: var(--portal-text); font-size: 11px; text-align: right; }
 .zoom { position: absolute; z-index: 22; right: max(12px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); display: flex; align-items: center; padding: 4px; border: 1px solid var(--portal-border); border-radius: 14px; background: var(--portal-panel); box-shadow: 0 4px 16px rgb(0 0 0 / 28%); }
 .zoom button { width: 44px; height: 44px; border: 0; border-radius: 10px; background: transparent; color: var(--portal-text); font-size: 24px; cursor: pointer; }
 .zoom button:hover { background: var(--portal-surface); }
@@ -216,4 +287,5 @@
 
 @media (prefers-reduced-motion: reduce) {
   .sidebar, .detailPanel, .appIcon { transition: none; }
+  .worldSubmenu .appIcon { opacity: 1; animation: none; }
 }

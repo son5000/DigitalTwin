@@ -8,8 +8,9 @@ import { createWorldStructureObject, getWorldStructureDimensions } from "../worl
 import { createFloorSpatialObject, createFootprintShape } from "./floorSpatialScene";
 import { createEquipmentRenderObjects } from "./equipmentInstancing";
 import { animateCameraFocus, cancelCameraFocus, focusCameraOnBounds, focusCameraOnObject } from "./cameraFocus";
-import { captureBuildingIsolationVisibility, restoreBuildingIsolationVisibility } from "./buildingIsolation";
+import { applyBuildingIsolationVisibility, captureBuildingIsolationVisibility, restoreBuildingIsolationVisibility } from "./buildingIsolation";
 import { disposeObject3D } from "./disposeObject3D";
+import { focusEquipmentInWorld } from "./viewerEquipmentFocus";
 
 const smooth = (value) => value * value * (3 - 2 * value);
 const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
@@ -39,19 +40,59 @@ function restoreFloorMaterials(entry) {
   entry.materials = [];
 }
 
+function bindFloorMaterials(entry) {
+  restoreFloorMaterials(entry);
+  entry.groups.forEach((group, floorId) => group.traverse((mesh) => {
+    if (!mesh.material) return;
+    const original = mesh.material;
+    const copies = (Array.isArray(original) ? original : [original]).map((material) => material.clone());
+    mesh.material = Array.isArray(original) ? copies : copies[0];
+    entry.materials.push({ floorId, mesh, original, copies, opacity: 1 });
+  }));
+}
+
 function createInterior(data, theme, labelRoot, labelClass, onSelectFloor) {
   const root = new THREE.Group();
   root.name = `BuildingObservation:${data.building.id}`;
   root.visible = false;
   const groups = new Map();
   const labels = new Map();
-  const options = { selected: false, theme, sceneTheme: SCENE_THEMES[theme] };
-  function addEquipment(parent, equipment) {
-    createEquipmentRenderObjects(equipment.filter((item) => item.visible !== false).map((item) => ({ equipment: {
+  const options = { selected: false, theme, sceneTheme: SCENE_THEMES[theme], enableLod: false };
+  const entry = { data, theme, root, groups, labels, materials: [], localBounds: new Map(), equipmentTargets: new Map(), disposed: false };
+  const bindings = new Map((data.assetBindings ?? []).filter((binding) => ["OBJ", "PLY"].includes(binding.assetType)).map((binding) => [binding.equipmentId, binding]));
+  const renderOptions = { theme, viewerTranslucent: true, enableLod: false };
+  function addEquipment(parent, equipment, floorId) {
+    equipment.forEach((item) => entry.equipmentTargets.set(item.id, { item, parent, floorId }));
+    const entries = equipment.filter((item) => item.visible !== false).map((item) => ({ equipment: {
       ...item, dimensions: { width: 1, height: 1, depth: 1, ...item.dimensions },
       position: { x: 0, y: 0, z: 0, ...item.position }, rotation: { x: 0, y: 0, z: 0, ...item.rotation },
       appearance: { color: "#6f8f9d", opacity: 1, ...item.appearance }, visible: item.visible !== false,
-    }, baseY: 0 })), { theme, viewerTranslucent: false }).forEach((object) => parent.add(object));
+    }, baseY: 0 }));
+    createEquipmentRenderObjects(entries.filter(({ equipment: item }) => !bindings.has(item.id)), renderOptions).forEach((object) => parent.add(object));
+    entries.filter(({ equipment: item }) => bindings.has(item.id)).forEach((record) => {
+      const [object] = createEquipmentRenderObjects([record], renderOptions);
+      parent.add(object);
+      const fallback = [...object.children];
+      const binding = bindings.get(record.equipment.id);
+      // Use the existing local file loader/alignment. One load per cached interior, never per zoom.
+      void import("./EquipmentAssetViewer").then(async ({ loadBindingObject, applyAssetAlignment }) => {
+        if (entry.disposed) return;
+        const loaded = await loadBindingObject(binding);
+        if (entry.disposed) { disposeObject3D(loaded.object); loaded.revoke(); return; }
+        const aligned = new THREE.Group();
+        aligned.add(loaded.object);
+        if (!applyAssetAlignment({ actualObject: loaded.object, aligned }, binding, record.equipment)) {
+          disposeObject3D(aligned); loaded.revoke(); throw new Error("EMPTY_MODEL");
+        }
+        aligned.userData.releaseAssetSources = loaded.revoke;
+        object.add(aligned);
+        fallback.forEach((child) => { child.visible = false; });
+        entry.localBounds.set(floorId, contentBounds(groups.get(floorId)));
+        if (entry.materials.length) bindFloorMaterials(entry);
+      }).catch((error) => {
+        if (!entry.disposed) console.warn(`[건축물 관측] ${record.equipment.name}: 등록 모델을 불러오지 못해 기본 설비 형상을 유지합니다.`, error);
+      });
+    });
   }
   data.floors.forEach((floor) => {
     const group = new THREE.Group();
@@ -68,12 +109,42 @@ function createInterior(data, theme, labelRoot, labelClass, onSelectFloor) {
       regions: getBuildingFloorFootprintRegions(footprintBuilding, floor.level).map((region) => ({ ...region, outer: region.outer ?? region.points })),
     };
     // A bare inherited slab is the empty state; walls/rooms/equipment only come from saved data.
-    group.add(createFloorSpatialObject({ ...floor.plan, floorFootprint }, { floorStyle: floor.plan.floorStyle, openings }));
+    const palette = SCENE_THEMES[theme];
+    const spatial = createFloorSpatialObject({ ...floor.plan, floorFootprint }, {
+      floorStyle: { color: palette.wallFill, roughness: 0.9, metalness: 0.01 }, openings,
+    });
+    // Reuse the derived shape, including saved holes and stair openings. Extrude down
+    // so the walkable surface and equipment elevations remain unchanged.
+    spatial.userData.floorMeshes.forEach((mesh) => {
+      const geometry = new THREE.ExtrudeGeometry(mesh.geometry.parameters.shapes, {
+        depth: 0.16, bevelEnabled: false, curveSegments: 18, steps: 1,
+      });
+      geometry.rotateX(Math.PI / 2);
+      mesh.geometry.dispose();
+      mesh.geometry = geometry;
+      // Draw the slab in the depth-tested opaque pass. Blended slabs are sorted
+      // by their centre and can paint over nearby transparent equipment whose
+      // original material does not write depth. MSAA coverage keeps a subtle
+      // translucency without depending on that object-level sorting.
+      mesh.material.transparent = false;
+      mesh.material.alphaToCoverage = true;
+      mesh.material.opacity = 0.92;
+      // Closed extrusion has outward-facing top, bottom and side faces.
+      mesh.material.side = THREE.FrontSide;
+      mesh.material.depthWrite = true;
+      mesh.material.polygonOffset = true;
+      // Slope-scaled bias pulls a large slab through equipment at grazing/front
+      // angles. Keep only a constant depth-unit bias for coplanar surfaces.
+      mesh.material.polygonOffsetFactor = 0;
+      mesh.material.polygonOffsetUnits = -1;
+      mesh.material.fog = false;
+    });
+    group.add(spatial);
     floorFootprint.regions.forEach((region) => {
       const points = createFootprintShape(region).getPoints(18);
       const outline = new THREE.LineLoop(
         new THREE.BufferGeometry().setFromPoints(points.map((point) => new THREE.Vector3(point.x, 0.035, point.y))),
-        new THREE.LineBasicMaterial({ color: theme === "dark" ? "#7595a6" : "#526e7c", fog: false, depthWrite: false }),
+        new THREE.LineBasicMaterial({ color: palette.wallEdge, fog: false, depthWrite: false }),
       );
       outline.userData.floorBoundary = true;
       outline.raycast = () => {};
@@ -81,13 +152,13 @@ function createInterior(data, theme, labelRoot, labelClass, onSelectFloor) {
       group.add(outline);
     });
     (floor.plan.structures ?? []).forEach((structure) => group.add(createWorldStructureObject(structure, options)));
-    addEquipment(group, floor.equipment);
+    addEquipment(group, floor.equipment, floor.id);
     floor.roomScenes.forEach(({ room, equipment, structures }) => {
       const roomGroup = new THREE.Group();
       roomGroup.position.set(finite(room.position?.x), finite(room.position?.y), finite(room.position?.z));
       roomGroup.rotation.set(finite(room.rotation?.x), finite(room.rotation?.y), finite(room.rotation?.z));
       structures.forEach((structure) => roomGroup.add(createWorldStructureObject(structure, options)));
-      addEquipment(roomGroup, equipment);
+      addEquipment(roomGroup, equipment, floor.id);
       group.add(roomGroup);
     });
     root.add(group);
@@ -118,15 +189,8 @@ function createInterior(data, theme, labelRoot, labelClass, onSelectFloor) {
       groups.get(owner)?.add(createWorldStructureObject(structure, options));
     }
   });
-  const highlight = new THREE.Box3Helper(new THREE.Box3(), FLOOR_HIGHLIGHT);
-  highlight.material.fog = false;
-  highlight.material.toneMapped = false;
-  highlight.material.depthTest = false;
-  highlight.visible = false;
-  highlight.renderOrder = 10;
-  return { data, theme, root, groups, labels, highlight, materials: [],
-    localBounds: new Map([...groups].map(([id, group]) => [id, contentBounds(group)])),
-  };
+  entry.localBounds = new Map([...groups].map(([id, group]) => [id, contentBounds(group)]));
+  return entry;
 }
 
 export function createBuildingObservation(runtime, { labelRoot, labelClass, onSelectFloor, getInsets }) {
@@ -169,17 +233,16 @@ export function createBuildingObservation(runtime, { labelRoot, labelClass, onSe
   function hide(entry) {
     restoreFloorMaterials(entry);
     entry.root.visible = false;
-    entry.highlight.visible = false;
     entry.labels.forEach((label) => { label.hidden = true; });
     entry.data.floors.forEach((floor) => { entry.groups.get(floor.id).position.set(0, finite(floor.elevation), 0); });
   }
   function disposeEntry(entry) {
+    entry.disposed = true;
     restoreFloorMaterials(entry);
     entry.labels.forEach((label) => label.remove());
     entry.root.removeFromParent();
-    entry.highlight.removeFromParent();
+    entry.root.traverse((object) => object.userData.releaseAssetSources?.());
     disposeObject3D(entry.root);
-    disposeObject3D(entry.highlight);
   }
   function fit(object, duration = 650, onComplete) {
     const bounds = object.isBox3 ? object : new THREE.Box3().setFromObject(object);
@@ -224,19 +287,8 @@ export function createBuildingObservation(runtime, { labelRoot, labelClass, onSe
     // The site surface is coplanar with a ground-floor plan; keep it out of detail rendering.
     runtime.ground.visible = false;
     bindShell();
-    active.entry.groups.forEach((group, floorId) => group.traverse((mesh) => {
-      if (!mesh.material || mesh.userData.floorBoundary) return;
-      const original = mesh.material;
-      const copies = (Array.isArray(original) ? original : [original]).map((material) => {
-        const copy = material.clone();
-        copy.fog = false;
-        copy.transparent = true;
-        return copy;
-      });
-      mesh.material = Array.isArray(original) ? copies : copies[0];
-      active.entry.materials.push({ floorId, mesh, original, copies, opacity: 1 });
-    }));
-    if (focus) fitFloors(active.entry, active.settings, 650);
+    bindFloorMaterials(active.entry);
+    if (focus && !active.settings.equipmentId) fitFloors(active.entry, active.settings, 650);
   }
   function sync(data, settings) {
     if (!data) {
@@ -267,7 +319,7 @@ export function createBuildingObservation(runtime, { labelRoot, labelClass, onSe
     if (!entry) {
       entry = createInterior(data, settings.theme, labelRoot, labelClass, onSelectFloor);
       cache.set(data.building.id, entry);
-      runtime.scene.add(entry.root, entry.highlight);
+      runtime.scene.add(entry.root);
     }
     entry.root.position.copy(shell.position);
     entry.root.quaternion.copy(shell.quaternion);
@@ -293,17 +345,20 @@ export function createBuildingObservation(runtime, { labelRoot, labelClass, onSe
       };
       else restoreBuildingIsolationVisibility(runtime, saved.visibility);
       active = { entry, settings, phase: "zoom", mix: 0, startedAt: performance.now(), token };
-      if (settings.floorId) open();
+      applyBuildingIsolationVisibility(runtime, saved.visibility, data.building.id);
+      if (settings.floorId || settings.equipmentId) open();
       else fit(shell, 700, () => { if (active?.token === token) open(); });
     } else {
       const changedFloor = active.settings.floorId !== settings.floorId;
       active.settings = settings;
-      if (["open", "spread"].includes(active.phase) && changedFloor) fitFloors(entry, settings);
+      if (["open", "spread"].includes(active.phase) && changedFloor && !settings.equipmentId) fitFloors(entry, settings);
       if (active.mix > 0) bindShell();
     }
   }
   function update(time, delta) {
     if (!active) return;
+    // Reapply after scene updates/rebuilds without replacing the original visibility snapshot.
+    applyBuildingIsolationVisibility(runtime, saved.visibility, active.entry.data.building.id);
     // Pointer cancellation ends the zoom phase without leaving a pending transition.
     if (active.phase === "zoom" && !runtime.cameraFocus) open();
     const { entry, settings } = active;
@@ -330,25 +385,41 @@ export function createBuildingObservation(runtime, { labelRoot, labelClass, onSe
       group.position.x = THREE.MathUtils.lerp(group.position.x, targetX, 1 - Math.exp(-12 * delta));
       group.position.z = THREE.MathUtils.lerp(group.position.z, targetZ, 1 - Math.exp(-12 * delta));
     });
+    const focusKey = settings.equipmentId ? `${settings.equipmentId}:${settings.selectionVersion}` : null;
+    if (!focusKey) active.equipmentFocusKey = null;
+    if (focusKey && focusKey !== active.equipmentFocusKey && active.phase === "open") {
+      const target = entry.equipmentTargets.get(settings.equipmentId);
+      const floor = entry.data.floors.find((item) => item.id === target?.floorId);
+      if (floor && entry.groups.get(floor.id).position.distanceTo(floorPosition(entry, floor, settings)) < 0.02) {
+        if (focusEquipmentInWorld(runtime, target.parent, target.item, {
+          equipmentId: settings.equipmentId, parent: target.parent, viewportInsets: getInsets(),
+        })) active.equipmentFocusKey = focusKey;
+      }
+    }
     entry.materials.forEach((record) => {
-      const opacity = settings.floorId && settings.floorId !== record.floorId && active.phase !== "closing" ? 0.28 : 1;
-      record.opacity = THREE.MathUtils.lerp(record.opacity, opacity, 1 - Math.exp(-12 * delta));
+      const floorSurface = record.mesh.userData.floorSurface === true;
+      const boundary = record.mesh.userData.floorBoundary === true;
+      const selected = settings.floorId === record.floorId && active.phase !== "closing";
+      const opacity = !floorSurface && !boundary && settings.floorId && !selected && active.phase !== "closing" ? 0.28 : 1;
+      record.opacity = opacity === 1 ? 1 : THREE.MathUtils.lerp(record.opacity, opacity, 1 - Math.exp(-12 * delta));
       record.copies.forEach((material, index) => {
         const base = (Array.isArray(record.original) ? record.original : [record.original])[index];
         material.opacity = base.opacity * record.opacity;
+        material.transparent = base.transparent || record.opacity < 0.999;
         material.depthWrite = record.opacity > 0.99 && base.depthWrite;
-        const selected = settings.floorId === record.floorId && active.phase !== "closing";
+        material.toneMapped = boundary && selected ? false : base.toneMapped;
         if (material.emissive) {
           material.emissive.copy(base.emissive);
           material.emissiveIntensity = base.emissiveIntensity;
-          if (selected) {
-            material.emissive.lerp(FLOOR_HIGHLIGHT, 0.75);
-            material.emissiveIntensity = Math.max(base.emissiveIntensity, 0.65);
+          if (selected && floorSurface) {
+            material.emissive.copy(FLOOR_HIGHLIGHT);
+            material.emissiveIntensity = 0.035;
           }
         }
         if (material.color) {
           material.color.copy(base.color);
-          if (selected) material.color.lerp(FLOOR_HIGHLIGHT, material.emissive ? 0.45 : 0.65);
+          if (selected && floorSurface) material.color.lerp(FLOOR_HIGHLIGHT, 0.2);
+          if (selected && boundary) material.color.copy(FLOOR_HIGHLIGHT);
         }
       });
     });
@@ -359,12 +430,6 @@ export function createBuildingObservation(runtime, { labelRoot, labelClass, onSe
       material.transparent = shellOpacity < 1 || base.transparent;
       material.depthWrite = shellOpacity >= 0.99 && base.depthWrite;
     }));
-    entry.highlight.visible = active.phase !== "closing" && active.mix > 0 && entry.groups.has(settings.floorId);
-    if (entry.highlight.visible) {
-      const group = entry.groups.get(settings.floorId);
-      group.updateWorldMatrix(true, true);
-      entry.highlight.box.copy(entry.localBounds.get(settings.floorId)).applyMatrix4(group.matrixWorld);
-    }
     if (active.phase === "closing" && time - active.startedAt >= 550) {
       hide(entry); releaseShell();
       restoreBuildingIsolationVisibility(runtime, saved.visibility);

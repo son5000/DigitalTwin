@@ -38,6 +38,7 @@ export function saveLayout(layout) {
     hierarchy: layout.hierarchy,
     observationWorkflow: layout.observationWorkflow,
     viewerPreset: layout.viewerPreset,
+    representativeImage: typeof layout.representativeImage === "string" ? layout.representativeImage : null,
     siteEnvironment: {
       width: layout.siteEnvironment.width,
       depth: layout.siteEnvironment.depth,

@@ -1,7 +1,7 @@
 .panel { display: flex; flex-direction: column; flex: 1 1 auto !important; min-height: 180px; overflow: hidden; }
 .snapshot { flex-shrink: 0; margin: 0 0 12px; border: 1px solid var(--portal-border); border-radius: 9px; overflow: hidden; background: var(--portal-surface); }
 .snapshot img { display: block; width: 100%; height: auto; aspect-ratio: 8 / 5; object-fit: contain; }
-.snapshot figcaption { padding: 7px 10px; color: var(--portal-muted); font-size: 10px; }
+.snapshotCaption { padding: 7px 10px; color: var(--portal-muted); font-size: 10px; }
 .scroll { min-height: 0; overflow: auto; flex: 1; padding: 3px; }
 .tree, .tree ul { list-style: none; padding: 0; margin: 0; }
 .tree ul { margin-left: 12px; padding-left: 5px; border-left: 1px solid var(--portal-border); }

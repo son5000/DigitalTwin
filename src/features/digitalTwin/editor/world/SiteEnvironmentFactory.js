@@ -897,7 +897,7 @@ function addOutdoorUtility(group, object, shell, steel, dark) {
   }
 }
 
-function addOutdoorEquipment(group, object, edgeColor) {
+function addOutdoorEquipment(group, object, edgeColor, enableLod = true) {
   const detailGroup = new THREE.Group();
   const condition = object.parameters?.condition ?? "NORMAL";
   const preset = object.appearance.material === "CONCRETE" ? "CONCRETE" : object.appearance.material === "STAINLESS" ? "STAINLESS" : object.appearance.material === "PLASTIC" ? "PLASTIC" : "PAINTED_METAL";
@@ -920,6 +920,10 @@ function addOutdoorEquipment(group, object, edgeColor) {
   else addOutdoorUtility(detailGroup, object, shell, steel, dark);
   detailGroup.traverse((child) => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; if (edgeColor && child.geometry && !child.isInstancedMesh && child.children.length === 0) child.userData.collisionProxy = true; } });
 
+  if (!enableLod) {
+    group.add(detailGroup);
+    return;
+  }
   const lowGeometry = object.profile.includes("TANK") || object.profile.includes("SILO")
     ? new THREE.CylinderGeometry(object.dimensions.width / 2, object.dimensions.width / 2, object.dimensions.height, 10)
     : new THREE.BoxGeometry(object.dimensions.width, object.dimensions.height, object.dimensions.depth);
@@ -1577,13 +1581,13 @@ function addLinearPath(group, object, material, edgeColor) {
   }
 }
 
-export function getSiteObjectSignature(object, selected, theme, pathRenderContext = null) {
+export function getSiteObjectSignature(object, selected, theme, pathRenderContext = null, enableLod = true) {
   const geometryDefinition = { ...object, position: undefined, rotation: undefined };
-  return JSON.stringify({ geometryDefinition, selected, theme, pathRenderContext });
+  return JSON.stringify({ geometryDefinition, selected, theme, pathRenderContext, enableLod });
 }
 
 export function createSiteEnvironmentObject(object, {
-  selected, theme, selectionColor, edgeColor, pathRenderContext = null,
+  selected, theme, selectionColor, edgeColor, pathRenderContext = null, enableLod = true,
 }) {
   const group = new THREE.Group();
   group.name = object.name;
@@ -1608,7 +1612,7 @@ export function createSiteEnvironmentObject(object, {
     SAFETY: () => addSafety(group, object, material),
     PIPE_TANK: () => addPipeTank(group, object, material, resolvedEdge),
     PARKING: () => addParkingFacility(group, object, material, resolvedEdge),
-    OUTDOOR_EQUIPMENT: () => addOutdoorEquipment(group, object, resolvedEdge),
+    OUTDOOR_EQUIPMENT: () => addOutdoorEquipment(group, object, resolvedEdge, enableLod),
     CUSTOM_EQUIPMENT: () => {
       if (!customAsset) return;
       group.add(createCustomEquipmentGroup(customAsset, { equipmentId: object.id, edgeColor: resolvedEdge, selectionColor, scale: {
@@ -1654,6 +1658,6 @@ export function createSiteEnvironmentObject(object, {
     group.scale.y = Math.max(1, verticalDepth / Math.max(0.1, object.dimensions.height));
   }
   group.visible = object.visible;
-  group.userData.geometrySignature = getSiteObjectSignature(object, selected, theme, pathRenderContext);
+  group.userData.geometrySignature = getSiteObjectSignature(object, selected, theme, pathRenderContext, enableLod);
   return group;
 }

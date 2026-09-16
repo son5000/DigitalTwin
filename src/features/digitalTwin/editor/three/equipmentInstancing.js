@@ -65,6 +65,7 @@ export function createEquipmentRenderObjects(entries, options = {}) {
         selected: equipment.id === options.selectedEquipmentId,
         theme: options.theme,
         viewerTranslucent: options.viewerTranslucent,
+        enableLod: options.enableLod,
       });
       object.position.y += baseY;
       object.userData.floorBaseY = baseY;
