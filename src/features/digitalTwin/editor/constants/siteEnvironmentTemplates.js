@@ -21,6 +21,7 @@ export const SITE_INTERACTION_MODES = Object.freeze({
 });
 
 export const SITE_MATERIAL_OPTIONS = Object.freeze([
+  { id: "SOLID_COLOR", label: "단색 (패턴 없음)" },
   { id: "CONCRETE", label: "콘크리트" },
   { id: "ASPHALT", label: "아스팔트" },
   { id: "METAL", label: "금속" },

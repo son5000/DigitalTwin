@@ -23,6 +23,7 @@ const FACADE_OPTIONS = Object.freeze([
   [BUILDING_FACADES.LEFT, "좌측면"], [BUILDING_FACADES.RIGHT, "우측면"],
 ]);
 const APPEARANCE_MATERIAL_OPTIONS = Object.freeze([
+  ["SOLID_COLOR", "단색 (패턴 없음)"],
   ["PAINTED_METAL", "도장 금속"], ["STEEL", "강재"], ["WOOD", "목재"], ["GLASS", "유리"],
 ]);
 

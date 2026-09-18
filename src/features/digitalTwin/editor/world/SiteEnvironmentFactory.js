@@ -29,9 +29,14 @@ function materialFor(object, selected) {
     GLASS: { roughness: 0.14, metalness: 0.28 },
     BRICK: { roughness: 0.96, metalness: 0 },
   };
-  return new THREE.MeshStandardMaterial({
+  return createPresetMaterial({
+    ...object.appearance,
+    materialPresetId: object.appearance.material,
+    pattern: "NONE",
+    bumpStrength: 0,
+    transmission: 0,
     color: object.appearance.color,
-    ...(presets[object.appearance.material] ?? presets.CONCRETE),
+    ...(presets[object.appearance.material] ?? {}),
     transparent: !object.visible,
     opacity: object.visible ? 1 : 0.18,
     emissive: selected ? object.appearance.color : 0x000000,
@@ -904,12 +909,12 @@ function addOutdoorUtility(group, object, shell, steel, dark) {
 function addOutdoorEquipment(group, object, edgeColor, enableLod = true) {
   const detailGroup = new THREE.Group();
   const condition = object.parameters?.condition ?? "NORMAL";
-  const preset = object.appearance.material === "CONCRETE" ? "CONCRETE" : object.appearance.material === "STAINLESS" ? "STAINLESS" : object.appearance.material === "PLASTIC" ? "PLASTIC" : "PAINTED_METAL";
+  const preset = object.appearance.material === "SOLID_COLOR" ? "SOLID_COLOR" : object.appearance.material === "CONCRETE" ? "CONCRETE" : object.appearance.material === "STAINLESS" ? "STAINLESS" : object.appearance.material === "PLASTIC" ? "PLASTIC" : "PAINTED_METAL";
   const shell = outdoorPbr(object.appearance.color, preset, condition);
   const steel = outdoorPbr("#66777C", "STEEL", condition);
   const dark = outdoorPbr("#33464E", "PAINTED_METAL", condition);
   if (object.profile.includes("TANK") || object.profile.includes("SILO")) addOutdoorTankDetails(detailGroup, object, shell, steel);
-  else if (object.profile.includes("BASIN") || object.profile.includes("CLARIFIER")) addOpenWaterStructure(detailGroup, object, outdoorPbr(object.appearance.color, "CONCRETE", condition), steel);
+  else if (object.profile.includes("BASIN") || object.profile.includes("CLARIFIER")) addOpenWaterStructure(detailGroup, object, preset === "SOLID_COLOR" ? shell : outdoorPbr(object.appearance.color, "CONCRETE", condition), steel);
   else if (object.profile.includes("WATER_TOWER")) {
     const legHeight = object.dimensions.height * 0.58;
     const concrete = object.profile.includes("CONCRETE");
@@ -1613,7 +1618,7 @@ export function createSiteEnvironmentObject(object, {
   const group = new THREE.Group();
   group.name = object.name;
   group.userData.siteObjectId = object.id;
-  const material = materialFor(object, selected);
+  const material = ["OUTDOOR_EQUIPMENT", "CUSTOM_EQUIPMENT"].includes(object.assetKind) ? null : materialFor(object, selected);
   const resolvedEdge = selected ? selectionColor : edgeColor;
   const customAsset = object.customAssetId ? getRuntimeCustomAsset(object.customAssetId) ?? object.customAssetSnapshot : null;
 

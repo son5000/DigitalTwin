@@ -12,17 +12,10 @@ export function getEquipmentIdFromIntersection(intersection, root = null) {
 export function pickEquipmentId(raycaster, root) {
   if (!root?.visible) return null;
   for (const intersection of raycaster.intersectObject(root, true)) {
-    const visible = (() => {
-      const { object } = intersection;
-      for (let current = object; current; current = current.parent) {
-        if (!current.visible) return false;
-        if (current === root) return true;
-      }
-      return false;
-    })();
-    if (!visible) continue;
+    if (!isVisibleSurfaceIntersection(intersection, root)) continue;
     const equipmentId = getEquipmentIdFromIntersection(intersection, root);
     if (equipmentId) return equipmentId;
   }
   return null;
 }
+import { isVisibleSurfaceIntersection } from "./objectRaycast.js";

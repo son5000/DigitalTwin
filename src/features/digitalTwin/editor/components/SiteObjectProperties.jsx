@@ -29,6 +29,7 @@ import {
 import { formatFloorLevel, isUndergroundSiteObject } from "@/features/digitalTwin/editor/model/undergroundModel";
 
 import NumericField from "./NumericField";
+import ColorHexInput from "./ColorHexInput";
 import { ObjectVariantSelector } from "./ObjectLibrary";
 import styles from "./SiteObjectProperties.module.css";
 
@@ -138,8 +139,12 @@ export default function SiteObjectProperties({ object, siteEnvironment, siteObje
                 ))}
               </div>
               <label className={styles.colorHex}>
+                <span>자유 색상</span>
+                <input type="color" aria-label="오브젝트 자유 색상" value={object.appearance.color} onChange={(event) => onChange({ appearance: { color: event.target.value } })} />
+              </label>
+              <label className={styles.colorHex}>
                 <span>16진수</span>
-                <input value={object.appearance.color.toUpperCase()} onChange={(event) => /^#[0-9a-f]{6}$/i.test(event.target.value) && onChange({ appearance: { color: event.target.value } })} />
+                <ColorHexInput value={object.appearance.color} aria-label="오브젝트 색상 HEX" onChange={(color) => onChange({ appearance: { color } })} />
               </label>
             </div>
           ) : null}

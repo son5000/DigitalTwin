@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { getEquipmentIdFromIntersection, pickEquipmentId } from "../src/features/digitalTwin/editor/three/equipmentRaycast.js";
 
 function node(userData = {}, parent = null, visible = true) {
-  return { userData, parent, visible };
+  return { userData, parent, visible, isMesh: true, material: { visible: true, opacity: 1 } };
 }
 
 test("일반 설비와 인스턴스 설비의 저장 ID를 선택한다", () => {

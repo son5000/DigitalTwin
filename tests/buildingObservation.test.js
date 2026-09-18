@@ -304,6 +304,43 @@ test("두께가 있는 바닥판도 저장된 구멍을 막지 않는다", () =>
   } finally { f.observation.dispose(); }
 });
 
+test("지형이 저장된 층은 건물 진입·층 선택 시 고도와 구멍을 유지한다", () => {
+  const f = fixture();
+  const plan = f.data.floors[1].plan;
+  plan.terrain = { width: 60, depth: 24, columns: 3, rows: 3,
+    elevations: [0, 1, 2, 0, 1, 2, 0, 1, 2], color: "#547c36" };
+  plan.floorFootprint.regions[0].holes = [[
+    { x: -2, z: -2 }, { x: 2, z: -2 }, { x: 2, z: 2 }, { x: -2, z: 2 },
+  ]];
+  const savedPlan = structuredClone(plan);
+  try {
+    f.observation.sync(f.data, { ...f.settings, floorId: null, gap: 0, opacity: 0.1 }); f.settle();
+    const root = f.runtime.scene.getObjectByName("BuildingObservation:building");
+    const terrain = root.getObjectByName("편집 지형");
+    assert.ok(terrain);
+    assert.equal(terrain.geometry.type, "BufferGeometry");
+    assert.equal(terrain.material.vertexColors, true);
+    assert.equal(terrain.material.side, THREE.DoubleSide);
+    assert.ok(terrain.children.some((child) => child.userData.terrainSkirt));
+    const positions = Array.from(terrain.geometry.attributes.position.array);
+    const colors = Array.from(terrain.geometry.attributes.color.array);
+    const elevations = positions.filter((_, index) => index % 3 === 1);
+    assert.ok(Math.max(...elevations) - Math.min(...elevations) > 0.5);
+    for (const floorId of ["floor-2", "floor-1", null]) {
+      f.observation.sync(f.data, { ...f.settings, floorId }); f.settle();
+      const down = new THREE.Vector3(0, -1, 0).transformDirection(terrain.matrixWorld);
+      const ray = (x) => new THREE.Raycaster(terrain.localToWorld(new THREE.Vector3(x, 5, 0)), down);
+      assert.equal(ray(0).intersectObject(terrain, false).length, 0);
+      assert.ok(ray(-5).intersectObject(terrain, false).length > 0);
+      assert.deepEqual(Array.from(terrain.geometry.attributes.position.array), positions);
+      assert.deepEqual(Array.from(terrain.geometry.attributes.color.array), colors);
+    }
+    f.observation.sync(null, {}); f.settle();
+    assert.equal(f.observation.isActive(), false);
+    assert.deepEqual(plan, savedPlan);
+  } finally { f.observation.dispose(); }
+});
+
 test("회전·이동·줌과 층 전환 중 반투명 바닥의 깊이 설정이 유지되고 위·아래에서 모두 보인다", () => {
   const f = fixture();
   try {

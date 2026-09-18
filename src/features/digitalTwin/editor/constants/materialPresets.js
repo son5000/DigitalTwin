@@ -10,6 +10,7 @@ const preset = (id, label, category, color, roughness, metalness, pattern, optio
 });
 
 export const MATERIAL_PRESETS = Object.freeze([
+  preset("SOLID_COLOR", "단색 (패턴 없음)", "기본", "#ffffff", 0.65, 0, "NONE", { bumpStrength: 0, reflectivity: 0.15 }),
   preset("CONCRETE", "콘크리트", "광물", "#9aa2a4", 0.9, 0.02, "SPECKLE", { textureScale: 3, bumpStrength: 0.28 }),
   preset("PAINTED_CONCRETE", "도장 콘크리트", "광물", "#b9bebd", 0.58, 0.02, "FINE", { reflectivity: 0.38, textureScale: 4, bumpStrength: 0.1 }),
   preset("CEMENT", "시멘트", "광물", "#aaa9a2", 0.94, 0.01, "CLOUD", { textureScale: 2.4, bumpStrength: 0.22 }),
@@ -48,20 +49,24 @@ export const MATERIAL_PRESETS = Object.freeze([
 export const MATERIAL_PRESET_MAP = Object.freeze(Object.fromEntries(MATERIAL_PRESETS.map((item) => [item.id, item])));
 
 export const FLOOR_MATERIAL_PRESET_IDS = Object.freeze([
+  "SOLID_COLOR",
   "CONCRETE", "PAINTED_CONCRETE", "CEMENT", "EPOXY_FLOOR", "INDUSTRIAL_FLOOR", "TILE",
   "TERRAZZO", "WOOD", "STONE", "MARBLE", "ASPHALT", "VINYL", "STEEL", "CHECKER_PLATE",
 ]);
 
 export const WALL_MATERIAL_PRESET_IDS = Object.freeze([
+  "SOLID_COLOR",
   "CONCRETE", "PAINTED_CONCRETE", "CEMENT", "PAINT", "BRICK", "STONE", "TILE", "WOOD",
   "METAL_PANEL", "SANDWICH_PANEL", "PAINTED_METAL", "GALVANIZED", "GLASS", "FROSTED_GLASS",
 ]);
 
 export const SPACE_MATERIAL_PRESET_IDS = Object.freeze([
+  "SOLID_COLOR",
   "PAINT", "VINYL", "TILE", "WOOD", "CONCRETE", "EPOXY_FLOOR", "CARPET",
 ]);
 
 export const EQUIPMENT_MATERIAL_PRESET_IDS = Object.freeze([
+  "SOLID_COLOR",
   "PAINTED_METAL", "STEEL", "STAINLESS", "ALUMINUM", "GALVANIZED", "RUSTED_METAL",
   "PLASTIC", "RUBBER", "FABRIC", "WOOD", "CERAMIC", "METAL_MESH", "CHECKER_PLATE", "GLASS", "FROSTED_GLASS",
 ]);
@@ -109,5 +114,9 @@ export function createMaterialAppearance(presetId, overrides = {}) {
 
 export function normalizeMaterialAppearance(appearance = {}) {
   const selected = getMaterialPreset(getMaterialPresetId(appearance));
-  return createMaterialAppearance(selected.id, appearance);
+  const normalized = createMaterialAppearance(selected.id, appearance);
+  // Old slot overrides must not carry a texture or metallic finish into solid color.
+  return selected.id === "SOLID_COLOR"
+    ? { ...normalized, pattern: "NONE", bumpStrength: 0, aging: 0, metalness: 0, transmission: 0 }
+    : normalized;
 }

@@ -163,7 +163,11 @@ function createInterior(data, theme, labelRoot, labelClass, onSelectFloor) {
     // Reuse the derived shape, including saved holes and stair openings. Extrude down
     // so the walkable surface and equipment elevations remain unchanged.
     spatial.userData.floorMeshes.forEach((mesh) => {
-      const geometry = new THREE.ExtrudeGeometry(mesh.geometry.parameters.shapes, {
+      // Terrain uses BufferGeometry with saved elevations and its own boundary skirt.
+      // Only planar ShapeGeometry floors need the slab extrusion below.
+      const shapes = mesh.geometry.parameters?.shapes;
+      if (!shapes) return;
+      const geometry = new THREE.ExtrudeGeometry(shapes, {
         depth: 0.16, bevelEnabled: false, curveSegments: 18, steps: 1,
       });
       geometry.rotateX(Math.PI / 2);
@@ -550,10 +554,8 @@ export function createBuildingObservation(runtime, { labelRoot, labelClass, onSe
     },
     pick(raycaster) {
       if (!active || active.phase === "closing" || !active.entry.root.visible) return null;
-      const hit = raycaster.intersectObject(active.entry.root, true).find(({ object }) => {
-        for (let item = object; item; item = item.parent) if (!item.visible) return false;
-        return true;
-      });
+      const hit = raycaster.intersectObject(active.entry.root, true)
+        .find((intersection) => isVisibleSurfaceIntersection(intersection, active.entry.root));
       for (let object = hit?.object; object; object = object.parent) if (object.userData.floorId) return object.userData.floorId;
       return null;
     },
@@ -570,3 +572,4 @@ export function createBuildingObservation(runtime, { labelRoot, labelClass, onSe
     },
   };
 }
+import { isVisibleSurfaceIntersection } from "./objectRaycast";

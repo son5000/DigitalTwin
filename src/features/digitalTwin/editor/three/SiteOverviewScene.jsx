@@ -2,6 +2,7 @@ import { bindViewerCamera } from "./bindViewerCamera";
 import { captureWorldSnapshot, scheduleWorldSnapshot } from "./captureWorldSnapshot";
 import { createBuildingObservation, loadSelectedDetail, releaseDetail, updateDetailedModelVisibility } from "./buildingObservation";
 import { pickEquipmentId } from "./equipmentRaycast";
+import { isVisibleSurfaceIntersection } from "./objectRaycast";
 import { createEquipmentRenderObjects } from "./equipmentInstancing";
 import { focusEquipmentInWorld } from "./viewerEquipmentFocus";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -1254,10 +1255,8 @@ export default function SiteOverviewScene({
       const observationFloorId = runtime.buildingObservation.pick(raycaster);
       if (observationFloorId) return handlersRef.current.onSelectFloor(observationFloorId);
       const intersections = raycaster.intersectObjects(objectRoot.children.filter((object) => object.visible), true);
-      const intersection = intersections.find(({ object }) => {
-        for (let item = object; item && item !== objectRoot; item = item.parent) if (!item.visible) return false;
-        return true;
-      });
+      const intersection = intersections.find((hit) => isVisibleSurfaceIntersection(hit, objectRoot)
+        && ["siteObjectId", "buildingId", "floorId"].some((key) => findUserData(hit.object, key, objectRoot)));
       const floorId = intersection ? findUserData(intersection.object, "floorId", objectRoot) : null;
       if (floorId) return handlersRef.current.onSelectFloor(floorId);
       const buildingId = intersection ? findUserData(intersection.object, "buildingId", objectRoot) : null;
@@ -1274,10 +1273,8 @@ export default function SiteOverviewScene({
         [...runtime.buildingObjects.values()].filter((object) => object.visible),
         true,
       );
-      const intersection = intersections.find(({ object }) => {
-        for (let item = object; item && item !== objectRoot; item = item.parent) if (!item.visible) return false;
-        return true;
-      });
+      const intersection = intersections.find((hit) => isVisibleSurfaceIntersection(hit, objectRoot)
+        && ["buildingId", "floorId"].some((key) => findUserData(hit.object, key, objectRoot)));
       const floorId = intersection ? findUserData(intersection.object, "floorId", objectRoot) : null;
       if (floorId) return handlersRef.current.onEnterFloor(floorId);
       const buildingId = intersection ? findUserData(intersection.object, "buildingId", objectRoot) : null;

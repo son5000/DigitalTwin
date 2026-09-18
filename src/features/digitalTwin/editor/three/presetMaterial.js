@@ -6,7 +6,25 @@ const TEXTURE_SIZE = 128;
 const textureCache = new Map();
 const materialCache = new Map();
 const MAX_IDLE_MATERIALS = 128;
+let studioEnvironment;
 const now = () => globalThis.performance?.now?.() ?? Date.now();
+
+function getStudioEnvironment() {
+  if (studioEnvironment) return studioEnvironment;
+  // Neutral reflected light for metals, including previews without scene.environment.
+  // Shared by all preset materials; renderers own their generated PMREM textures.
+  const width = 64, height = 32;
+  const data = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    const value = Math.round(255 * (0.78 + 0.22 * Math.sin(Math.PI * (y + 0.5) / height)));
+    for (let x = 0; x < width; x += 1) data.set([value, value, value, 255], (y * width + x) * 4);
+  }
+  studioEnvironment = new THREE.DataTexture(data, width, height, THREE.RGBAFormat);
+  studioEnvironment.mapping = THREE.EquirectangularReflectionMapping;
+  studioEnvironment.colorSpace = THREE.SRGBColorSpace;
+  studioEnvironment.needsUpdate = true;
+  return studioEnvironment;
+}
 
 function noise(x, y, seed = 0) {
   const value = Math.sin(x * 12.9898 + y * 78.233 + seed * 37.719) * 43758.5453;
@@ -17,7 +35,7 @@ function patternValue(pattern, x, y) {
   const u = x / TEXTURE_SIZE;
   const v = y / TEXTURE_SIZE;
   const grain = noise(x, y);
-  if (pattern === "NONE") return 0.92;
+  if (pattern === "NONE") return 1;
   if (pattern === "BRICK") {
     const row = Math.floor(v * 8);
     const bx = (u * 5 + (row % 2) * 0.5) % 1;
@@ -60,13 +78,16 @@ function createBaseTextures(pattern, aging) {
     for (let x = 0; x < TEXTURE_SIZE; x += 1) {
       const index = y * TEXTURE_SIZE + x;
       const dirt = noise(x >> 2, y >> 2, 7) * aging;
-      const value = Math.max(0.18, Math.min(1, patternValue(pattern, x, y) - dirt * 0.28));
+      const relief = patternValue(pattern, x, y);
+      // Surface relief is not a gray paint layer: keep albedo close to the chosen
+      // color, while retaining the full pattern contrast in the bump map.
+      const value = Math.max(0.18, Math.min(1, 1 - (1 - relief) * 0.15 - dirt * 0.28));
       const channel = Math.round(value * 255);
       colorData[index * 4] = channel;
       colorData[index * 4 + 1] = Math.round(channel * (1 - dirt * 0.12));
       colorData[index * 4 + 2] = Math.round(channel * (1 - dirt * 0.2));
       colorData[index * 4 + 3] = 255;
-      bumpData[index] = channel;
+      bumpData[index] = Math.round(Math.max(0, Math.min(1, relief - dirt * 0.28)) * 255);
     }
   }
   const map = new THREE.DataTexture(colorData, TEXTURE_SIZE, TEXTURE_SIZE, THREE.RGBAFormat);
@@ -137,7 +158,7 @@ export function createPresetMaterial(sourceAppearance, overrides = {}) {
     cached.lastUsed = now();
     return cached.material;
   }
-  const { map, bumpMap } = createBaseTextures(
+  const textures = appearance.pattern === "NONE" ? null : createBaseTextures(
     appearance.pattern ?? normalizeMaterialAppearance({ materialPresetId: appearance.materialPresetId }).pattern,
     Math.max(0, Math.min(1, appearance.aging ?? 0)),
   );
@@ -145,8 +166,12 @@ export function createPresetMaterial(sourceAppearance, overrides = {}) {
   const transmission = Math.max(0, Math.min(1, appearance.transmission ?? 0));
   const material = new THREE.MeshPhysicalMaterial({
     color: appearance.color,
-    map: configuredTexture(map, appearance),
-    bumpMap: configuredTexture(bumpMap, appearance),
+    map: textures ? configuredTexture(textures.map, appearance) : null,
+    bumpMap: textures && appearance.bumpStrength > 0 ? configuredTexture(textures.bumpMap, appearance) : null,
+    envMap: getStudioEnvironment(),
+    // Dielectrics already receive the scene's diffuse lights. Fill only the
+    // energy lost to metalness, so bright non-metal colors do not wash out.
+    envMapIntensity: Math.max(0, Math.min(1, appearance.metalness ?? 0)),
     bumpScale: Math.max(0, appearance.bumpStrength ?? 0),
     roughness: Math.max(0, Math.min(1, appearance.roughness ?? 0.5)),
     metalness: Math.max(0, Math.min(1, appearance.metalness ?? 0)),
