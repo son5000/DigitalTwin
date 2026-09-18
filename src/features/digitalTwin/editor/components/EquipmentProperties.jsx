@@ -308,8 +308,9 @@ export default function EquipmentProperties({
         )}
         <div className={styles.fieldGroup}>
           <h3>위치</h3>
+          {placementOnly && <label className={styles.checkField}><input type="checkbox" checked={equipment.groundSnap !== false} onChange={(event) => onChange({ groundSnap: event.target.checked })} /><span>바닥에 붙이기 (끄면 높이 조절 가능)</span></label>}
           <NumericField label="X" value={equipment.position.x} step={0.1} unit="m" onChange={(x) => onChange({ position: { x } })} />
-          <NumericField label="Y" value={equipment.position.y} step={0.1} unit="m" onChange={(y) => onChange({ position: { y } })} />
+          <NumericField label="Y" value={equipment.position.y} min={0} step={0.1} unit="m" disabled={placementOnly && equipment.groundSnap !== false} onChange={(y) => onChange({ position: { y } })} />
           <NumericField label="Z" value={equipment.position.z} step={0.1} unit="m" onChange={(z) => onChange({ position: { z } })} />
         </div>
         <div className={styles.fieldGroup}>

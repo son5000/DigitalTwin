@@ -3,9 +3,10 @@ import { LAYOUT_STORAGE_KEY } from "@/features/digitalTwin/editor/model/layoutIn
 import { ChevronRightIcon, CloseIcon } from "@/components/icons/actionIcons";
 import { getRuntimeCustomAsset } from "@/features/customAssets/core/customAssetRegistry";
 import WorldTreePanel from "../viewer/WorldTreePanel";
+import ScanLoadStatus from "../viewer/ScanLoadStatus";
 import { createWorldTree, getTreeAncestors, getViewerEquipmentContext, worldNodeKey } from "../viewer/worldTreeModel";
 import { getBuildingObservationData } from "../viewer/buildingObservationData";
-import { normalizeFloorDisplayGap } from "@/features/digitalTwin/editor/model/floorDisplay";
+import { normalizeFloorDisplayGap, resolveFloorSelectionGap } from "@/features/digitalTwin/editor/model/floorDisplay";
 import WorldMenu from "../viewer/WorldMenu";
 import ViewerServicePanel from "../viewer/ViewerServicePanel";
 import { navigateViewerService } from "../viewer/operationsNavigation";
@@ -148,7 +149,8 @@ function SavedWorldViewer({ project, operationsSection, operationsRecord }) {
   }, [markSelected]);
   const selectFloor = useCallback((id) => {
     setEquipmentId(null); setEquipmentDetail(false);
-    setWallOpacity(id ? 0 : 0.1); setFloorDisplayGap(id ? 7 : 0);
+    setWallOpacity(id ? 0 : 0.1);
+    setFloorDisplayGap((current) => resolveFloorSelectionGap({ currentGap: current, previousFloorId: selectedFloorId, nextFloorId: id }));
     setSelectedFloorId(id); setSelectedSiteObjectId(null);
     setSelectedBuildingId(model.floors.find((item) => item.id === id)?.parentId ?? null);
     if (!equipmentScope && id) {
@@ -156,7 +158,7 @@ function SavedWorldViewer({ project, operationsSection, operationsRecord }) {
       setDetailOpen(true); setViewMode(VIEW_MODES.VIEW_3D); setShowEquipment(false);
     }
     markSelected(id ? worldNodeKey("FLOOR", id) : null);
-  }, [equipmentScope, markSelected, model.floors]);
+  }, [equipmentScope, markSelected, model.floors, selectedFloorId]);
   const selectEquipment = useCallback((id, partId = null, type = "EQUIPMENT") => {
     const key = id ? worldNodeKey(partId ? "PART" : type, partId ?? id, partId ? id : undefined) : null;
     const context = getViewerEquipmentContext(tree, tree.nodes.get(key));
@@ -168,7 +170,8 @@ function SavedWorldViewer({ project, operationsSection, operationsRecord }) {
       setSelectedSiteObjectId(context?.outdoor ? id : null);
       if (context?.floor?.id !== selectedFloorId) {
         setSelectedFloorId(context?.floor?.id ?? null);
-        setFloorDisplayGap(context?.floor ? 7 : 0); setWallOpacity(context?.floor ? 0 : 0.1);
+        setFloorDisplayGap((current) => resolveFloorSelectionGap({ currentGap: current, previousFloorId: selectedFloorId, nextFloorId: context?.floor?.id }));
+        setWallOpacity(context?.floor ? 0 : 0.1);
       }
     }
     markSelected(key);
@@ -235,14 +238,15 @@ function SavedWorldViewer({ project, operationsSection, operationsRecord }) {
             viewerPreset={layout.viewerPreset} selectedSensorId={selectedSensorId} onSensorSelect={selectSensor} transformTools={DISABLED_TRANSFORM_TOOLS} theme={theme} onCameraControlsChange={setCameraControls} onZoomChange={setZoom} /> : <p className={viewerStyles.empty}>등록된 설비가 없습니다. 프로젝트 목록에서 편집하기로 설비를 추가하세요.</p>
             : <SiteOverviewScene {...model} enableObjectLod={false} movementPlayback={movementEnabled ? VIEWER_MOVEMENT_PLAYBACK : VIEWER_MOVEMENT_PAUSED} showSceneControls={false} onCameraControlsChange={setCameraControls} onZoomChange={setZoom} selectedBuildingId={selectedBuildingId} selectedSiteObjectId={selectedSiteObjectId} selectedFloorId={selectedFloorId}
               buildingObservation={buildingObservation} equipmentFocus={equipmentFocus} worldEquipment={worldEquipment} snapshotRequest={!equipmentScope ? snapshotRequest : null} onSnapshot={setSnapshot}
+              equipmentAssetBindings={layout.equipmentAssetBindings ?? EMPTY_ITEMS} viewerPreset={layout.viewerPreset}
               interactionMode={SITE_INTERACTION_MODES.NAVIGATE} viewMode={viewMode} theme={theme} transformTools={DISABLED_TRANSFORM_TOOLS} gridSettings={DEFAULT_GRID_SETTINGS}
-              onSelectBuilding={selectBuilding} onSelectSiteObject={selectSiteObject} onSelectFloor={selectFloor} onEnterBuilding={selectBuilding} onEnterFloor={selectFloor} />}
+              onSelectBuilding={selectBuilding} onSelectEquipment={selectEquipment} onSelectFloor={selectFloor} onEnterBuilding={selectBuilding} onEnterFloor={selectFloor} />}
         </div>
         <div className={portalStyles.zoom} aria-label="월드 줌"><button type="button" title="확대" aria-label="확대" disabled={!cameraControls} onClick={() => cameraControls.zoomBy(1.25)}>+</button><output aria-label="현재 줌 비율">{zoom}%</output><button type="button" title="축소" aria-label="축소" disabled={!cameraControls} onClick={() => cameraControls.zoomBy(0.8)}>−</button></div>
       </main>
       <aside className={`${portalStyles.detailPanel} ${detailOpen ? portalStyles.detailPanelOpen : ""}`} data-camera-safe-ui={detailOpen ? "right" : undefined} aria-label={buildingDetails ? "건축물 상세 정보" : "관측 지표"} inert={!detailOpen}>
         <div className={portalStyles.detailHeader}>
-          <div><span>{buildingDetails ? "건축물 상세 관측" : equipmentContext || showEquipment ? "선택 설비" : "월드 관측"}</span><h2>{buildingDetails?.building.name || selectedItem?.name || details.name}</h2><p>{buildingDetails ? "저장된 도면과 층별 설비" : equipmentContext || showEquipment ? "설비별 센서 및 관측 항목" : "프로젝트 전체 관측 현황"}</p></div>
+          <div><span>{buildingDetails ? "건축물 상세 관측" : equipmentContext || showEquipment ? "선택 설비" : "월드 관측"}</span><h2>{buildingDetails?.building.name || selectedItem?.name || details.name}</h2><p>{buildingDetails ? "저장된 도면과 층별 설비" : equipmentContext || showEquipment ? "설비별 센서 및 관측 항목" : "프로젝트 전체 관측 현황"}</p><ScanLoadStatus equipmentId={equipmentId} /></div>
           <button type="button" className={portalStyles.iconButton} onClick={() => setDetailOpen(false)} aria-label="상세 패널 닫기"><CloseIcon size={18} /></button>
         </div>
         {equipmentContext && <section className={`${portalStyles.detailSection} ${viewerStyles.buildingControls}`}>

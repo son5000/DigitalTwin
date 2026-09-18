@@ -1,3 +1,5 @@
+import { createTerrainMesh } from "../terrain/TerrainMeshFactory";
+import { getFloorTerrainEnvironment } from "../terrain/floorTerrain";
 import * as THREE from "three";
 
 import { getFloorHeightAtPoint, pointInsideRing } from "../model/floorSpatialModel.js";
@@ -220,7 +222,16 @@ export function createFloorSpatialObject(plan, options = {}) {
   settings.floorStyle ??= {};
   const group = new THREE.Group();
   const floorMeshes = [];
-  (plan.floorFootprint?.regions ?? []).forEach((region) => {
+  if (plan.terrain) {
+    const environment = getFloorTerrainEnvironment(plan);
+    environment.footprintRegions = (environment.footprintRegions ?? []).map((region) => ({ ...region,
+      holes: [...(region.holes ?? []), ...(settings.openings ?? []).filter((opening) => pointInsideRing(opening, region.outer)).map(openingRing)] }));
+    const mesh = createTerrainMesh(environment);
+    mesh.traverse((child) => { child.userData.floorSurface = true; });
+    floorMeshes.push(mesh);
+    group.add(mesh);
+  }
+  (plan.terrain ? [] : plan.floorFootprint?.regions ?? []).forEach((region) => {
     const derivedRegion = {
       ...region,
       holes: [
@@ -239,7 +250,7 @@ export function createFloorSpatialObject(plan, options = {}) {
     floorMeshes.push(mesh);
     group.add(mesh);
   });
-  (plan.elevationZones ?? []).forEach((zone, index) => {
+  (plan.terrain ? [] : plan.elevationZones ?? []).forEach((zone, index) => {
     if (index === 0 && Math.abs(zone.relativeHeight) < 0.001 && zone.surfaceType === "FLAT") return;
     group.add(createElevationZoneObject(zone, settings));
   });

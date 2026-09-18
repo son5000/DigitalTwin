@@ -712,46 +712,18 @@
 }
 
 .workspace.monitoringWorkspace {
-  --editor-overlay-viewport-top: calc(72px + var(--editor-overlay-gap));
-
-  grid-template-areas: "canvas settings";
-  grid-template-columns: minmax(0, 1fr) var(--editor-overlay-panel-width);
+  grid-template-areas: "canvas";
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
-  padding: var(--editor-overlay-gap);
-  gap: var(--editor-overlay-gap);
-  background: var(--color-background);
 }
 
 .monitoringWorkspace .sceneArea {
   grid-area: canvas;
   overflow: hidden;
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--editor-overlay-radius);
 }
 
 .monitoringWorkspace .floatingPanelHost {
-  display: block;
-  grid-area: settings;
-  min-width: 0;
-  min-height: 0;
-}
-
-@media (max-width: 1100px) {
-  .workspace.monitoringWorkspace {
-    grid-template-areas:
-      "canvas"
-      "settings";
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(430px, 1fr) minmax(260px, 38vh);
-  }
-}
-
-@media (max-width: 760px), (orientation: portrait) {
-  .workspace.monitoringWorkspace {
-    padding: 8px;
-    gap: 8px;
-    grid-template-rows: minmax(360px, 1fr) minmax(240px, 42%);
-  }
+  display: contents;
 }
 .initializationError { display: grid; max-width: 560px; margin: auto; padding: 28px; align-self: center; gap: 12px; border: 1px solid var(--color-border); border-radius: 12px; color: var(--color-text); background: var(--color-surface); box-shadow: var(--shadow-panel); text-align: center; }
 .initializationError h1, .initializationError p { margin: 0; }

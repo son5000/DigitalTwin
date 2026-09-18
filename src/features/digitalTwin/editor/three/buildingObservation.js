@@ -6,15 +6,78 @@ import { getStairRenderInstances, getVerticalStructureOpeningForFloor } from "..
 import { createStairRenderObject } from "../world/StairFactory";
 import { createWorldStructureObject, getWorldStructureDimensions } from "../world/WorldStructureFactory";
 import { createFloorSpatialObject, createFootprintShape } from "./floorSpatialScene";
+import { pickEquipmentId } from "./equipmentRaycast";
 import { createEquipmentRenderObjects } from "./equipmentInstancing";
 import { animateCameraFocus, cancelCameraFocus, focusCameraOnBounds, focusCameraOnObject } from "./cameraFocus";
 import { applyBuildingIsolationVisibility, captureBuildingIsolationVisibility, restoreBuildingIsolationVisibility } from "./buildingIsolation";
 import { disposeObject3D } from "./disposeObject3D";
 import { focusEquipmentInWorld } from "./viewerEquipmentFocus";
+import { resolveEquipmentRepresentation } from "../model/viewerPreset";
+import { setScanLoadState } from "./scanLoadState";
 
 const smooth = (value) => value * value * (3 - 2 * value);
 const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const FLOOR_HIGHLIGHT = new THREE.Color("#ff7900");
+
+export function updateDetailedModelVisibility(entry, settings, runtime) {
+  const camera = runtime.activeCamera ?? runtime.camera;
+  if (!camera) return;
+  entry.detailedModels.forEach(({ object, equipmentId, fallback, aligned }) => {
+    if (!aligned) return;
+    const detailed = settings.equipmentId === equipmentId && resolveEquipmentRepresentation({
+      preset: entry.data.viewerPreset, equipmentId, hasDetailedModel: true,
+      selected: settings.equipmentId === equipmentId,
+      distance: camera.position.distanceTo(object.getWorldPosition(new THREE.Vector3())),
+    }) === "DETAILED";
+    aligned.visible = detailed;
+    fallback.forEach((child) => { child.visible = !detailed; });
+  });
+}
+
+export function releaseDetail(detail) {
+  detail.controller?.abort();
+  detail.controller = null;
+  if (detail.aligned) {
+    detail.aligned.removeFromParent();
+    detail.aligned.userData.releaseAssetSources?.();
+    disposeObject3D(detail.aligned);
+    detail.aligned = null;
+  }
+  detail.fallback.forEach((child) => { child.visible = true; });
+  detail.attempted = false;
+  setScanLoadState(detail.equipmentId, "");
+}
+
+export function loadSelectedDetail(entry, equipmentId, ready) {
+  entry.detailedModels.forEach((detail) => {
+    if (detail.equipmentId !== equipmentId) {
+      if (detail.attempted || detail.aligned) releaseDetail(detail);
+      return;
+    }
+    if (!ready || detail.attempted) return;
+    detail.attempted = true;
+    const controller = new AbortController();
+    detail.controller = controller;
+    setScanLoadState(equipmentId, "스캔 모델 불러오는 중… 기존 설비를 계속 표시합니다.");
+    void import("./EquipmentAssetViewer").then(async ({ loadBindingObject, applyAssetAlignment }) => {
+      if (controller.signal.aborted) return;
+      const loaded = await loadBindingObject(detail.binding, { signal: controller.signal });
+      if (controller.signal.aborted || entry.disposed) { disposeObject3D(loaded.object); loaded.revoke(); return; }
+      const aligned = new THREE.Group();
+      aligned.add(loaded.object);
+      if (!applyAssetAlignment({ actualObject: loaded.object, aligned }, detail.binding, detail.equipment)) {
+        disposeObject3D(aligned); loaded.revoke(); throw new Error("EMPTY_MODEL");
+      }
+      aligned.userData.releaseAssetSources = loaded.revoke;
+      detail.object.add(aligned);
+      detail.aligned = aligned;
+      setScanLoadState(equipmentId, "스캔 모델 준비 완료");
+    }).catch((error) => {
+      if (!controller.signal.aborted) setScanLoadState(equipmentId,
+        error.message.includes("LIMIT") ? "모델이 표시 용량 제한을 초과했습니다. 기존 설비를 표시합니다." : "스캔 모델을 불러오지 못했습니다. 다시 선택하여 재시도하세요.");
+    });
+  });
+}
 
 function contentBounds(group) {
   group.updateWorldMatrix(true, true);
@@ -58,7 +121,7 @@ function createInterior(data, theme, labelRoot, labelClass, onSelectFloor) {
   const groups = new Map();
   const labels = new Map();
   const options = { selected: false, theme, sceneTheme: SCENE_THEMES[theme], enableLod: false };
-  const entry = { data, theme, root, groups, labels, materials: [], localBounds: new Map(), equipmentTargets: new Map(), disposed: false };
+  const entry = { data, theme, root, groups, labels, materials: [], localBounds: new Map(), equipmentTargets: new Map(), detailedModels: [], disposed: false };
   const bindings = new Map((data.assetBindings ?? []).filter((binding) => ["OBJ", "PLY"].includes(binding.assetType)).map((binding) => [binding.equipmentId, binding]));
   const renderOptions = { theme, viewerTranslucent: true, enableLod: false };
   function addEquipment(parent, equipment, floorId) {
@@ -73,25 +136,9 @@ function createInterior(data, theme, labelRoot, labelClass, onSelectFloor) {
       const [object] = createEquipmentRenderObjects([record], renderOptions);
       parent.add(object);
       const fallback = [...object.children];
-      const binding = bindings.get(record.equipment.id);
-      // Use the existing local file loader/alignment. One load per cached interior, never per zoom.
-      void import("./EquipmentAssetViewer").then(async ({ loadBindingObject, applyAssetAlignment }) => {
-        if (entry.disposed) return;
-        const loaded = await loadBindingObject(binding);
-        if (entry.disposed) { disposeObject3D(loaded.object); loaded.revoke(); return; }
-        const aligned = new THREE.Group();
-        aligned.add(loaded.object);
-        if (!applyAssetAlignment({ actualObject: loaded.object, aligned }, binding, record.equipment)) {
-          disposeObject3D(aligned); loaded.revoke(); throw new Error("EMPTY_MODEL");
-        }
-        aligned.userData.releaseAssetSources = loaded.revoke;
-        object.add(aligned);
-        fallback.forEach((child) => { child.visible = false; });
-        entry.localBounds.set(floorId, contentBounds(groups.get(floorId)));
-        if (entry.materials.length) bindFloorMaterials(entry);
-      }).catch((error) => {
-        if (!entry.disposed) console.warn(`[건축물 관측] ${record.equipment.name}: 등록 모델을 불러오지 못해 기본 설비 형상을 유지합니다.`, error);
-      });
+      const detail = { object, equipmentId: record.equipment.id, fallback, aligned: null,
+        binding: bindings.get(record.equipment.id), equipment: record.equipment, controller: null, attempted: false };
+      entry.detailedModels.push(detail);
     });
   }
   data.floors.forEach((floor) => {
@@ -238,6 +285,7 @@ export function createBuildingObservation(runtime, { labelRoot, labelClass, onSe
   }
   function disposeEntry(entry) {
     entry.disposed = true;
+    entry.detailedModels.forEach(releaseDetail);
     restoreFloorMaterials(entry);
     entry.labels.forEach((label) => label.remove());
     entry.root.removeFromParent();
@@ -250,16 +298,25 @@ export function createBuildingObservation(runtime, { labelRoot, labelClass, onSe
       || (!object.isBox3 && focusCameraOnObject(runtime, object, { duration, onComplete }));
   }
   function floorPosition(entry, floor, settings) {
-    const bounds = entry.localBounds.get(floor.id);
-    const buildingBounds = new THREE.Box3();
-    entry.localBounds.forEach((box) => buildingBounds.union(box));
-    const width = Math.max(finite(entry.data.building.parameters?.width), buildingBounds.getSize(new THREE.Vector3()).x);
-    const depth = Math.max(finite(entry.data.building.parameters?.depth), buildingBounds.getSize(new THREE.Vector3()).z);
-    // Pull forward just past the footprint, with a smaller sideways component.
-    const forwardOffset = (bounds.isEmpty() ? depth : Math.max(buildingBounds.max.z, depth / 2) - bounds.min.z) + Math.max(depth * 0.06, 0.5);
-    const selected = settings.floorId === floor.id;
-    return new THREE.Vector3(selected ? width * 0.3 : 0,
-      finite(floor.elevation) + (createFloorDisplayOffsets(entry.data.floors, settings.gap).get(floor.id) ?? 0), selected ? forwardOffset : 0);
+    if (!entry.floorPositions || entry.positionFloorId !== settings.floorId || entry.positionGap !== settings.gap) {
+      const buildingBounds = new THREE.Box3();
+      entry.localBounds.forEach((box) => buildingBounds.union(box));
+      const size = buildingBounds.getSize(new THREE.Vector3());
+      const width = Math.max(finite(entry.data.building.parameters?.width), size.x);
+      const depth = Math.max(finite(entry.data.building.parameters?.depth), size.z);
+      const offsets = createFloorDisplayOffsets(entry.data.floors, settings.gap);
+      entry.floorPositions = new Map(entry.data.floors.map((item) => {
+        const bounds = entry.localBounds.get(item.id);
+        // Pull forward just past the footprint, with a smaller sideways component.
+        const forwardOffset = (bounds.isEmpty() ? depth : Math.max(buildingBounds.max.z, depth / 2) - bounds.min.z) + Math.max(depth * 0.06, 0.5);
+        const selected = settings.floorId === item.id;
+        return [item.id, new THREE.Vector3(selected ? width * 0.3 : 0,
+          finite(item.elevation) + (offsets.get(item.id) ?? 0), selected ? forwardOffset : 0)];
+      }));
+      entry.positionFloorId = settings.floorId;
+      entry.positionGap = settings.gap;
+    }
+    return entry.floorPositions.get(floor.id);
   }
   function floorBounds(entry, floor, settings) {
     entry.root.updateWorldMatrix(true, false);
@@ -293,6 +350,7 @@ export function createBuildingObservation(runtime, { labelRoot, labelClass, onSe
   function sync(data, settings) {
     if (!data) {
       if (!active) return;
+      active.entry.detailedModels.forEach(releaseDetail);
       active.focusAfterClose = settings.focusAfterClose;
       if (active.phase === "closing") return;
       sequence += 1;
@@ -310,6 +368,7 @@ export function createBuildingObservation(runtime, { labelRoot, labelClass, onSe
     const shell = runtime.buildingObjects.get(data.building.id);
     if (!shell) return;
     const existing = cache.get(data.building.id);
+    if (active && active.entry !== existing) active.entry.detailedModels.forEach(releaseDetail);
     const previous = active && active.entry === existing && active.phase !== "closing" ? active : null;
     if (existing && (existing.data !== data || existing.theme !== settings.theme)) {
       if (active?.entry === existing) { releaseShell(); active = null; }
@@ -362,6 +421,7 @@ export function createBuildingObservation(runtime, { labelRoot, labelClass, onSe
     // Pointer cancellation ends the zoom phase without leaving a pending transition.
     if (active.phase === "zoom" && !runtime.cameraFocus) open();
     const { entry, settings } = active;
+    updateDetailedModelVisibility(entry, settings, runtime);
     if (active.phase === "spread") {
       active.mix = smooth(Math.min(1, (time - active.startedAt) / 650));
       if (active.mix === 1) {
@@ -374,12 +434,12 @@ export function createBuildingObservation(runtime, { labelRoot, labelClass, onSe
       runtime.grid.visible = false;
       runtime.gridRegionRoot.visible = false;
     }
-    const offsets = createFloorDisplayOffsets(entry.data.floors, settings.gap);
     entry.data.floors.forEach((floor) => {
       const group = entry.groups.get(floor.id);
-      const target = finite(floor.elevation) + offsets.get(floor.id) * active.mix;
-      group.position.y = active.phase === "open" ? THREE.MathUtils.lerp(group.position.y, target, 1 - Math.exp(-12 * delta)) : target;
       const position = floorPosition(entry, floor, settings);
+      const elevation = finite(floor.elevation);
+      const target = elevation + (position.y - elevation) * active.mix;
+      group.position.y = active.phase === "open" ? THREE.MathUtils.lerp(group.position.y, target, 1 - Math.exp(-12 * delta)) : target;
       const targetX = active.phase === "closing" ? 0 : position.x * active.mix;
       const targetZ = active.phase === "closing" ? 0 : position.z * active.mix;
       group.position.x = THREE.MathUtils.lerp(group.position.x, targetX, 1 - Math.exp(-12 * delta));
@@ -396,6 +456,8 @@ export function createBuildingObservation(runtime, { labelRoot, labelClass, onSe
         })) active.equipmentFocusKey = focusKey;
       }
     }
+    loadSelectedDetail(entry, active.phase === "closing" ? null : settings.equipmentId,
+      active.phase === "open" && active.equipmentFocusKey === focusKey && !runtime.cameraFocus);
     entry.materials.forEach((record) => {
       const floorSurface = record.mesh.userData.floorSurface === true;
       const boundary = record.mesh.userData.floorBoundary === true;
@@ -423,13 +485,16 @@ export function createBuildingObservation(runtime, { labelRoot, labelClass, onSe
         }
       });
     });
-    shellMaterials.forEach(({ original, copies }) => copies.forEach((material, index) => {
-      const base = (Array.isArray(original) ? original : [original])[index];
-      const shellOpacity = 1 - active.mix * (1 - settings.opacity);
-      material.opacity = base.opacity * shellOpacity;
-      material.transparent = shellOpacity < 1 || base.transparent;
-      material.depthWrite = shellOpacity >= 0.99 && base.depthWrite;
-    }));
+    const shellOpacity = 1 - active.mix * (1 - settings.opacity);
+    shellMaterials.forEach(({ original, copies }) => {
+      copies.forEach((material, index) => {
+        const base = (Array.isArray(original) ? original : [original])[index];
+        material.visible = base.visible && shellOpacity > 0.001;
+        material.opacity = base.opacity * shellOpacity;
+        material.transparent = shellOpacity < 1 || base.transparent;
+        material.depthWrite = shellOpacity >= 0.99 && base.depthWrite;
+      });
+    });
     if (active.phase === "closing" && time - active.startedAt >= 550) {
       hide(entry); releaseShell();
       restoreBuildingIsolationVisibility(runtime, saved.visibility);
@@ -446,12 +511,14 @@ export function createBuildingObservation(runtime, { labelRoot, labelClass, onSe
     const top = Math.max(12, insets.top), bottom = height - Math.max(12, insets.bottom);
     const left = Math.max(12, insets.left), right = width - Math.max(12, insets.right);
     const rowHeight = 52, labelWidth = 174;
+    entry.root.updateWorldMatrix(true, false);
     const projected = entry.data.floors.map((floor) => {
       const group = entry.groups.get(floor.id);
+      group.updateWorldMatrix(false, false);
       const bounds = entry.localBounds.get(floor.id);
       const corners = [];
       if (!bounds.isEmpty()) for (const x of [bounds.min.x, bounds.max.x]) for (const z of [bounds.min.z, bounds.max.z]) {
-        const point = group.localToWorld(new THREE.Vector3(x, bounds.min.y + 0.15, z));
+        const point = new THREE.Vector3(x, bounds.min.y + 0.15, z).applyMatrix4(group.matrixWorld);
         if (point.clone().applyMatrix4(camera.matrixWorldInverse).z < 0) corners.push(point.project(camera));
       }
       const point = corners.sort((a, b) => b.x - a.x)[0];
@@ -477,6 +544,10 @@ export function createBuildingObservation(runtime, { labelRoot, labelClass, onSe
   }
   return {
     sync, update, updateLabels, releaseShell, isActive: () => Boolean(active),
+    pickEquipment(raycaster) {
+      if (!active || active.phase === "closing") return null;
+      return pickEquipmentId(raycaster, active.entry.root);
+    },
     pick(raycaster) {
       if (!active || active.phase === "closing" || !active.entry.root.visible) return null;
       const hit = raycaster.intersectObject(active.entry.root, true).find(({ object }) => {

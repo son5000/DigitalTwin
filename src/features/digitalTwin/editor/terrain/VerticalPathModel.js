@@ -1,4 +1,5 @@
 import { sampleTerrainElevation } from "./TerrainModel";
+import { createTerrainSurfaceSampler } from "./TerrainSurfaceProjection";
 
 export const VERTICAL_PATH_MODES = Object.freeze({
   FOLLOW_TERRAIN: "FOLLOW_TERRAIN",
@@ -68,6 +69,7 @@ export function normalizeVerticalPath(path) {
 export function resolveVerticalPath(object, terrain, terrainFeatures = [], options = {}) {
   const path = normalizeVerticalPath(object.path);
   const mode = getMode(object);
+  const surface = mode === VERTICAL_PATH_MODES.FOLLOW_TERRAIN ? options.terrainSurface ?? createTerrainSurfaceSampler(terrain, terrainFeatures) : null;
   const sourcePoints = path.points;
   if (sourcePoints.length < 2) return { mode, points: [], segments: [], horizontalLength: 0, startHeight: 0, endHeight: 0 };
   const sourceSegments = sourcePoints.slice(1).map((end, segmentIndex) => {
@@ -93,7 +95,7 @@ export function resolveVerticalPath(object, terrain, terrainFeatures = [], optio
       const z = segment.start.z + (segment.end.z - segment.start.z) * t;
       const distance = accumulated + segment.length * t;
       const world = rotateLocalPoint(object, { x, z });
-      const terrainHeight = sampleTerrainElevation(terrain, world.x, world.z, terrainFeatures);
+      const terrainHeight = surface ? surface.sample(world.x, world.z) : sampleTerrainElevation(terrain, world.x, world.z, terrainFeatures);
       let elevation = terrainHeight;
       if ([VERTICAL_PATH_MODES.FIXED_GRADE, VERTICAL_PATH_MODES.CUT_FILL, VERTICAL_PATH_MODES.ELEVATED].includes(mode)) {
         elevation = verticalCurveElevation(distance, horizontalLength, startHeight, endHeight, verticalCurveLength);
@@ -124,6 +126,7 @@ export function resolveVerticalPath(object, terrain, terrainFeatures = [], optio
   const heightDifference = resolvedEnd - resolvedStart;
   return {
     mode,
+    terrainProjection: surface ? { surface, position: { ...object.position }, rotationY: finite(object.rotation?.y), clearance: finite(object.parameters?.terrainClearance) } : null,
     points,
     segments,
     horizontalLength,

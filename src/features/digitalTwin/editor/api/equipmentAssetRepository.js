@@ -33,16 +33,15 @@ async function transact(mode, callback) {
 export const equipmentAssetRepository = {
   async put(asset) {
     await transact("readwrite", (store) => store.put(asset));
-    assetCache.set(asset.id, Promise.resolve(asset));
     return asset;
   },
   async get(id) {
     if (!assetCache.has(id)) assetCache.set(id, transact("readonly", (store) => store.get(id)));
     try {
       return await assetCache.get(id);
-    } catch (error) {
+    } finally {
+      // Cache only in-flight reads, not all large uploaded Blobs for the session.
       assetCache.delete(id);
-      throw error;
     }
   },
   async remove(id) {

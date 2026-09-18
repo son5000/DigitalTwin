@@ -19,6 +19,12 @@ import { TOOLBAR_ACTION_IDS } from "./toolbarActionDefinitions";
 import styles from "./EditorToolbar.module.css";
 
 const PANEL_TOOL_CONFIG = {
+  MONITORING: {
+    leading: [
+      { id: WORLD_PANEL_IDS.OBJECT_LIST, label: "설비 목록", iconKey: "object-list" },
+      { id: WORLD_PANEL_IDS.DETAILS, label: "단계별 설비 설정", iconKey: "details" },
+    ], secondary: [], trailing: [],
+  },
   SPACE: {
     leading: [
       { id: WORLD_PANEL_IDS.OBJECTS, label: "오브젝트", iconKey: "objects" },
@@ -42,6 +48,7 @@ const PANEL_TOOL_CONFIG = {
     leading: [
       { id: WORLD_PANEL_IDS.OBJECTS, label: "오브젝트", iconKey: "objects" },
       { id: WORLD_PANEL_IDS.OBJECT_LIST, label: "오브젝트 목록", iconKey: "object-list" },
+      { id: WORLD_PANEL_IDS.TERRAIN, label: "지형·부지 관리", iconKey: "terrain" },
     ],
     secondary: [],
     trailing: [],

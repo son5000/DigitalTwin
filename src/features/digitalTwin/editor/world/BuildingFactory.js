@@ -1,9 +1,10 @@
 import * as THREE from "three";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
 import { createCustomBuildingGroup } from "@/features/customAssets/building/buildingRenderer";
 import { getRuntimeCustomAsset } from "@/features/customAssets/core/customAssetRegistry";
 import { BUILDING_FACADES, getBuildingFacadeOpenings } from "@/features/digitalTwin/editor/model/buildingOpenings";
-import { createPresetMaterial } from "@/features/digitalTwin/editor/three/presetMaterial";
+import { cloneMaterialForMutation, createPresetMaterial } from "@/features/digitalTwin/editor/three/presetMaterial";
 import { applyUserTextureToObject } from "@/features/digitalTwin/editor/three/userTextureRuntime";
 
 function createEdgeOverlay(geometry, color) {
@@ -191,7 +192,51 @@ function wallSpans(length, blocked) {
   return spans;
 }
 
-function addWallPanel(group, facade, span, yRange, width, depth, material, buildingId, edgeColor) {
+function createFacadeBatch(group, buildingId, bodyMaterial, edgeColor) {
+  const batches = new Map();
+  const edges = [];
+  const transform = new THREE.Object3D();
+  const unitBox = new THREE.BoxGeometry(1, 1, 1);
+  const edgeGeometry = new THREE.EdgesGeometry(unitBox);
+  unitBox.dispose();
+  return {
+    add(size, position, rotation, key, appearance, metadata = {}, outlined = false) {
+      let batch = batches.get(key);
+      if (!batch) {
+        const material = key === "wall" ? bodyMaterial : createPresetMaterial(appearance);
+        batch = { material: cloneMaterialForMutation(material), metadata, matrices: [] };
+        batches.set(key, batch);
+      }
+      transform.position.copy(position);
+      transform.rotation.set(0, rotation, 0);
+      transform.scale.set(size.x, size.y, size.z);
+      transform.updateMatrix();
+      batch.matrices.push(transform.matrix.clone());
+      if (outlined) edges.push(edgeGeometry.clone().applyMatrix4(transform.matrix));
+    },
+    finish() {
+      batches.forEach(({ material, metadata, matrices }) => {
+        const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), material, matrices.length);
+        matrices.forEach((matrix, index) => mesh.setMatrixAt(index, matrix));
+        mesh.instanceMatrix.needsUpdate = true;
+        mesh.computeBoundingBox();
+        mesh.computeBoundingSphere();
+        mesh.userData = { buildingId, ...metadata };
+        group.add(mesh);
+      });
+      if (edges.length) {
+        const outline = new THREE.LineSegments(mergeGeometries(edges),
+          new THREE.LineBasicMaterial({ color: edgeColor, transparent: true, opacity: 0.72 }));
+        outline.userData.buildingId = buildingId;
+        group.add(outline);
+      }
+      edges.forEach((geometry) => geometry.dispose());
+      edgeGeometry.dispose();
+    },
+  };
+}
+
+function addWallPanel(batch, facade, span, yRange, width, depth) {
   const thickness = 0.2;
   const horizontalSize = span[1] - span[0];
   const height = yRange[1] - yRange[0];
@@ -199,9 +244,9 @@ function addWallPanel(group, facade, span, yRange, width, depth, material, build
   const horizontalCenter = (span[0] + span[1]) / 2;
   const y = (yRange[0] + yRange[1]) / 2;
   if (facade === BUILDING_FACADES.FRONT || facade === BUILDING_FACADES.BACK) {
-    addMass(group, { x: horizontalSize, y: height, z: thickness }, { x: horizontalCenter, y, z: (facade === BUILDING_FACADES.FRONT ? 1 : -1) * (depth / 2 - thickness / 2) }, material, buildingId, edgeColor);
+    batch.add({ x: horizontalSize, y: height, z: thickness }, { x: horizontalCenter, y, z: (facade === BUILDING_FACADES.FRONT ? 1 : -1) * (depth / 2 - thickness / 2) }, 0, "wall", null, { textureSurface: "EXTERIOR" }, true);
   } else {
-    addMass(group, { x: thickness, y: height, z: horizontalSize }, { x: (facade === BUILDING_FACADES.RIGHT ? 1 : -1) * (width / 2 - thickness / 2), y, z: horizontalCenter }, material, buildingId, edgeColor);
+    batch.add({ x: thickness, y: height, z: horizontalSize }, { x: (facade === BUILDING_FACADES.RIGHT ? 1 : -1) * (width / 2 - thickness / 2), y, z: horizontalCenter }, 0, "wall", null, { textureSurface: "EXTERIOR" }, true);
   }
 }
 
@@ -214,27 +259,29 @@ function positionOnFacade(object, facade, horizontal, y, width, depth, normalOff
   }
 }
 
-function addOpeningAppearance(group, building, opening, width, depth) {
-  const frameMaterial = createPresetMaterial(opening.frame);
-  const fillMaterial = createPresetMaterial(opening.fill, opening.kind === "WINDOW" ? { transparent: true, opacity: 0.72 } : {});
+function addOpeningAppearance(batch, opening, width, depth) {
+  const frameAppearance = opening.frame;
+  const fillAppearance = { ...opening.fill, ...(opening.kind === "WINDOW" ? { opacity: 0.72 } : {}) };
   const frameWidth = Math.min(0.14, opening.width * 0.12);
   const frameDepth = 0.1;
   const centerY = opening.bottom + opening.height / 2;
-  const addPart = (partWidth, partHeight, horizontal, y, material, offset = 0.015) => {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(partWidth, partHeight, frameDepth), material);
-    positionOnFacade(mesh, opening.facade, horizontal, y, width, depth, offset);
-    mesh.userData.buildingId = building.id;
-    mesh.userData.facadeOpeningKind = opening.kind;
-    group.add(mesh);
+  const transform = new THREE.Object3D();
+  const addPart = (partWidth, partHeight, horizontal, y, appearance, offset = 0.015) => {
+    positionOnFacade(transform, opening.facade, horizontal, y, width, depth, offset);
+    // Keep facade sides separate so transparent panes retain side-level depth sorting.
+    const key = JSON.stringify([opening.facade, opening.kind, appearance]);
+    batch.add({ x: partWidth, y: partHeight, z: frameDepth }, transform.position, transform.rotation.y,
+      key, appearance, { facadeOpeningKind: opening.kind });
   };
-  addPart(frameWidth, opening.height + frameWidth * 2, opening.center - opening.width / 2, centerY, frameMaterial);
-  addPart(frameWidth, opening.height + frameWidth * 2, opening.center + opening.width / 2, centerY, frameMaterial);
-  addPart(opening.width, frameWidth, opening.center, opening.bottom + opening.height, frameMaterial);
-  if (opening.kind === "WINDOW") addPart(opening.width, frameWidth, opening.center, opening.bottom, frameMaterial);
-  addPart(Math.max(0.05, opening.width - frameWidth * 1.4), Math.max(0.05, opening.height - frameWidth * 1.4), opening.center, centerY, fillMaterial, 0.022);
+  addPart(frameWidth, opening.height + frameWidth * 2, opening.center - opening.width / 2, centerY, frameAppearance);
+  addPart(frameWidth, opening.height + frameWidth * 2, opening.center + opening.width / 2, centerY, frameAppearance);
+  addPart(opening.width, frameWidth, opening.center, opening.bottom + opening.height, frameAppearance);
+  if (opening.kind === "WINDOW") addPart(opening.width, frameWidth, opening.center, opening.bottom, frameAppearance);
+  addPart(Math.max(0.05, opening.width - frameWidth * 1.4), Math.max(0.05, opening.height - frameWidth * 1.4), opening.center, centerY, fillAppearance, 0.022);
 }
 
 function addFacadeShell(group, building, width, depth, totalHeight, floorHeight, openings, material, edgeColor) {
+  const batch = createFacadeBatch(group, building.id, material, edgeColor);
   Object.values(BUILDING_FACADES).forEach((facade) => {
     const length = [BUILDING_FACADES.FRONT, BUILDING_FACADES.BACK].includes(facade) ? width : depth;
     const facadeOpenings = openings.filter((opening) => opening.facade === facade);
@@ -250,13 +297,14 @@ function addFacadeShell(group, building, width, depth, totalHeight, floorHeight,
         const blocked = floorOpenings
           .filter((opening) => middleY > opening.bottom + 0.001 && middleY < opening.bottom + opening.height - 0.001)
           .map((opening) => [opening.center - opening.width / 2, opening.center + opening.width / 2]);
-        wallSpans(length, blocked).forEach((span) => addWallPanel(group, facade, span, yRange, width, depth, material, building.id, edgeColor));
+        wallSpans(length, blocked).forEach((span) => addWallPanel(batch, facade, span, yRange, width, depth));
       }
     }
   });
   const slabThickness = 0.16;
-  addMass(group, { x: width, y: slabThickness, z: depth }, { x: 0, y: slabThickness / 2, z: 0 }, material, building.id, edgeColor);
-  openings.forEach((opening) => addOpeningAppearance(group, building, opening, width, depth));
+  batch.add({ x: width, y: slabThickness, z: depth }, { x: 0, y: slabThickness / 2, z: 0 }, 0, "wall", null, { textureSurface: "EXTERIOR" }, true);
+  openings.forEach((opening) => addOpeningAppearance(batch, opening, width, depth));
+  batch.finish();
 }
 
 function applyViewerTransparency(group, enabled) {

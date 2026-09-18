@@ -6,6 +6,7 @@
   min-width: 0;
   min-height: 0;
   grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 1px;
   overflow: hidden;
   background: rgb(130 177 196 / 20%);
@@ -32,7 +33,36 @@
 .viewerMode button:disabled { color: var(--color-disabled); cursor: not-allowed; }
 .viewerMode label { display: grid; flex: 0 0 auto; gap: 2px; color: var(--color-text-subtle); font-size: 9px; }
 .viewerMode select { min-width: 112px; height: 32px; padding: 0 24px 0 8px; border: 1px solid var(--color-border); border-radius: 5px; color: var(--color-heading); background: var(--color-input); font-size: var(--editor-font-size-xs); }
-@media (max-width: 760px) {
-  .workspace { grid-template-rows: minmax(300px, 1fr); }
-  .viewerMode { right: 8px; left: 8px; overflow-x: auto; }
+.equipmentList { display: flex; flex-direction: column; gap: 10px; min-height: 0; padding: 16px 12px; background: var(--color-surface); border-right: 1px solid var(--color-border); color: var(--color-heading); }
+.equipmentList header, .equipmentNavigation { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
+.equipmentList header span, .equipmentNavigation span { color: var(--color-text-muted); }
+.equipmentList input, .equipmentList select { width: 100%; min-height: 32px; padding: 6px; border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-heading); background: var(--color-input); font-size: 11px; }
+.equipmentNavigation button { padding: 6px 10px; border: 1px solid var(--color-border); border-radius: 5px; color: var(--color-heading); background: var(--color-input); }
+.equipmentNavigation button:disabled { opacity: .4; }
+.equipmentItems { min-height: 0; overflow-y: auto; display: grid; align-content: start; gap: 7px; }
+.equipmentItems button { display: grid; gap: 5px; padding: 10px; text-align: left; border: 1px solid var(--color-border); border-radius: 7px; background: var(--color-input); color: var(--color-heading); overflow-wrap: anywhere; }
+.equipmentItems button[aria-current="true"] { border-color: var(--state-selected-border); background: var(--state-selected); }
+.equipmentItems small, .equipmentItems span, .equipmentItems p { font-size: 10px; line-height: 1.5; color: var(--color-text-muted); }
+.equipmentItems strong { font-size: 12px; }
+.setupProgress { position: absolute; top: var(--editor-overlay-top-secondary, 72px); left: var(--editor-overlay-left-safe, 74px); right: var(--editor-overlay-right-safe, 12px); z-index: 6; display: grid; gap: 8px; padding: 10px; border: 1px solid var(--color-border-strong); border-radius: 8px; background: var(--color-surface-overlay); color: var(--color-heading); box-shadow: var(--shadow-panel); }
+.setupProgress header { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; }
+.setupProgress header strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.setupProgress header span { color: var(--color-text-muted); flex-shrink: 0; }
+.setupProgress > div { display: flex; gap: 5px; overflow-x: auto; }
+.setupProgress button { display: grid; gap: 3px; flex: 1 0 auto; padding: 7px; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-input); color: var(--color-heading); font-size: 11px; }
+.setupProgress button small { color: var(--color-text-muted); font-size: 10px; }
+.setupProgress button[aria-current="step"] { border-color: var(--color-accent); background: var(--state-selected); }
+.workspace .equipmentList { position: absolute; z-index: 7; top: calc(var(--editor-overlay-top-secondary, 72px) + 106px); bottom: 160px; left: var(--editor-overlay-left-safe, 74px); width: 250px; max-width: calc(100% - 90px); border: 1px solid var(--color-border-strong); border-radius: 8px; box-shadow: var(--shadow-panel); }
+.equipmentList header button, .framePreview button { padding: 6px; color: var(--color-heading); background: var(--color-input); border: 1px solid var(--color-border); border-radius: 5px; }
+.workspace .viewerMode { top: auto; bottom: 74px; left: var(--editor-overlay-left-safe, 74px); right: var(--editor-overlay-right-safe, 12px); max-width: none; width: fit-content; flex-wrap: wrap; }
+.framePreview { position: absolute; left: var(--editor-overlay-left-safe, 74px); top: calc(var(--editor-overlay-top-secondary, 72px) + 108px); width: min(280px, 35%); max-height: 36%; overflow: auto; z-index: 5; display: grid; gap: 8px; padding: 10px; border: 1px solid var(--color-border); border-radius: 8px; color: var(--color-heading); background: var(--color-surface-overlay); font-size: 11px; }
+.framePreview header { display: flex; justify-content: space-between; gap: 6px; }
+.framePreview img { width: 100%; max-height: 160px; object-fit: contain; }
+.framePreview small { color: var(--color-text-muted); }
+@media (max-width: 760px), (orientation: portrait) {
+  .setupProgress { top: 116px; left: 8px; right: 8px; }
+  .setupProgress header { flex-wrap: wrap; }
+  .workspace .equipmentList { top: 224px; left: 8px; bottom: 84px; width: 240px; }
+  .workspace .viewerMode { left: 8px; right: 8px; bottom: var(--editor-overlay-mobile-bottom-safe, 74px); }
+  .framePreview { top: 224px; left: 8px; width: 220px; }
 }

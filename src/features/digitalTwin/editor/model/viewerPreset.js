@@ -9,6 +9,7 @@ export const EQUIPMENT_GLOBAL_DISPLAY_MODES = Object.freeze({
 
 export const EQUIPMENT_DISPLAY_OVERRIDES = Object.freeze({
   AUTO: "AUTO",
+  DISTANCE: "DISTANCE",
   SIMPLIFIED: "SIMPLIFIED",
   DETAILED: "DETAILED",
 });
@@ -70,6 +71,8 @@ export function resolveEquipmentRepresentation({
   const override = normalized.equipmentRepresentation.overrides[equipmentId];
   if (override === EQUIPMENT_DISPLAY_OVERRIDES.SIMPLIFIED) return EQUIPMENT_REPRESENTATIONS.SIMPLIFIED;
   if (override === EQUIPMENT_DISPLAY_OVERRIDES.DETAILED) return EQUIPMENT_REPRESENTATIONS.DETAILED;
+  if (override === EQUIPMENT_DISPLAY_OVERRIDES.DISTANCE) return distance <= normalized.equipmentRepresentation.autoDetailDistance
+    ? EQUIPMENT_REPRESENTATIONS.DETAILED : EQUIPMENT_REPRESENTATIONS.SIMPLIFIED;
   const globalMode = normalized.equipmentRepresentation.globalMode;
   if (globalMode === EQUIPMENT_GLOBAL_DISPLAY_MODES.SIMPLIFIED) return EQUIPMENT_REPRESENTATIONS.SIMPLIFIED;
   if (globalMode === EQUIPMENT_GLOBAL_DISPLAY_MODES.REALISTIC) return EQUIPMENT_REPRESENTATIONS.DETAILED;

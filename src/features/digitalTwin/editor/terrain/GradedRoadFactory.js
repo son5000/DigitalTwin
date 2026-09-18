@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { projectGeometryOnTerrain } from "./TerrainSurfaceProjection";
 
 function getHorizontalNormal(samples, index) {
   const previous = samples[Math.max(0, index - 1)];
@@ -42,6 +43,7 @@ export function createGradedStripGeometry(samples, {
   thickness = 0,
   offset = 0,
   elevationOffset = 0,
+  terrainProjection = null,
 } = {}) {
   if (!Array.isArray(samples) || samples.length < 2) return new THREE.BufferGeometry();
   const halfWidth = Math.max(0.001, Number(width) || 1) / 2;
@@ -53,7 +55,7 @@ export function createGradedStripGeometry(samples, {
     const normal = getHorizontalNormal(samples, index);
     const centerX = sample.x + normal.x * offset;
     const centerZ = sample.z + normal.z * offset;
-    const topY = sample.y + elevationOffset;
+    const topY = (terrainProjection ? 0 : sample.y) + elevationOffset;
     positions.push(centerX + normal.x * halfWidth, topY, centerZ + normal.z * halfWidth);
     positions.push(centerX - normal.x * halfWidth, topY, centerZ - normal.z * halfWidth);
     uvs.push(0, index / Math.max(1, samples.length - 1), 1, index / Math.max(1, samples.length - 1));
@@ -82,6 +84,7 @@ export function createGradedStripGeometry(samples, {
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
   geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
   geometry.setIndex(indices);
+  if (terrainProjection) return projectGeometryOnTerrain(geometry, terrainProjection);
   geometry.computeVertexNormals();
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();

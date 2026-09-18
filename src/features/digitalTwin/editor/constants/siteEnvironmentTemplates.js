@@ -171,7 +171,7 @@ export function normalizeSiteObject(object, index = 0) {
     },
     path: template.geometryMode === SITE_OBJECT_GEOMETRY_MODES.LINEAR
       ? normalizeVerticalPath({
-          width: Math.max(0.5, finite(object.path?.width, Math.min(width, depth))),
+          width: Math.max(template.profile === "BOUNDARY_WALL" ? 0.1 : 0.5, finite(object.path?.width, Math.min(width, depth))),
           elevationMode: object.path?.elevationMode ?? object.parameters?.verticalPathMode ?? VERTICAL_PATH_MODES.FOLLOW_TERRAIN,
           points: Array.isArray(object.path?.points) && object.path.points.length >= 2
             ? object.path.points.map((point) => ({ ...point, x: finite(point.x, 0), z: finite(point.z, 0) }))

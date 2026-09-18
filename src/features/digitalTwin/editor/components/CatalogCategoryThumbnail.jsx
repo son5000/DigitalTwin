@@ -3,6 +3,7 @@ import { useState } from "react";
 const FALLBACK_SOURCE = "/assets/object-thumbnails/_fallback.png";
 
 const CATEGORY_THUMBNAIL_SOURCES = Object.freeze({
+  GENERIC_STRUCTURE: "/assets/object-thumbnails/GENERIC_BOX.svg",
   BUILDING: "/assets/object-thumbnails/BUILDING.png",
   INDUSTRIAL_BUILDING: "/assets/object-thumbnails/FACTORY_GENERAL.png",
   VEHICLE: "/assets/object-thumbnails/CAR.png",

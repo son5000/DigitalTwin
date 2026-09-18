@@ -1,3 +1,5 @@
+import { createTerrainGrid } from "../terrain/TerrainMeshFactory";
+import { getFloorTerrainEnvironment } from "../terrain/floorTerrain";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -15,6 +17,7 @@ import {
 
 import { disposeObject3D } from "./disposeObject3D";
 import { createFloorPlacementPreview } from "./floorPlacementPreview";
+import { rotatePlanView } from "./planViewRotation.js";
 import { cloneMaterialForMutation } from "./presetMaterial";
 import {
   attachDualTransformControls,
@@ -515,7 +518,9 @@ export default function FloorPlanScene({
       ? createFloorSpatialObject(spatialPlan, { mode2D: true, selected: selectedSpatialEntity, floorStyle, openings })
       : createFloorSurface(footprint, openings, colors, floorStyle);
     runtime.floorSurface = surface;
-    runtime.floorRoot.add(surface, createBoundedGrid(footprint, openings, gridSettings.baseSize, colors.grid));
+    runtime.floorRoot.add(surface, spatialPlan?.terrain
+      ? createTerrainGrid(getFloorTerrainEnvironment(spatialPlan), [], gridSettings.baseSize, { grid: colors.grid, gridCenter: colors.grid, edge: colors.floorEdge })
+      : createBoundedGrid(footprint, openings, gridSettings.baseSize, colors.grid));
     resizeRuntime(runtime, footprint);
   }, [floorStyle, footprint, gridSettings.baseSize, openings, selectedSpatialEntity, spatialPlan, theme]);
 
@@ -647,6 +652,14 @@ export default function FloorPlanScene({
     configureDualTransformControls(runtime.transformControls, transformTools);
   }, [transformTools]);
 
+  const [viewRotation, setViewRotation] = useState(0);
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
+    rotatePlanView(runtime.camera, runtime.orbitControls, viewRotation);
+  }, [theme, viewRotation]);
+  const rotateView = (angle) => setViewRotation(((Number(angle) || 0) % 360 + 360) % 360);
+
   return (
     <section className={styles.viewport} aria-label="층별 도면 구성 화면">
       <div ref={containerRef} className={styles.canvasMount} />
@@ -654,6 +667,12 @@ export default function FloorPlanScene({
         <div className={styles.context}><strong>{building?.name ?? "건축물 미선택"}</strong><span>{floor?.name ?? "층 미선택"}</span></div>
         <div className={styles.mode}>{footprint.width.toFixed(1)} × {footprint.depth.toFixed(1)} m · 연결 {buildingVerticalStructureCount}</div>
         <div className={styles.legend}><span className={styles.floorKey} /> 바닥 <span className={styles.openingKey} /> 개구부</div>
+        <div className={styles.viewRotation} role="group" aria-label="2D 도면 보기 회전">
+          <button type="button" aria-label="도면 보기 왼쪽 15도 회전" onClick={() => rotateView(viewRotation - 15)}>↶</button>
+          <label><input aria-label="도면 보기 회전 각도" type="number" step="15" value={viewRotation} onChange={(event) => rotateView(event.target.value)} />°</label>
+          <button type="button" aria-label="도면 보기 오른쪽 15도 회전" onClick={() => rotateView(viewRotation + 15)}>↷</button>
+          <button type="button" disabled={viewRotation === 0} onClick={() => rotateView(0)}>정방향</button>
+        </div>
       </div>
       {showFloorReference ? <div className={styles.reference}>{referenceFloorName || "선택층"} 도면 참조선 표시</div> : null}
       {externalStatus || status ? <div className={styles.status}>{externalStatus || status}</div> : null}

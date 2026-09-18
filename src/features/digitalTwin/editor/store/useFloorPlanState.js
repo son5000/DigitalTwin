@@ -1,3 +1,5 @@
+import { getFloorTerrainEnvironment, applyFloorTerrainToRange } from "../terrain/floorTerrain";
+import { normalizeTerrainModel } from "../terrain/TerrainModel";
 import { useCallback, useMemo, useState } from "react";
 
 import {
@@ -187,7 +189,7 @@ function constrainStructure(structure, building, gridSize) {
     ...structure,
     position: {
       x: Math.min(xLimit, Math.max(-xLimit, x)),
-      y: 0,
+      y: structure.groundSnap === false ? Math.max(0, Number(structure.position.y) || 0) : 0,
       z: Math.min(zLimit, Math.max(-zLimit, z)),
     },
   };
@@ -250,9 +252,9 @@ export default function useFloorPlanState({ buildings, floors, currentBuilding, 
 
   const selectFloorPlanTemplate = useCallback((templateId) => {
     setActiveFloorPlanTemplateId((currentId) => currentId === templateId ? null : templateId);
-    setSelectedFloorPlanStructureId(null);
+    if (templateId) setSelectedFloorPlanStructureId(null);
     setFloorPlanValidationMessage("");
-    setSelectedSpatialEntity(null);
+    if (templateId) setSelectedSpatialEntity(null);
   }, []);
 
   const commitSpatialPlan = useCallback((mutator) => {
@@ -562,6 +564,24 @@ export default function useFloorPlanState({ buildings, floors, currentBuilding, 
     return true;
   }, [buildingFloors]);
 
+  const updateFloorTerrain = useCallback((changes) => {
+    if (!currentFloor || !currentBuilding) return;
+    setFloorPlansById((plans) => {
+      const plan = normalizeFloorSpatialPlan(plans[currentFloor.id] ?? { floorId: currentFloor.id, structures: [] }, buildingForFloor(currentBuilding, currentFloor));
+      const environment = getFloorTerrainEnvironment(plan);
+      const terrain = normalizeTerrainModel(changes.terrain ?? { ...environment.terrain, material: changes.groundMaterial ?? environment.terrain.material }, environment.width, environment.depth);
+      return { ...plans, [currentFloor.id]: { ...plan, terrain } };
+    });
+  }, [currentBuilding, currentFloor]);
+
+  const applyFloorTerrainRange = useCallback((startFloorId, endFloorId) => {
+    if (!currentFloor || !currentBuilding) return;
+    setFloorPlansById((plans) => {
+      const source = normalizeFloorSpatialPlan(plans[currentFloor.id] ?? { floorId: currentFloor.id, structures: [] }, buildingForFloor(currentBuilding, currentFloor));
+      return applyFloorTerrainToRange(plans, floors, currentFloor.id, startFloorId, endFloorId, source);
+    });
+  }, [currentBuilding, currentFloor, floors]);
+
   const toggleVisibilityFilter = useCallback((filterId) => {
     setVisibilityFilters((filters) => ({ ...filters, [filterId]: !filters[filterId] }));
   }, []);
@@ -641,6 +661,7 @@ export default function useFloorPlanState({ buildings, floors, currentBuilding, 
       duplicateSelectedFloorPlanStructure,
       copyFloorPlanFromFloor,
       applyFloorPlanToFloors,
+      updateFloorTerrain, applyFloorTerrainRange,
       applyFloorStyleToFloors,
       toggleFloorPlanVisibilityFilter: toggleVisibilityFilter,
       selectSpatialEntity: setSelectedSpatialEntity,

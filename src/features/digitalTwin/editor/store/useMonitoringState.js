@@ -47,7 +47,8 @@ export default function useMonitoringState({ equipment }) {
       sourceType: source.sourceType ?? ASSET_SOURCE_TYPES.UPLOAD,
       status: assetType === "UNSUPPORTED" ? "UNSUPPORTED" : source.status ?? "READY",
     });
-    setEquipmentAssetBindings((items) => [...items, binding]);
+    setEquipmentAssetBindings((items) => [...items.filter((item) => !([ASSET_TYPES.OBJ, ASSET_TYPES.PLY].includes(binding.assetType)
+      && item.equipmentId === equipmentId && [ASSET_TYPES.OBJ, ASSET_TYPES.PLY].includes(item.assetType))), binding]);
     setSelectedAssetBindingId(binding.id);
     return binding.id;
   }, []);

@@ -32,7 +32,7 @@ export function getBuildingObservationData(layout, building, hierarchy) {
     };
   });
   const equipmentIds = new Set(floorData.flatMap((floor) => floor.allEquipment.map((item) => item.id)));
-  return { building, floors: floorData, verticalStructures: items(layout.verticalStructuresByBuildingId?.[building.id]),
+  return { building, floors: floorData, viewerPreset: layout.viewerPreset, verticalStructures: items(layout.verticalStructuresByBuildingId?.[building.id]),
     assetBindings: items(layout.equipmentAssetBindings).filter((binding) => equipmentIds.has(binding.equipmentId)),
   };
 }

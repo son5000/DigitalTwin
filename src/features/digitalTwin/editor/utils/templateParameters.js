@@ -81,6 +81,7 @@ export function normalizeEquipmentInstance(equipment, template) {
       ? getDimensionsFromParameters(template, parameters)
       : { ...defaults.dimensions, ...equipment.dimensions },
     position: { x: 0, y: template.defaultPositionY ?? 0, z: 0, ...equipment.position },
+    groundSnap: equipment.groundSnap ?? template.defaultGroundSnap ?? !["CEILING", "WALL"].includes(template.placement),
     rotation: { x: 0, y: 0, z: 0, ...equipment.rotation },
     appearance: { ...defaults.appearance, ...equipment.appearance },
     appearanceSlots: Object.fromEntries((template.materialSlots ?? []).map((slot) => [

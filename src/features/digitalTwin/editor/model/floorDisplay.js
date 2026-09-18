@@ -12,6 +12,11 @@ export function normalizeFloorDisplayGap(value, maximum = 12) {
   return Math.min(maximum, Math.max(0, numeric));
 }
 
+export function resolveFloorSelectionGap({ currentGap, previousFloorId, nextFloorId, defaultGap = 7 }) {
+  if (!nextFloorId) return 0;
+  return normalizeFloorDisplayGap(previousFloorId ? currentGap : defaultGap);
+}
+
 export function createFloorDisplayOffsets(floors, floorDisplayGap) {
   const gap = normalizeFloorDisplayGap(floorDisplayGap);
   return new Map(sortFloorsByLevel(floors).map((floor) => {

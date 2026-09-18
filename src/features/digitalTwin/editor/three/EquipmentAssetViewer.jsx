@@ -16,6 +16,7 @@ import {
 import { disposeObject3D } from "@/features/digitalTwin/editor/three/disposeObject3D";
 
 import styles from "./EquipmentAssetViewer.module.css";
+import { parseScanInWorker, restoreScanGeometry } from "./scanWorkerClient";
 
 function createProxy(equipment, translucent = false, theme = "dark") {
   return createEquipmentObject({
@@ -55,27 +56,52 @@ async function resolveBindingSources(binding) {
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
-export async function loadBindingObject(binding) {
+export function loadBindingObject(binding, options = {}) {
+  const job = assetLoadQueue.then(() => {
+    if (options.signal?.aborted) throw new DOMException("Cancelled", "AbortError");
+    return loadBindingObjectNow(binding, options);
+  });
+  assetLoadQueue = job.catch(() => {});
+  return job;
+}
+
+let assetLoadQueue = Promise.resolve();
+
+async function loadBindingObjectNow(binding, { signal } = {}) {
   const sources = await resolveBindingSources(binding);
   const { source, relatedSource, textureSource, manager, revoke } = sources;
   if (!source) { revoke(); throw new Error("MISSING_LOCAL_FILE"); }
   try {
     if (binding.assetType === ASSET_TYPES.OBJ) {
-      const { OBJLoader } = await import("three/addons/loaders/OBJLoader.js");
-      const loader = new OBJLoader(manager);
+      const parsed = await parseScanInWorker(source, "OBJ", signal);
+      let materialCreator;
       let fallbackMaterial = false;
       if (relatedSource) {
         try {
           const { MTLLoader } = await import("three/addons/loaders/MTLLoader.js");
           const materials = await new MTLLoader(manager).loadAsync(relatedSource);
           materials.preload();
-          loader.setMaterials(materials);
+          materialCreator = materials;
         } catch (error) {
           console.warn("[설비 상세 3D 뷰어] MTL 재질을 불러오지 못해 기본 재질을 사용합니다.", error);
           fallbackMaterial = true;
         }
       }
-      const object = await loader.loadAsync(source);
+      const object = new THREE.Group();
+      const materialLoader = new THREE.MaterialLoader();
+      parsed.forEach((data) => {
+        const geometry = restoreScanGeometry(data);
+        const materials = data.materials.map((description) => {
+          if (materialCreator && description.name && data.kind === "Mesh") {
+            const material = materialCreator.create(description.name).clone();
+            material.vertexColors = Boolean(data.attributes.color);
+            return material;
+          }
+          return materialLoader.parse(description);
+        });
+        const Constructor = data.kind === "Points" ? THREE.Points : data.kind === "LineSegments" ? THREE.LineSegments : THREE.Mesh;
+        object.add(new Constructor(geometry, materials.length === 1 ? materials[0] : materials));
+      });
       let meshCount = 0;
       object.traverse((child) => {
         if (!child.isMesh) return;
@@ -89,8 +115,8 @@ export async function loadBindingObject(binding) {
       return { object, revoke, fallbackMaterial };
     }
     if (binding.assetType === ASSET_TYPES.PLY) {
-      const { PLYLoader } = await import("three/addons/loaders/PLYLoader.js");
-      const geometry = await new PLYLoader(manager).loadAsync(source);
+      const [data] = await parseScanInWorker(source, "PLY", signal);
+      const geometry = restoreScanGeometry(data);
       if (!geometry.getAttribute("position")?.count) throw new Error("EMPTY_MODEL");
       const hasFaces = Boolean(geometry.index?.count);
       const hasVertexColors = geometry.hasAttribute("color");
@@ -106,11 +132,9 @@ export async function loadBindingObject(binding) {
         }
       }
       if (hasFaces) {
-        if (!geometry.hasAttribute("normal")) geometry.computeVertexNormals();
         const material = new THREE.MeshStandardMaterial({ map: texture, color: texture ? 0xffffff : 0x8fb3c2, roughness: 0.62, vertexColors: hasVertexColors, side: THREE.DoubleSide });
         return { object: new THREE.Mesh(geometry, material), revoke, fallbackMaterial };
       }
-      geometry.computeBoundingSphere();
       const pointSize = Math.max((geometry.boundingSphere?.radius ?? 1) / 220, 0.008);
       return { object: new THREE.Points(geometry, new THREE.PointsMaterial({ size: pointSize, vertexColors: hasVertexColors, color: 0xaad8e8, sizeAttenuation: true })), revoke, fallbackMaterial };
     }
@@ -134,6 +158,25 @@ function fitCamera(camera, controls, object) {
   return true;
 }
 
+function getAssetLocalBounds(object) {
+  const bounds = new THREE.Box3();
+  // Exclude the alignment group and world ancestors from automatic normalization.
+  function expand(node, parentMatrix) {
+    if (node.matrixAutoUpdate) node.updateMatrix();
+    const matrix = new THREE.Matrix4().multiplyMatrices(parentMatrix, node.matrix);
+    if (node.isInstancedMesh) {
+      if (!node.boundingBox) node.computeBoundingBox();
+      if (node.boundingBox) bounds.union(node.boundingBox.clone().applyMatrix4(matrix));
+    } else if (node.geometry) {
+      if (!node.geometry.boundingBox) node.geometry.computeBoundingBox();
+      if (node.geometry.boundingBox) bounds.union(node.geometry.boundingBox.clone().applyMatrix4(matrix));
+    }
+    node.children.forEach((child) => expand(child, matrix));
+  }
+  expand(object, new THREE.Matrix4());
+  return bounds;
+}
+
 // eslint-disable-next-line react-refresh/only-export-components
 export function applyAssetAlignment(runtime, binding, equipment) {
   if (!runtime?.actualObject || !runtime.aligned || !binding?.alignmentTransform) return false;
@@ -142,8 +185,7 @@ export function applyAssetAlignment(runtime, binding, equipment) {
   object.position.set(0, 0, 0);
   object.rotation.set(0, 0, 0);
   object.scale.setScalar(unitScale(alignment.unit));
-  object.updateMatrixWorld(true);
-  const bounds = new THREE.Box3().setFromObject(object);
+  const bounds = getAssetLocalBounds(object);
   if (bounds.isEmpty()) return false;
   const center = bounds.getCenter(new THREE.Vector3());
   const size = bounds.getSize(new THREE.Vector3());
@@ -269,7 +311,7 @@ export default function EquipmentAssetViewer({ equipment, binding, forcedDisplay
           alignmentTransform: { ...bindingRef.current.alignmentTransform, ...transform },
         };
       }
-      callbackRef.current?.(transform);
+      callbackRef.current?.(transform, bindingRef.current?.id);
     };
     const handleTranslateCommit = () => commitTransform(transformControls.translate);
     const handleRotateCommit = () => commitTransform(transformControls.rotate);
@@ -363,12 +405,13 @@ export default function EquipmentAssetViewer({ equipment, binding, forcedDisplay
     }
     let cancelled = false;
     let loadedObject = null;
+    const loadController = new AbortController();
     let revokeSources = () => {};
     setLoadState("LOADING");
     setLoadMessage("");
     (async () => {
       try {
-        const loaded = await loadBindingObject(bindingSnapshot);
+        const loaded = await loadBindingObject(bindingSnapshot, { signal: loadController.signal });
         loadedObject = loaded.object;
         revokeSources = loaded.revoke;
         if (cancelled || runtime.disposed) { disposeObject3D(loadedObject); revokeSources(); return; }
@@ -399,6 +442,7 @@ export default function EquipmentAssetViewer({ equipment, binding, forcedDisplay
     })();
     return () => {
       cancelled = true;
+      loadController.abort();
       if (!runtime.disposed && runtime.aligned) {
         runtime.content.remove(runtime.aligned);
         disposeObject3D(runtime.aligned);

@@ -4,6 +4,7 @@ import { UNIFIED_EQUIPMENT_TEMPLATE_MAP } from "@/features/digitalTwin/editor/co
 import { getBuildingFootprint } from "@/features/digitalTwin/editor/utils/buildingFootprint";
 import { clampDimension } from "@/features/digitalTwin/editor/utils/editorMath";
 import { normalizeEquipmentInstance } from "@/features/digitalTwin/editor/utils/templateParameters";
+import { createSequentialCopyName } from "@/features/digitalTwin/editor/utils/objectCopyName";
 import { getFloorHeightAtPoint } from "@/features/digitalTwin/editor/model/floorSpatialModel";
 
 function createId(prefix) { return `${prefix}_${crypto.randomUUID()}`; }
@@ -90,7 +91,7 @@ export default function useFloorEquipmentState({ buildings, floors, currentBuild
 
   const selectFloorEquipmentTemplate = useCallback((templateId) => {
     setActiveFloorEquipmentTemplateId((current) => current === templateId ? null : templateId);
-    setSelectedFloorEquipmentId(null);
+    if (templateId) setSelectedFloorEquipmentId(null);
   }, []);
 
   const addFloorEquipment = useCallback((templateId, position, context = {}) => {
@@ -166,12 +167,15 @@ export default function useFloorEquipmentState({ buildings, floors, currentBuild
     if (!selectedFloorEquipment) return null;
     const id = createId("FLOOR_EQUIPMENT");
     const duplicate = {
-      ...structuredClone(selectedFloorEquipment), id, name: `${selectedFloorEquipment.name} 복사본`, batchGroupId: null,
+      ...structuredClone(selectedFloorEquipment), id, batchGroupId: null,
       position: { ...selectedFloorEquipment.position, x: selectedFloorEquipment.position.x + Math.max(0.5, gridSettings.baseSize) },
     };
     setEquipmentByFloorId((collections) => ({
       ...collections,
-      [duplicate.floorId]: [...(collections[duplicate.floorId] ?? []), duplicate],
+      [duplicate.floorId]: [...(collections[duplicate.floorId] ?? []), {
+        ...duplicate,
+        name: createSequentialCopyName(selectedFloorEquipment.name, Object.values(collections).flat()),
+      }],
     }));
     setSelectedFloorEquipmentId(id);
     return id;

@@ -152,6 +152,7 @@ test("층은 가까운 앞사선으로 돌출하며 외곽선과 함께 이동�
     assert.equal(outline.material.color.getHexString(), "ff7900");
     const baselineOutline = new THREE.Color(sceneTheme.wallEdge);
     assert.equal(f.shell.material.opacity, 0);
+    assert.equal(f.shell.material.visible, false);
     assert.equal(root.children.filter((group) => group.children.some((child) => child.userData.floorBoundary)).length, 3);
     f.observation.sync(f.data, { ...f.settings, floorId: "floor-3" }); f.settle();
     assert.ok(Math.abs(selected.position.x) < 0.001);

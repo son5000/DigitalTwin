@@ -6,6 +6,7 @@ export function disposeObject3D(object) {
   object.userData.releaseUserTexture?.();
   delete object.userData.releaseUserTexture;
   object.traverse((child) => {
+    if (child.isInstancedMesh) child.dispose();
     if (child.geometry && !releaseSharedGeometry(child.geometry)) child.geometry.dispose();
 
     const materials = Array.isArray(child.material)

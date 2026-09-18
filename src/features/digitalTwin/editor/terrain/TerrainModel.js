@@ -1,3 +1,7 @@
+import { normalizeTerrainCellColors, normalizeTerrainGradient } from "./terrainCellColors";
+
+import { normalizeRemovedAreas } from "./TerrainFootprint";
+
 export const TERRAIN_MODEL_VERSION = 1;
 
 export const TERRAIN_MATERIALS = Object.freeze({
@@ -35,8 +39,8 @@ function getGridDimensions(width, depth, resolution) {
 }
 
 export function createFlatTerrainModel(width = 120, depth = 90, resolution = 3) {
-  const normalizedWidth = Math.max(20, finite(width, 120));
-  const normalizedDepth = Math.max(20, finite(depth, 90));
+  const normalizedWidth = Math.max(1, finite(width, 120));
+  const normalizedDepth = Math.max(1, finite(depth, 90));
   const normalizedResolution = clamp(finite(resolution, 3), MIN_RESOLUTION, MAX_RESOLUTION);
   const { columns, rows } = getGridDimensions(normalizedWidth, normalizedDepth, normalizedResolution);
   return {
@@ -47,6 +51,10 @@ export function createFlatTerrainModel(width = 120, depth = 90, resolution = 3) 
     columns,
     rows,
     elevations: Array(columns * rows).fill(0),
+    cellColors: [],
+    shape: "RECTANGLE",
+    removedAreas: [],
+    color: null,
     material: "CONCRETE",
     showContours: false,
     showHeightColors: false,
@@ -96,8 +104,8 @@ function resampleElevations(source, target) {
 }
 
 export function normalizeTerrainModel(value, width = 120, depth = 90, material = "CONCRETE") {
-  const normalizedWidth = Math.max(20, finite(width, 120));
-  const normalizedDepth = Math.max(20, finite(depth, 90));
+  const normalizedWidth = Math.max(1, finite(width, 120));
+  const normalizedDepth = Math.max(1, finite(depth, 90));
   const resolution = clamp(finite(value?.resolution, 3), MIN_RESOLUTION, MAX_RESOLUTION);
   const target = createFlatTerrainModel(normalizedWidth, normalizedDepth, resolution);
   const sourceColumns = Math.max(3, Math.round(finite(value?.columns, 0)));
@@ -108,8 +116,8 @@ export function normalizeTerrainModel(value, width = 120, depth = 90, material =
   const hasUsableSource = sourceElevations.length === sourceColumns * sourceRows;
   const source = hasUsableSource ? {
     ...target,
-    width: Math.max(20, finite(value?.width, normalizedWidth)),
-    depth: Math.max(20, finite(value?.depth, normalizedDepth)),
+    width: Math.max(1, finite(value?.width, normalizedWidth)),
+    depth: Math.max(1, finite(value?.depth, normalizedDepth)),
     columns: sourceColumns,
     rows: sourceRows,
     elevations: sourceElevations,
@@ -128,6 +136,12 @@ export function normalizeTerrainModel(value, width = 120, depth = 90, material =
     ...target,
     elevations: dimensionsMatch ? [...source.elevations] : source ? resampleElevations(source, target) : target.elevations,
     material: resolvedMaterial,
+    shape: value?.shape === "CIRCLE" ? "CIRCLE" : "RECTANGLE",
+    removedAreas: normalizeRemovedAreas(value?.removedAreas, normalizedWidth, normalizedDepth),
+    color: /^#[0-9a-f]{6}$/i.test(value?.color ?? "") ? value.color : null,
+    colorGradient: normalizeTerrainGradient(value?.colorGradient ? { ...value.colorGradient,
+      minX: -normalizedWidth / 2, maxX: normalizedWidth / 2, minZ: -normalizedDepth / 2, maxZ: normalizedDepth / 2 } : null),
+    cellColors: normalizeTerrainCellColors(value?.cellColors, normalizedWidth, normalizedDepth),
     showContours: Boolean(value?.showContours),
     showHeightColors: Boolean(value?.showHeightColors),
     revision: Math.max(0, Math.round(finite(value?.revision, 0))),

@@ -1,6 +1,7 @@
 import { bindViewerCamera } from "./bindViewerCamera";
 import { captureWorldSnapshot, scheduleWorldSnapshot } from "./captureWorldSnapshot";
-import { createBuildingObservation } from "./buildingObservation";
+import { createBuildingObservation, loadSelectedDetail, releaseDetail, updateDetailedModelVisibility } from "./buildingObservation";
+import { pickEquipmentId } from "./equipmentRaycast";
 import { createEquipmentRenderObjects } from "./equipmentInstancing";
 import { focusEquipmentInWorld } from "./viewerEquipmentFocus";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -52,8 +53,15 @@ import {
 } from "@/features/digitalTwin/editor/utils/sitePathConnections";
 import {
   applyTerrainBrush,
+  applyTerrainArea,
+  isTerrainAreaProfile,
+  applyTerrainColorStroke,
   applyTerrainSlope,
+  getTerrainEditBounds,
+  isTerrainColorTool,
+  isTerrainCellTool,
   DEFAULT_TERRAIN_BRUSH,
+  TERRAIN_EDIT_MODES,
   TERRAIN_EDIT_TOOLS,
 } from "@/features/digitalTwin/editor/terrain/TerrainEditor";
 import {
@@ -71,6 +79,8 @@ import {
   updateTerrainMesh,
 } from "@/features/digitalTwin/editor/terrain/TerrainMeshFactory";
 import { resolveVerticalPath } from "@/features/digitalTwin/editor/terrain/VerticalPathModel";
+import { createTerrainSurfaceSampler } from "@/features/digitalTwin/editor/terrain/TerrainSurfaceProjection";
+import { updateTerrainPaint } from "@/features/digitalTwin/editor/terrain/TerrainPaintGeometry";
 import {
   applyBuildingIsolationVisibility,
   captureBuildingIsolationVisibility,
@@ -79,6 +89,8 @@ import {
 import {
   collectTerrainExcavations,
   getGroundViewPresentation,
+  getUndergroundGroundOpacity,
+  getUndergroundAutoRotation,
   GROUND_VIEW_MODES,
 } from "@/features/digitalTwin/editor/model/undergroundModel";
 import {
@@ -281,7 +293,7 @@ function syncMovementConfigs(runtime, sourceObjects, movementClockRef) {
   if (movementClockRef.current) movementClockRef.current.duration = duration;
 }
 
-function rebuildSitePathConnections(root, network, { previewObjectId = null } = {}) {
+function rebuildSitePathConnections(root, network, { previewObjectId = null, terrainSurface = null, verticalPaths = null, siteObjects = [] } = {}) {
   const junctions = network?.junctions ?? [];
   const nextIds = new Set(junctions.map((junction) => junction.id));
   [...root.children].forEach((connection) => {
@@ -291,14 +303,18 @@ function rebuildSitePathConnections(root, network, { previewObjectId = null } = 
   });
   junctions.forEach((junction) => {
     const preview = Boolean(previewObjectId && junction.objectIds.includes(previewObjectId));
-    const signature = JSON.stringify({ junction, preview });
+    const followsTerrain = terrainSurface && junction.objectIds.every((id) => verticalPaths?.get(id)?.terrainProjection);
+    const clearance = followsTerrain ? junction.objectIds.reduce((sum, id) => sum
+      + verticalPaths.get(id).terrainProjection.clearance + (siteObjects.find((object) => object.id === id)?.dimensions.height ?? 0), 0) / junction.objectIds.length : 0;
+    const terrainProjection = followsTerrain ? { surface: terrainSurface, position: junction.center, clearance } : null;
+    const signature = JSON.stringify({ junction, preview, terrainProjection });
     const current = root.children.find((child) => child.userData.sitePathConnectionId === junction.id);
     if (current?.userData.geometrySignature === signature) return;
     if (current) {
       root.remove(current);
       disposeObject3D(current);
     }
-    root.add(createSitePathConnectionObject(junction, { preview }));
+    root.add(createSitePathConnectionObject(junction, { preview, terrainProjection }));
   });
 }
 
@@ -350,14 +366,6 @@ function captureCameraState(runtime) {
     orthographic: capture(runtime.orthographicCamera),
     target: runtime.orbitControls.target.clone(),
   };
-}
-
-function getUndergroundAutoRotation(object) {
-  const connection = object?.undergroundConnection;
-  if (!connection) return 0;
-  const dx = (connection.endPoint?.x ?? object.position?.x ?? 0) - (connection.startPoint?.x ?? object.position?.x ?? 0);
-  const dz = (connection.endPoint?.z ?? object.position?.z ?? 0) - (connection.startPoint?.z ?? object.position?.z ?? 0);
-  return Math.atan2(-dx, -dz);
 }
 
 function restoreCameraState(runtime, snapshot) {
@@ -448,10 +456,10 @@ function measureCameraSafeInsets(runtime) {
   return insets;
 }
 
-function replaceSiteGrid(runtime, siteTheme, cellSize, environment, terrainFeatures) {
+function replaceSiteGrid(runtime, siteTheme, cellSize, environment, terrainFeatures, excavations) {
   runtime.scene.remove(runtime.grid);
   disposeObject3D(runtime.grid);
-  runtime.grid = createTerrainGrid(environment, terrainFeatures, cellSize, siteTheme);
+  runtime.grid = createTerrainGrid(environment, terrainFeatures, cellSize, siteTheme, excavations);
   if (runtime.buildingFocusMode) runtime.grid.visible = false;
   runtime.scene.add(runtime.grid);
 }
@@ -617,6 +625,8 @@ export default function SiteOverviewScene({
   buildingObservation,
   equipmentFocus = null,
   worldEquipment = EMPTY_VIEWER_EQUIPMENT,
+  equipmentAssetBindings = EMPTY_VIEWER_EQUIPMENT,
+  viewerPreset,
   enableObjectLod = true,
   snapshotRequest,
   onSnapshot,
@@ -650,6 +660,7 @@ export default function SiteOverviewScene({
   gridScopeId,
   onSelectBuilding,
   onSelectSiteObject,
+  onSelectEquipment,
   onUpdateBuilding,
   onUpdateSiteObject,
   onEnterBuilding,
@@ -661,6 +672,8 @@ export default function SiteOverviewScene({
   onCancelPlacement,
   terrainBrush = DEFAULT_TERRAIN_BRUSH,
   onTerrainChange,
+  terrainAreaSelection,
+  onTerrainAreaSelectionChange,
   onMovementWaypointAdd,
   onMovementWaypointChange,
   onMovementWaypointInsert,
@@ -681,6 +694,7 @@ export default function SiteOverviewScene({
   const selectedSiteObjectIdRef = useRef(selectedSiteObjectId);
   const siteEnvironmentRef = useRef(siteEnvironment);
   const terrainBrushRef = useRef(terrainBrush);
+  const terrainAreaSelectionRef = useRef(terrainAreaSelection);
   const excavationsRef = useRef([]);
   const movementPlaybackRef = useRef(movementPlayback);
   const selectedMovementWaypointIdRef = useRef(null);
@@ -709,12 +723,12 @@ export default function SiteOverviewScene({
 
   useEffect(() => {
     handlersRef.current = {
-      onSelectBuilding, onSelectSiteObject, onUpdateBuilding, onUpdateSiteObject,
+      onSelectBuilding, onSelectSiteObject, onSelectEquipment, onUpdateBuilding, onUpdateSiteObject,
       onEnterBuilding, onSelectFloor, onEnterFloor, onAreaSelectionChange, onPlaceTemplate, onPlaceTemplateArea, onCancelPlacement,
-      onTerrainChange,
+      onTerrainChange, onTerrainAreaSelectionChange,
       onMovementWaypointAdd, onMovementWaypointChange, onMovementWaypointInsert, onMovementWaypointDelete, onMovementEditComplete,
     };
-  }, [onAreaSelectionChange, onCancelPlacement, onEnterBuilding, onEnterFloor, onMovementEditComplete, onMovementWaypointAdd, onMovementWaypointChange, onMovementWaypointDelete, onMovementWaypointInsert, onPlaceTemplate, onPlaceTemplateArea, onSelectBuilding, onSelectFloor, onSelectSiteObject, onTerrainChange, onUpdateBuilding, onUpdateSiteObject]);
+  }, [onAreaSelectionChange, onCancelPlacement, onEnterBuilding, onEnterFloor, onMovementEditComplete, onMovementWaypointAdd, onMovementWaypointChange, onMovementWaypointDelete, onMovementWaypointInsert, onPlaceTemplate, onPlaceTemplateArea, onSelectBuilding, onSelectEquipment, onSelectFloor, onSelectSiteObject, onTerrainChange, onTerrainAreaSelectionChange, onUpdateBuilding, onUpdateSiteObject]);
 
   useEffect(() => {
     siteObjectsRef.current = siteObjects;
@@ -762,12 +776,17 @@ export default function SiteOverviewScene({
     if (!runtime) return;
     runtime.renderer.domElement.style.cursor = interactionMode === SITE_INTERACTION_MODES.NAVIGATE ? "grab" : "crosshair";
     if (interactionMode !== SITE_INTERACTION_MODES.EDIT_TERRAIN) {
+      runtime.areaGuide.material.depthTest = true;
+      runtime.areaGuide.children[0].material.depthTest = true;
+      runtime.areaGuide.renderOrder = 0;
+      runtime.areaGuide.children[0].renderOrder = 0;
       if (runtime.terrainEdit) {
         updateTerrainMesh(runtime.ground, siteEnvironmentRef.current, collectTerrainFeatures(siteObjectsRef.current), excavationsRef.current);
         syncTerrainPicker(runtime.groundPicker, runtime.ground);
         runtime.terrainEdit = null;
       }
       updateTerrainBrushCursor(runtime.terrainBrushCursor, null, terrainBrushRef.current, false);
+      updateAreaGuide(runtime.areaGuide, areaSelection, Boolean(areaSelection));
     }
     runtime.areaStart = null;
     runtime.areaEnd = null;
@@ -809,7 +828,8 @@ export default function SiteOverviewScene({
     orbitControls.dampingFactor = 0.08;
     orbitControls.minDistance = 8;
     orbitControls.maxDistance = 480;
-    orbitControls.maxPolarAngle = Math.PI / 2 - 0.015;
+    orbitControls.minPolarAngle = 0.02;
+    orbitControls.maxPolarAngle = Math.PI - 0.02;
     orbitControls.update();
 
     const transformControls = createDualTransformControls(perspectiveCamera, renderer.domElement, scene);
@@ -923,20 +943,40 @@ export default function SiteOverviewScene({
     const pointerStart = new THREE.Vector2();
     const hitGround = (event) => {
       raycaster.setFromCamera(getPointer(event, renderer.domElement), runtime.activeCamera);
-      return raycaster.intersectObject(groundPicker, false)[0]?.point ?? null;
+      const hit = raycaster.intersectObject(groundPicker, false)[0]?.point;
+      if (hit) return hit;
+      if (interactionModeRef.current !== SITE_INTERACTION_MODES.EDIT_TERRAIN) return null;
+      const point = raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), new THREE.Vector3());
+      const environment = siteEnvironmentRef.current;
+      return point && Math.abs(point.x) <= environment.width / 2 && Math.abs(point.z) <= environment.depth / 2 ? point : null;
     };
     const previewTerrainDraft = (terrain, point = null) => {
       const environment = { ...siteEnvironmentRef.current, terrain };
-      updateTerrainMesh(runtime.ground, environment, collectTerrainFeatures(siteObjectsRef.current), excavationsRef.current);
+      if (isTerrainColorTool(runtime.terrainEdit?.brush ?? terrainBrushRef.current)) updateTerrainPaint(runtime.ground, terrain, excavationsRef.current);
+      else updateTerrainMesh(runtime.ground, environment, collectTerrainFeatures(siteObjectsRef.current), excavationsRef.current);
       syncTerrainPicker(runtime.groundPicker, runtime.ground);
-      if (point) updateTerrainBrushCursor(runtime.terrainBrushCursor, point, terrainBrushRef.current, true);
+      if (point && !isTerrainColorTool(terrainBrushRef.current)) updateTerrainBrushCursor(runtime.terrainBrushCursor, point, terrainBrushRef.current, true);
+    };
+    const previewTerrainSelection = (terrain, start, end, brush) => {
+      const bounds = getTerrainEditBounds(terrain, start, end, brush);
+      updateAreaGuide(runtime.areaGuide, { center: { x: (bounds.minX + bounds.maxX) / 2, z: (bounds.minZ + bounds.maxZ) / 2 },
+        width: bounds.maxX - bounds.minX, depth: bounds.maxZ - bounds.minZ });
+      runtime.areaGuide.position.y = Math.max(start.y ?? 0, end.y ?? 0) + 0.06;
+      runtime.areaGuide.material.depthTest = false;
+      runtime.areaGuide.children[0].material.depthTest = false;
+      runtime.areaGuide.renderOrder = 20;
+      runtime.areaGuide.children[0].renderOrder = 21;
+      updateTerrainBrushCursor(runtime.terrainBrushCursor, null, brush, false);
     };
     const cancelTerrainEdit = () => {
-      if (!runtime.terrainEdit) return false;
+      if (!runtime.terrainEdit && !terrainAreaSelectionRef.current) return false;
+      terrainAreaSelectionRef.current = null;
+      handlersRef.current.onTerrainAreaSelectionChange?.(null);
       updateTerrainMesh(runtime.ground, siteEnvironmentRef.current, collectTerrainFeatures(siteObjectsRef.current), excavationsRef.current);
       syncTerrainPicker(runtime.groundPicker, runtime.ground);
       runtime.terrainEdit = null;
       runtime.orbitControls.enabled = false;
+      updateAreaGuide(runtime.areaGuide, null, false);
       updateTerrainBrushCursor(runtime.terrainBrushCursor, null, terrainBrushRef.current, false);
       return true;
     };
@@ -966,9 +1006,16 @@ export default function SiteOverviewScene({
         const environment = siteEnvironmentRef.current;
         const original = normalizeTerrainModel(environment.terrain, environment.width, environment.depth, environment.groundMaterial);
         const brush = { ...DEFAULT_TERRAIN_BRUSH, ...terrainBrushRef.current };
-        if (brush.tool === TERRAIN_EDIT_TOOLS.FLATTEN) brush.flattenHeight = sampleBaseTerrainElevation(original, point.x, point.z);
+        brush.cellSize = gridSettingsRef.current.baseSize;
+        if ([TERRAIN_EDIT_TOOLS.FLATTEN, TERRAIN_EDIT_TOOLS.HILL].includes(brush.tool)) brush.flattenHeight = sampleBaseTerrainElevation(original, point.x, point.z);
         runtime.terrainEdit = { original, draft: original, start: point.clone(), last: point.clone(), brush };
-        if (brush.tool !== TERRAIN_EDIT_TOOLS.SLOPE) {
+        if (brush.mode === TERRAIN_EDIT_MODES.AREA) {
+          previewTerrainSelection(original, point, point, brush);
+        } else if (isTerrainCellTool(brush)) {
+          runtime.terrainEdit.draft = applyTerrainColorStroke(original, point, point, brush, environment.width, environment.depth);
+          previewTerrainDraft(runtime.terrainEdit.draft);
+          previewTerrainSelection(original, point, point, brush);
+        } else if (brush.tool !== TERRAIN_EDIT_TOOLS.SLOPE) {
           runtime.terrainEdit.draft = applyTerrainBrush(original, point, brush, environment.width, environment.depth);
           previewTerrainDraft(runtime.terrainEdit.draft, point);
         }
@@ -1021,12 +1068,24 @@ export default function SiteOverviewScene({
           updateTerrainBrushCursor(runtime.terrainBrushCursor, null, terrainBrushRef.current, false);
           return;
         }
-        updateTerrainBrushCursor(runtime.terrainBrushCursor, point, terrainBrushRef.current, true);
+        const edit = runtime.terrainEdit;
+        if (!edit && terrainAreaSelectionRef.current) return;
+        const brush = edit?.brush ?? { ...terrainBrushRef.current, cellSize: gridSettingsRef.current.baseSize };
+        if (brush.mode === TERRAIN_EDIT_MODES.AREA || isTerrainCellTool(brush)) {
+          const terrain = edit?.original ?? siteEnvironmentRef.current.terrain;
+          previewTerrainSelection(terrain, brush.mode === TERRAIN_EDIT_MODES.AREA ? edit?.start ?? point : point, point, brush);
+        } else {
+          updateAreaGuide(runtime.areaGuide, null, false);
+          updateTerrainBrushCursor(runtime.terrainBrushCursor, point, brush, true);
+        }
         if (!runtime.terrainEdit) return;
+        if (brush.mode === TERRAIN_EDIT_MODES.AREA) { edit.last.copy(point); return; }
         const minimumStrokeDistance = Math.max(0.15, runtime.terrainEdit.draft.resolution * 0.22);
         if (runtime.terrainEdit.last.distanceTo(point) < minimumStrokeDistance) return;
         const environment = siteEnvironmentRef.current;
-        runtime.terrainEdit.draft = runtime.terrainEdit.brush.tool === TERRAIN_EDIT_TOOLS.SLOPE
+        runtime.terrainEdit.draft = isTerrainCellTool(brush)
+          ? applyTerrainColorStroke(edit.draft, edit.last, point, brush, environment.width, environment.depth)
+          : runtime.terrainEdit.brush.tool === TERRAIN_EDIT_TOOLS.SLOPE
           ? applyTerrainSlope(runtime.terrainEdit.original, runtime.terrainEdit.start, point, runtime.terrainEdit.brush, environment.width, environment.depth)
           : applyTerrainBrush(runtime.terrainEdit.draft, point, runtime.terrainEdit.brush, environment.width, environment.depth);
         runtime.terrainEdit.last.copy(point);
@@ -1105,9 +1164,29 @@ export default function SiteOverviewScene({
         return;
       }
       if (runtime.terrainEdit) {
-        const draft = runtime.terrainEdit.draft;
+        const edit = runtime.terrainEdit;
+        const environment = siteEnvironmentRef.current;
+        const end = hitGround(event) ?? edit.last;
+        if (isTerrainAreaProfile(edit.brush) && handlersRef.current.onTerrainAreaSelectionChange) {
+          const selection = { start: { x: edit.start.x, y: edit.start.y, z: edit.start.z }, end: { x: end.x, y: end.y, z: end.z } };
+          const draft = applyTerrainArea(edit.original, edit.start, end, edit.brush, environment.width, environment.depth);
+          runtime.terrainEdit = null;
+          terrainAreaSelectionRef.current = selection;
+          previewTerrainSelection(edit.original, edit.start, end, edit.brush);
+          handlersRef.current.onTerrainChange?.(draft);
+          handlersRef.current.onTerrainAreaSelectionChange(selection);
+          if (renderer.domElement.hasPointerCapture?.(event.pointerId)) renderer.domElement.releasePointerCapture(event.pointerId);
+          return;
+        }
+        const draft = edit.brush.mode === TERRAIN_EDIT_MODES.AREA
+          ? applyTerrainArea(edit.original, edit.start, end, edit.brush, environment.width, environment.depth)
+          : isTerrainCellTool(edit.brush)
+            ? applyTerrainColorStroke(edit.draft, edit.last, end, edit.brush, environment.width, environment.depth)
+            : edit.brush.tool === TERRAIN_EDIT_TOOLS.SLOPE
+              ? applyTerrainSlope(edit.original, edit.start, end, edit.brush, environment.width, environment.depth) : edit.draft;
         runtime.terrainEdit = null;
         runtime.orbitControls.enabled = false;
+        updateAreaGuide(runtime.areaGuide, null, false);
         handlersRef.current.onTerrainChange?.(draft);
         if (renderer.domElement.hasPointerCapture?.(event.pointerId)) renderer.domElement.releasePointerCapture(event.pointerId);
         return;
@@ -1167,6 +1246,11 @@ export default function SiteOverviewScene({
       }
       if (pointerStart.distanceTo(new THREE.Vector2(event.clientX, event.clientY)) > 5 || dualTransformIsActive(transformControls)) return;
       raycaster.setFromCamera(getPointer(event, renderer.domElement), runtime.activeCamera);
+      if (handlersRef.current.onSelectEquipment) {
+        const equipmentId = runtime.buildingObservation.pickEquipment(raycaster)
+          ?? pickEquipmentId(raycaster, runtime.viewerEquipmentRoot);
+        if (equipmentId) return handlersRef.current.onSelectEquipment(equipmentId);
+      }
       const observationFloorId = runtime.buildingObservation.pick(raycaster);
       if (observationFloorId) return handlersRef.current.onSelectFloor(observationFloorId);
       const intersections = raycaster.intersectObjects(objectRoot.children.filter((object) => object.visible), true);
@@ -1178,7 +1262,7 @@ export default function SiteOverviewScene({
       if (floorId) return handlersRef.current.onSelectFloor(floorId);
       const buildingId = intersection ? findUserData(intersection.object, "buildingId", objectRoot) : null;
       const siteObjectId = intersection ? findUserData(intersection.object, "siteObjectId", objectRoot) : null;
-      if (siteObjectId) handlersRef.current.onSelectSiteObject(siteObjectId);
+      if (siteObjectId) handlersRef.current.onSelectSiteObject?.(siteObjectId);
       else handlersRef.current.onSelectBuilding(buildingId);
     }
     function handleDoubleClick(event) {
@@ -1354,6 +1438,7 @@ export default function SiteOverviewScene({
     function handlePointerLeave() {
       if (interactionModeRef.current === SITE_INTERACTION_MODES.EDIT_TERRAIN) {
         updateTerrainBrushCursor(runtime.terrainBrushCursor, null, terrainBrushRef.current, false);
+        if (!runtime.terrainEdit && !terrainAreaSelectionRef.current) updateAreaGuide(runtime.areaGuide, null, false);
       }
     }
 
@@ -1365,7 +1450,9 @@ export default function SiteOverviewScene({
         if (renderer.domElement.hasPointerCapture?.(event.pointerId)) renderer.domElement.releasePointerCapture(event.pointerId);
         return;
       }
-      if (cancelTerrainEdit()) {
+      // Normal pointer-up releases capture too. Only cancel an active stroke;
+      // a completed area selection must remain available in the properties panel.
+      if (runtime.terrainEdit && cancelTerrainEdit()) {
         if (renderer.domElement.hasPointerCapture?.(event.pointerId)) renderer.domElement.releasePointerCapture(event.pointerId);
         return;
       }
@@ -1490,8 +1577,32 @@ export default function SiteOverviewScene({
           parent: request.outdoor ? null : object, viewportInsets: measureCameraSafeInsets(runtime),
         })) runtime.focusedEquipmentRequest = request;
       }
+      if (runtime.viewerScanEntry) {
+        const equipmentId = !runtime.buildingObservation.isActive() ? request?.item.id : null;
+        loadSelectedDetail(runtime.viewerScanEntry, equipmentId,
+          Boolean(request && runtime.focusedEquipmentRequest === request && !runtime.cameraFocus));
+        updateDetailedModelVisibility(runtime.viewerScanEntry, { equipmentId }, runtime);
+      }
       orbitControls.update();
       if (!runtime.buildingObservation.isActive()) clampCameraTargetToSite(runtime);
+      if (runtime.groundPresentation && !runtime.buildingObservation.isActive()) {
+        const presentation = runtime.groundPresentation;
+        const surfaceY = sampleBaseTerrainElevation(siteEnvironmentRef.current.terrain, orbitControls.target.x, orbitControls.target.z);
+        const fade = interactionModeRef.current === SITE_INTERACTION_MODES.EDIT_TERRAIN ? 1
+          : getUndergroundGroundOpacity(orbitControls.getPolarAngle(), runtime.activeCamera.position.y, surfaceY);
+        if (runtime.groundFade !== fade) {
+          runtime.groundFade = fade;
+          runtime.groundViewMaterials?.forEach(({ material, opacity, depthWrite, transparent }) => {
+            const nextTransparent = transparent || fade < 1;
+            if (material.transparent !== nextTransparent) { material.transparent = nextTransparent; material.needsUpdate = true; }
+            material.opacity = opacity * fade;
+            material.depthWrite = depthWrite && fade > 0.99;
+            material.visible = fade > 0.001;
+          });
+          runtime.grid.visible = presentation.gridVisible && fade > 0.5;
+          runtime.gridRegionRoot.visible = presentation.gridVisible && fade > 0.5;
+        }
+      }
       runtime.buildingObservation.updateLabels();
       renderer.render(scene, runtime.activeCamera);
       const frameMs = performance.now() - frameStartedAt;
@@ -1549,6 +1660,32 @@ export default function SiteOverviewScene({
   }, [movementClockRef]);
 
   useEffect(() => {
+    // Pending selections belong to the current editing surface only.
+    handlersRef.current.onTerrainAreaSelectionChange?.(null);
+    terrainAreaSelectionRef.current = null;
+    return () => { handlersRef.current.onTerrainAreaSelectionChange?.(null); };
+  }, [gridScopeId, interactionMode]);
+
+  useEffect(() => {
+    terrainAreaSelectionRef.current = terrainAreaSelection;
+    const runtime = runtimeRef.current;
+    if (!runtime || interactionMode !== SITE_INTERACTION_MODES.EDIT_TERRAIN) return;
+    if (!terrainAreaSelection || !isTerrainAreaProfile(terrainBrush)) {
+      if (!runtime.terrainEdit) updateAreaGuide(runtime.areaGuide, null, false);
+      return;
+    }
+    const { start, end } = terrainAreaSelection;
+    const bounds = getTerrainEditBounds(siteEnvironment.terrain, start, end, terrainBrush);
+    updateAreaGuide(runtime.areaGuide, { center: { x: (bounds.minX + bounds.maxX) / 2, z: (bounds.minZ + bounds.maxZ) / 2 },
+      width: bounds.maxX - bounds.minX, depth: bounds.maxZ - bounds.minZ });
+    runtime.areaGuide.position.y = Math.max(start.y ?? 0, end.y ?? 0) + 0.06;
+    runtime.areaGuide.material.depthTest = false;
+    runtime.areaGuide.children[0].material.depthTest = false;
+    runtime.areaGuide.renderOrder = 20;
+    runtime.areaGuide.children[0].renderOrder = 21;
+  }, [interactionMode, siteEnvironment.terrain, terrainAreaSelection, terrainBrush]);
+
+  useEffect(() => {
     const runtime = runtimeRef.current;
     if (!runtime) return;
     const sceneTheme = SCENE_THEMES[theme];
@@ -1577,13 +1714,16 @@ export default function SiteOverviewScene({
     runtime.orthographicCamera.updateProjectionMatrix();
     runtime.areaGuide.material.color.set(sceneTheme.selection);
     runtime.areaGuide.children[0].material.color.set(sceneTheme.selection);
-    replaceSiteGrid(runtime, siteTheme, gridSettings.baseSize, siteEnvironment, terrainFeatures);
+    replaceSiteGrid(runtime, siteTheme, gridSettings.baseSize, siteEnvironment, terrainFeatures, terrainExcavations);
   }, [gridSettings.baseSize, siteEnvironment, terrainExcavations, terrainFeatures, theme]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
     if (!runtime) return;
     const presentation = getGroundViewPresentation(groundViewMode);
+    runtime.groundPresentation = presentation;
+    runtime.groundFade = null;
+    runtime.groundViewMaterials = [];
     const mode = presentation.mode;
     const selectedBuilding = buildings.find((building) => building.id === selectedBuildingId);
     const sectionZ = Number(selectedBuilding?.position?.z) || 0;
@@ -1603,9 +1743,10 @@ export default function SiteOverviewScene({
         material.clippingPlanes = clippingPlanes;
         material.clipShadows = clippingPlanes.length > 0;
         material.needsUpdate = true;
+        runtime.groundViewMaterials.push({ material, opacity: presentation.opacity, depthWrite: presentation.depthWrite, transparent: presentation.transparent });
       });
     });
-  }, [buildings, gridSettings.baseSize, groundViewMode, selectedBuildingId, siteEnvironment, terrainExcavations]);
+  }, [buildings, gridSettings.baseSize, groundViewMode, selectedBuildingId, siteEnvironment, terrainExcavations, terrainFeatures]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -1663,9 +1804,10 @@ export default function SiteOverviewScene({
     const siteTheme = SITE_VISUAL_THEMES[theme];
     const terrainModel = normalizeTerrainModel(siteEnvironment.terrain, siteEnvironment.width, siteEnvironment.depth, siteEnvironment.groundMaterial);
     const terrainFeatureObjects = collectTerrainFeatures(siteObjects);
+    const terrainSurface = createTerrainSurfaceSampler(terrainModel, terrainFeatureObjects);
     const verticalPathsByObjectId = new Map(siteObjects
-      .filter((object) => ["ROAD", "WALKWAY"].includes(object.profile))
-      .map((object) => [object.id, resolveVerticalPath(object, terrainModel, terrainFeatureObjects)]));
+      .filter((object) => ["ROAD", "WALKWAY", "BOUNDARY_WALL"].includes(object.profile))
+      .map((object) => [object.id, resolveVerticalPath(object, terrainModel, terrainFeatureObjects, { terrainSurface })]));
     const networkObjects = siteObjects.map((object) => {
       const verticalPath = verticalPathsByObjectId.get(object.id);
       if (!verticalPath?.segments?.length) return object;
@@ -1786,7 +1928,7 @@ export default function SiteOverviewScene({
       }
     });
 
-    rebuildSitePathConnections(runtime.siteConnectionRoot, pathNetwork);
+    rebuildSitePathConnections(runtime.siteConnectionRoot, pathNetwork, { terrainSurface, verticalPaths: verticalPathsByObjectId, siteObjects });
     if (runtime.buildingFocusMode) runtime.siteConnectionRoot.visible = false;
 
     const selectedObject = runtime.buildingObjects.get(selectedBuildingId)
@@ -1983,10 +2125,34 @@ export default function SiteOverviewScene({
       ...item, position: { x: 0, y: 0, z: 0, ...item.position }, rotation: { x: 0, y: 0, z: 0, ...item.rotation },
       dimensions: { width: 1, height: 1, depth: 1, ...item.dimensions }, appearance: { color: "#6f8f9d", opacity: 1, ...item.appearance },
     }, baseY: 0 }));
-    createEquipmentRenderObjects(entries, { theme, enableLod: false }).forEach((object) => root.add(object));
+    const boundIds = new Set(equipmentAssetBindings.map((binding) => binding.equipmentId));
+    const detailedModels = [];
+    createEquipmentRenderObjects(entries.filter(({ equipment }) => !boundIds.has(equipment.id)), { theme, enableLod: false }).forEach((object) => root.add(object));
+    entries.filter(({ equipment }) => boundIds.has(equipment.id)).forEach((record) => {
+      const [object] = createEquipmentRenderObjects([record], { theme, enableLod: false });
+      root.add(object);
+      detailedModels.push({ object, equipmentId: record.equipment.id, equipment: record.equipment,
+        binding: equipmentAssetBindings.find((binding) => binding.equipmentId === record.equipment.id),
+        fallback: [...object.children], aligned: null, attempted: false });
+    });
+    // Outdoor equipment already lives in the site's own object root.
+    equipmentAssetBindings.forEach((binding) => {
+      const object = runtime.siteEnvironmentObjects.get(binding.equipmentId);
+      const item = siteObjects.find((candidate) => candidate.id === binding.equipmentId);
+      if (!object || !item || detailedModels.some((detail) => detail.equipmentId === item.id)) return;
+      detailedModels.push({ object, equipmentId: item.id, equipment: item, binding,
+        fallback: [...object.children], aligned: null, attempted: false });
+    });
+    const scanEntry = { data: { viewerPreset }, detailedModels, disposed: false };
+    runtime.viewerScanEntry = scanEntry;
     runtime.scene.add(root); runtime.viewerEquipmentRoot = root;
-    return () => { root.removeFromParent(); disposeObject3D(root); runtime.viewerEquipmentRoot = null; };
-  }, [worldEquipment, theme]);
+    return () => {
+      scanEntry.disposed = true;
+      detailedModels.forEach(releaseDetail);
+      runtime.viewerScanEntry = null;
+      root.removeFromParent(); disposeObject3D(root); runtime.viewerEquipmentRoot = null;
+    };
+  }, [worldEquipment, theme, equipmentAssetBindings, viewerPreset, siteObjects, selectedSiteObjectId]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;

@@ -18,8 +18,34 @@ import { disposeObject3D } from "@/features/digitalTwin/editor/three/disposeObje
 import { createSiteEnvironmentObject } from "../world/SiteEnvironmentFactory";
 import { focusEquipmentInWorld, updateViewerCameraRange } from "./viewerEquipmentFocus";
 import { bindCameraFocusCancellation, updateCameraFocus } from "./cameraFocus";
+import { setScanLoadState } from "./scanLoadState";
 
 import styles from "./EquipmentAssetViewer.module.css";
+import { getSensorReadingState } from "../model/equipmentSetup";
+
+function addSensorReadout(marker, sensor, points, preview) {
+  const point = points.find((item) => item.sensorIds?.includes(sensor.id));
+  if (!point) return;
+  const value = preview ? point.previewValue : sensor.latestValue;
+  const state = getSensorReadingState(point, value);
+  const canvas = document.createElement("canvas");
+  canvas.width = 640; canvas.height = 120;
+  const context = canvas.getContext("2d");
+  if (!context) return;
+  context.fillStyle = "rgba(12, 23, 34, .88)";
+  context.fillRect(0, 0, 640, 120);
+  context.fillStyle = state.level === "DANGER" ? "#ff9879" : state.level === "WARNING" ? "#ffd071" : "#d8f1ff";
+  context.font = "26px sans-serif";
+  context.fillText(`${state.icon} ${point.name} · ${state.label}`, 14, 43, 610);
+  context.font = "23px sans-serif";
+  context.fillText(`${preview ? "테스트 · " : ""}${state.level === "EMPTY" ? "수신 대기" : `${value} ${point.unit ?? ""}`}`, 14, 86, 610);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthWrite: false }));
+  label.position.y = 0.55;
+  label.scale.set(1.8, 0.34, 1);
+  marker.add(label);
+}
 
 function fitCamera(camera, controls, object) {
   const sphere = new THREE.Box3().setFromObject(object).getBoundingSphere(new THREE.Sphere());
@@ -81,6 +107,7 @@ export default function EquipmentObservationScene({
   bindings = EMPTY_ITEMS,
   assetBindings = EMPTY_ITEMS,
   viewerPreset,
+  previewReadings = false,
   selectedSensorId = null,
   groundViewMode = GROUND_VIEW_MODES.VISIBLE,
   transformTools,
@@ -92,6 +119,8 @@ export default function EquipmentObservationScene({
 }) {
   const mountRef = useRef(null);
   const focusRuntimeRef = useRef(null);
+  const selectedScanRef = useRef(focusEquipmentId);
+  useEffect(() => { selectedScanRef.current = focusEquipmentId; }, [focusEquipmentId]);
   const sceneFocusId = preserveWorldOnSelection ? null : focusEquipmentId;
   const scenePartId = preserveWorldOnSelection ? null : selectedPartId;
 
@@ -166,9 +195,13 @@ export default function EquipmentObservationScene({
     });
 
     async function ensureDetailed(entry, binding) {
-      if (entry.actual || entry.loading || !binding) return entry.loading;
-      entry.loading = loadBindingObject(binding).then((loaded) => {
-        if (disposed) {
+      if (entry.actual || entry.loading || entry.attempted || !binding) return entry.loading;
+      entry.attempted = true;
+      const controller = new AbortController();
+      entry.controller = controller;
+      setScanLoadState(entry.item.id, "스캔 모델 불러오는 중… 기존 설비를 계속 표시합니다.");
+      entry.loading = loadBindingObject(binding, { signal: controller.signal }).then((loaded) => {
+        if (disposed || controller.signal.aborted) {
           disposeObject3D(loaded.object);
           loaded.revoke();
           return;
@@ -183,6 +216,7 @@ export default function EquipmentObservationScene({
         aligned.userData.releaseAssetSources = loaded.revoke;
         entry.object.add(aligned);
         entry.actual = aligned;
+        setScanLoadState(entry.item.id, "스캔 모델 준비 완료");
         invalidateWorldSnapshot(snapshotRequest);
         requestSnapshot();
         worldBounds.copy(new THREE.Box3().setFromObject(root)).union(new THREE.Box3().setFromObject(floor));
@@ -191,6 +225,8 @@ export default function EquipmentObservationScene({
           else fitCamera(camera, controls, aligned);
         }
       }).catch((error) => {
+        if (controller.signal.aborted) return;
+        setScanLoadState(entry.item.id, error.message.includes("LIMIT") ? "모델이 표시 용량 제한을 초과했습니다. 기존 설비를 표시합니다." : "스캔 모델 로딩 실패. 다시 선택하여 재시도하세요.");
         console.warn(`[설비 표현] ${entry.item.name ?? entry.item.id} 상세 모델을 표시하지 못해 간략 모델로 복구했습니다.`, error);
         entry.actual = null;
       }).finally(() => { entry.loading = null; });
@@ -199,19 +235,35 @@ export default function EquipmentObservationScene({
 
     function syncEquipmentRepresentations() {
       renderedEquipment.forEach((entry, equipmentId) => {
+        const selected = equipmentId === selectedScanRef.current;
+        if (!selected) {
+          if (entry.attempted) {
+            entry.controller?.abort();
+            if (entry.actual) {
+              entry.actual.removeFromParent();
+              entry.actual.userData.releaseAssetSources?.();
+              disposeObject3D(entry.actual);
+              entry.actual = null;
+            }
+            entry.attempted = false;
+            setScanLoadState(equipmentId, "");
+          }
+          entry.proxy.visible = true;
+          return;
+        }
         const binding = detailedBindings.get(equipmentId);
         const representation = resolveEquipmentRepresentation({
           preset: viewerPreset,
           equipmentId,
           hasDetailedModel: Boolean(binding),
-          selected: equipmentId === sceneFocusId,
+          selected,
           distance: camera.position.distanceTo(entry.object.getWorldPosition(new THREE.Vector3())),
         });
-        const showDetailed = representation === EQUIPMENT_REPRESENTATIONS.DETAILED && !(equipmentId === sceneFocusId && scenePartId);
+        const showDetailed = representation === EQUIPMENT_REPRESENTATIONS.DETAILED && !scenePartId;
         entry.proxy.visible = !showDetailed || !entry.actual;
         if (entry.actual) entry.actual.visible = showDetailed;
-        else if (showDetailed) void ensureDetailed(entry, binding).then(() => {
-          if (!disposed && entry.actual && !(equipmentId === sceneFocusId && scenePartId)) { entry.proxy.visible = false; entry.actual.visible = true; }
+        else if (showDetailed && !focusRuntime.cameraFocus && !entry.attempted && !entry.loading) void ensureDetailed(entry, binding).then(() => {
+          if (!disposed && entry.actual) syncEquipmentRepresentations();
         });
       });
     }
@@ -261,6 +313,7 @@ export default function EquipmentObservationScene({
       marker.userData.sensorId = sensor.id;
       marker.userData.sensorBase = base.toArray();
       if (isCamera) addCameraFrustum(marker, sensor);
+      addSensorReadout(marker, sensor, observationPoints.filter((point) => renderedEquipment.has(point.equipmentId)), previewReadings);
       root.add(marker);
       sensorPositions.set(sensor.id, position);
       sensorMarkers.set(sensor.id, marker);
@@ -376,6 +429,7 @@ export default function EquipmentObservationScene({
     resize();
     function render() {
       updateCameraFocus(focusRuntime);
+      syncEquipmentRepresentations();
       controls.update();
       updateViewerCameraRange(camera, worldBounds);
       renderer.render(scene, camera);
@@ -404,6 +458,7 @@ export default function EquipmentObservationScene({
       disconnectFocus();
       focusRuntimeRef.current = null;
       disposed = true;
+      renderedEquipment.forEach((entry) => { entry.controller?.abort(); setScanLoadState(entry.item.id, ""); });
       cancelAnimationFrame(frameId);
       observer.disconnect();
       renderer.domElement.removeEventListener("pointerup", handlePointerUp);
@@ -421,7 +476,7 @@ export default function EquipmentObservationScene({
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, [snapshotRequest, onSnapshot, assetBindings, bindings, equipment, equipmentList, sceneFocusId, scenePartId, animateEquipmentFocus, onEquipmentSelect, groundViewMode, observationPoints, onCameraControlsChange, onZoomChange, onSensorChange, onSensorSelect, selectedSensorId, sensors, theme, transformTools, viewerPreset]);
+  }, [snapshotRequest, onSnapshot, assetBindings, bindings, equipment, equipmentList, sceneFocusId, scenePartId, animateEquipmentFocus, onEquipmentSelect, groundViewMode, observationPoints, onCameraControlsChange, onZoomChange, onSensorChange, onSensorSelect, selectedSensorId, sensors, theme, transformTools, viewerPreset, previewReadings]);
 
   useEffect(() => {
     if (!preserveWorldOnSelection) return;

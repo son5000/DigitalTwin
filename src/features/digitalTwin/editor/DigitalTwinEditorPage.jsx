@@ -1,3 +1,5 @@
+import FloorTerrainPanel from "./components/FloorTerrainPanel";
+import { getFloorTerrainEnvironment } from "./terrain/floorTerrain";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ArrowRightIcon, FloorGapIcon, FloorSelectIcon, MoonIcon, SaveIcon, SunIcon, WorldIcon } from "@/components/icons";
@@ -72,6 +74,7 @@ import {
 import { equipmentAssetRepository } from "@/features/digitalTwin/editor/api/equipmentAssetRepository";
 import { createLocalEquipmentAssetRecord } from "@/features/digitalTwin/editor/model/equipmentAssetFiles";
 import { ASSET_SOURCE_TYPES } from "@/features/digitalTwin/editor/model/equipmentDetailModel";
+import { getEquipmentSetupSaveSummary } from "@/features/digitalTwin/editor/model/equipmentSetup";
 
 import styles from "./DigitalTwinEditorPage.module.css";
 
@@ -94,10 +97,18 @@ const STEP_TRANSITION_ACTION_IDS = Object.freeze({
   SELECT_BUILDING: "SELECT_BUILDING",
   PLACE_EQUIPMENT: "PLACE_EQUIPMENT",
   SELECT_EQUIPMENT: "SELECT_EQUIPMENT",
+  SAVE_AND_EXIT: "SAVE_AND_EXIT",
   CANCEL: "CANCEL",
 });
 
-function getStepTransitionPrompt({ currentStepId, targetStepId, scopeType, buildingCount, equipmentCount, selectedEquipmentId }) {
+function getStepTransitionPrompt({ currentStepId, targetStepId, scopeType, buildingCount, equipmentCount }) {
+  if (currentStepId === targetStepId) return null;
+  if (targetStepId === WORLD_WIZARD_STEP_IDS.MONITORING) {
+    return equipmentCount ? null : {
+      message: "월드에 배치된 설비가 없습니다. 도면·설비 단계에서 설비를 배치해 주세요.",
+      actions: [{ id: STEP_TRANSITION_ACTION_IDS.PLACE_EQUIPMENT, label: "설비 배치" }, { id: STEP_TRANSITION_ACTION_IDS.CANCEL, label: "취소" }],
+    };
+  }
   const requiresUserBuilding = [OBSERVATION_SCOPE_TYPES.SITE, OBSERVATION_SCOPE_TYPES.BUILDING].includes(scopeType);
   if (!requiresUserBuilding || currentStepId === targetStepId) return null;
 
@@ -121,33 +132,6 @@ function getStepTransitionPrompt({ currentStepId, targetStepId, scopeType, build
       && buildingCount === 0) {
     return { message: "도면·설비로 이동하려면 먼저 관측할 건축물을 준비해야 합니다.", actions: buildingActions };
   }
-  if (targetStepId !== WORLD_WIZARD_STEP_IDS.MONITORING) return null;
-  if (buildingCount === 0) {
-    return {
-      message: scopeType === OBSERVATION_SCOPE_TYPES.BUILDING
-        ? "설비 상세로 이동하려면 먼저 관측할 건축물을 선택해야 합니다."
-        : "설비 상세로 이동하려면 먼저 건축물을 배치해야 합니다.",
-      actions: buildingActions,
-    };
-  }
-  if (equipmentCount === 0) {
-    return {
-      message: "설비 상세로 이동하려면 도면·설비 단계에서 설비를 배치해야 합니다.",
-      actions: [
-        { id: STEP_TRANSITION_ACTION_IDS.PLACE_EQUIPMENT, label: "설비 배치" },
-        { id: STEP_TRANSITION_ACTION_IDS.CANCEL, label: "취소" },
-      ],
-    };
-  }
-  if (!selectedEquipmentId) {
-    return {
-      message: "설비 상세로 이동하려면 확인할 설비를 선택해야 합니다.",
-      actions: [
-        { id: STEP_TRANSITION_ACTION_IDS.SELECT_EQUIPMENT, label: "설비 선택" },
-        { id: STEP_TRANSITION_ACTION_IDS.CANCEL, label: "취소" },
-      ],
-    };
-  }
   return null;
 }
 
@@ -166,6 +150,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
   const [monitoringEquipmentPickerOpen, setMonitoringEquipmentPickerOpen] = useState(false);
   const [monitoringEquipmentNotice, setMonitoringEquipmentNotice] = useState("");
   const [saveStatus, setSaveStatus] = useState("");
+  const [pendingAssetUploads, setPendingAssetUploads] = useState(0);
   const [activeFloatingPanelId, setActiveFloatingPanelId] = useState(null);
   const [siteAreaSelection, setSiteAreaSelection] = useState(null);
   const [siteInteractionMode, setSiteInteractionMode] = useState(SITE_INTERACTION_MODES.NAVIGATE);
@@ -173,6 +158,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
   const [activeSiteVariants, setActiveSiteVariants] = useState({});
   const [sitePlacementNotice, setSitePlacementNotice] = useState("");
   const [terrainBrush, setTerrainBrush] = useState(DEFAULT_TERRAIN_BRUSH);
+  const [terrainAreaSelection, setTerrainAreaSelection] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showOnlySelectedBuilding, setShowOnlySelectedBuilding] = useState(false);
@@ -228,6 +214,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     configureObservationWorkflow, updateObservationViewerSettings,
     updateViewerPreset, updateEquipmentRepresentationOverride,
     setRepresentativeImage,
+    updateMonitoringEquipment,
   } = editor.actions;
 
   const activeWizardSteps = useMemo(() => {
@@ -251,6 +238,8 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
   const isCompositionStep = wizardStepId === WORLD_WIZARD_STEP_IDS.COMPOSITION;
   const isFloorWorkspaceStep = wizardStepId === WORLD_WIZARD_STEP_IDS.FLOOR_AND_EQUIPMENT;
   const isMonitoringStep = wizardStepId === WORLD_WIZARD_STEP_IDS.MONITORING;
+  const monitoringEquipmentId = resolveObservationEquipmentId(editor.observationWorkflow, editor.allMonitoringEquipment);
+  const monitoringEquipment = editor.allMonitoringEquipment.find((item) => item.id === monitoringEquipmentId) ?? null;
   const userBuildings = useMemo(() => editor.buildings.filter((building) => !building.systemHost), [editor.buildings]);
   const isBuildingObservationMode = isCompositionStep
     && editor.observationWorkflow.scopeType === OBSERVATION_SCOPE_TYPES.BUILDING;
@@ -264,6 +253,8 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
   const selectedFloor = editor.currentFloor?.parentId === focusedBuilding?.id
     ? editor.currentFloor
     : buildingFloors.find((floor) => Number(floor.level) === 1) ?? buildingFloors[0] ?? null;
+  const floorTerrainEnvironment = useMemo(() => getFloorTerrainEnvironment(editor.activeFloorSpatialPlan, editor.siteEnvironment), [editor.activeFloorSpatialPlan, editor.siteEnvironment]);
+  const editingFloorTerrain = isFloorWorkspaceStep && activeFloatingPanelId === WORLD_PANEL_IDS.TERRAIN && Boolean(selectedFloor);
   const aboveGroundFloorCount = buildingFloors.filter((floor) => Number(floor.level) > 0).length;
   const selectedMovableObject = isMovableSiteObject(editor.selectedSiteObject) ? editor.selectedSiteObject : null;
   const referenceFloor = useMemo(() => (
@@ -421,11 +412,11 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
 
   useEffect(() => {
     if (!isMonitoringStep || !editor.observationWorkflow.configured) return undefined;
-    const equipmentId = resolveObservationEquipmentId(editor.observationWorkflow, editor.allFloorEquipment, editor.selectedFloorEquipmentId);
-    if (!equipmentId || equipmentId === editor.selectedFloorEquipmentId) return undefined;
+    const equipmentId = monitoringEquipment?.monitoringSource === "FLOOR" ? monitoringEquipment.id : null;
+    if (equipmentId === editor.selectedFloorEquipmentId) return undefined;
     const timer = window.setTimeout(() => selectFloorEquipment(equipmentId), 0);
     return () => window.clearTimeout(timer);
-  }, [editor.allFloorEquipment, editor.observationWorkflow, editor.selectedFloorEquipmentId, isMonitoringStep, selectFloorEquipment]);
+  }, [editor.observationWorkflow.configured, editor.selectedFloorEquipmentId, isMonitoringStep, monitoringEquipment, selectFloorEquipment]);
 
   useEffect(() => {
     if (!layoutReadyRef.current) return undefined;
@@ -728,6 +719,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
       setMonitoringEquipmentNotice(prepared.message);
       return null;
     }
+    setPendingAssetUploads((count) => count + 1);
     try {
       await equipmentAssetRepository.put(prepared.record);
       const bindingId = addAssetBinding(equipmentId, {
@@ -748,6 +740,8 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     } catch {
       setMonitoringEquipmentNotice("로컬 설비 파일을 저장하지 못했습니다. 브라우저 저장소 권한을 확인하세요.");
       return null;
+    } finally {
+      setPendingAssetUploads((count) => count - 1);
     }
   }, [addAssetBinding]);
   const handleMonitoringNewAssetFiles = useCallback(async (files) => {
@@ -762,10 +756,16 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     await handleMonitoringAssetFiles(equipmentId, files);
   }, [handleMonitoringAssetFiles, handleMonitoringEquipmentAdd, updateFloorEquipment]);
   const handleMonitoringEquipmentSelect = useCallback((equipmentId) => {
-    handleFloorEquipmentSelect(equipmentId);
+    selectAssetBinding(null);
+    selectObservationPoint(null);
+    selectMonitoringDevice(null);
+    selectMonitoringBinding(null);
     updateObservationViewerSettings({ activeEquipmentId: equipmentId });
     setMonitoringEquipmentPickerOpen(false);
-  }, [handleFloorEquipmentSelect, updateObservationViewerSettings]);
+  }, [selectAssetBinding, selectMonitoringBinding, selectMonitoringDevice, selectObservationPoint, updateObservationViewerSettings]);
+  const handleMonitoringEquipmentChange = useCallback((changes) => {
+    if (monitoringEquipmentId) updateMonitoringEquipment(monitoringEquipmentId, changes);
+  }, [monitoringEquipmentId, updateMonitoringEquipment]);
   const handleMonitoringDuplicate = useCallback(() => {
     const equipmentId = duplicateSelectedFloorEquipment();
     if (!equipmentId) return;
@@ -777,13 +777,13 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
   const handleMonitoringDelete = useCallback(() => {
     const removedId = editor.selectedFloorEquipmentId;
     if (!removedId) return;
-    const nextEquipment = editor.allFloorEquipment.find((item) => item.id !== removedId) ?? null;
+    const nextEquipment = editor.allMonitoringEquipment.find((item) => item.id !== removedId) ?? null;
     removeSelectedFloorEquipment();
     updateObservationViewerSettings({
       equipmentIds: (editor.observationWorkflow.viewerSettings?.equipmentIds ?? []).filter((id) => id !== removedId),
       activeEquipmentId: nextEquipment?.id ?? null,
     });
-  }, [editor.allFloorEquipment, editor.observationWorkflow.viewerSettings?.equipmentIds, editor.selectedFloorEquipmentId, removeSelectedFloorEquipment, updateObservationViewerSettings]);
+  }, [editor.allMonitoringEquipment, editor.observationWorkflow.viewerSettings?.equipmentIds, editor.selectedFloorEquipmentId, removeSelectedFloorEquipment, updateObservationViewerSettings]);
   const handleWorkspaceModeChange = useCallback((mode) => {
     if (mode === workspaceMode) {
       setActiveFloatingPanelId(WORLD_PANEL_IDS.OBJECTS);
@@ -810,10 +810,15 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
       setActiveFloatingPanelId(null);
       return;
     }
+    if (stepId === WORLD_WIZARD_STEP_IDS.MONITORING) {
+      handleMonitoringEquipmentSelect(editor.allMonitoringEquipment[0]?.id ?? null);
+      setActiveFloatingPanelId(WORLD_PANEL_IDS.DETAILS);
+      return;
+    }
     const floor = selectedFloor ?? editor.floors.find((item) => item.parentId === focusedBuilding?.id);
     if (floor) navigateToFloor(floor.id);
     setActiveFloatingPanelId(stepId === WORLD_WIZARD_STEP_IDS.MONITORING ? WORLD_PANEL_IDS.DETAILS : WORLD_PANEL_IDS.OBJECTS);
-  }, [editor.floors, editor.observationWorkflow.activeStepIds, focusedBuilding?.id, navigateToFloor, navigateToSite, resetSiteInteraction, selectedFloor]);
+  }, [editor.allMonitoringEquipment, editor.floors, editor.observationWorkflow.activeStepIds, focusedBuilding?.id, handleMonitoringEquipmentSelect, navigateToFloor, navigateToSite, resetSiteInteraction, selectedFloor]);
   const requestStepChange = useCallback((stepId) => {
     if (!editor.observationWorkflow.activeStepIds.includes(stepId)) return;
     const prompt = getStepTransitionPrompt({
@@ -821,8 +826,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
       targetStepId: stepId,
       scopeType: editor.observationWorkflow.scopeType,
       buildingCount: userBuildings.length,
-      equipmentCount: editor.allFloorEquipment.length,
-      selectedEquipmentId: editor.selectedFloorEquipmentId,
+      equipmentCount: editor.allMonitoringEquipment.length,
     });
     if (prompt) {
       setStepTransitionPrompt(prompt);
@@ -830,8 +834,32 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     }
     setStepTransitionPrompt(null);
     enterStep(stepId);
-  }, [editor.allFloorEquipment.length, editor.observationWorkflow.activeStepIds, editor.observationWorkflow.scopeType, editor.selectedFloorEquipmentId, enterStep, userBuildings.length, wizardStepId]);
+  }, [editor.allMonitoringEquipment.length, editor.observationWorkflow.activeStepIds, editor.observationWorkflow.scopeType, enterStep, userBuildings.length, wizardStepId]);
+  const saveAndReturnToProjects = useCallback(() => {
+    if (pendingAssetUploads > 0) {
+      setSaveStatus("3D 파일 저장이 끝난 후 다시 저장해 주세요.");
+      return;
+    }
+    try {
+      saveLayout(editor.layoutDocument);
+    } catch {
+      setSaveStatus("저장하지 못했습니다");
+      setStepTransitionPrompt({
+        caption: "저장 안내", title: "저장하지 못했습니다",
+        message: "브라우저 저장 공간이나 저장소 권한을 확인해 주세요. 현재 편집 화면을 유지합니다.",
+        actions: [{ id: STEP_TRANSITION_ACTION_IDS.CANCEL, label: "계속 편집" }, { id: STEP_TRANSITION_ACTION_IDS.SAVE_AND_EXIT, label: "다시 저장" }],
+      });
+      return;
+    }
+    setHasUnsavedChanges(false);
+    setStepTransitionPrompt(null);
+    navigateToAppRoute("/projects");
+  }, [editor.layoutDocument, pendingAssetUploads]);
   const handleStepTransitionAction = useCallback((actionId) => {
+    if (actionId === STEP_TRANSITION_ACTION_IDS.SAVE_AND_EXIT) {
+      saveAndReturnToProjects();
+      return;
+    }
     setStepTransitionPrompt(null);
     if (actionId === STEP_TRANSITION_ACTION_IDS.CANCEL) return;
     if (actionId === STEP_TRANSITION_ACTION_IDS.CHANGE_SCOPE) {
@@ -854,7 +882,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
       setWorkspaceMode(WORKSPACE_MODES.EQUIPMENT);
       setActiveFloatingPanelId(WORLD_PANEL_IDS.OBJECT_LIST);
     }
-  }, [enterStep]);
+  }, [enterStep, saveAndReturnToProjects]);
   const handleObservationScopeSelect = useCallback((scopeType, options = {}) => {
     const result = configureObservationWorkflow(scopeType, {
       ...options,
@@ -883,14 +911,22 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     if (nextStep) {
       requestStepChange(nextStep.id);
     } else {
-      try {
-        const payload = saveLayout(editor.layoutDocument);
-        setSaveStatus(`설비 상세 저장 · ${new Date(payload.savedAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}`);
-      } catch {
-        setSaveStatus("저장하지 못했습니다");
+      if (pendingAssetUploads > 0) {
+        setSaveStatus("3D 파일 저장이 끝난 후 다시 저장해 주세요.");
+        return;
       }
+      const summary = getEquipmentSetupSaveSummary(editor.allMonitoringEquipment);
+      if (summary.equipmentCount > 0) {
+        setStepTransitionPrompt({
+          caption: "저장 확인", title: "아직 완료되지 않은 단계가 있습니다",
+          message: `설비 ${summary.equipmentCount}개에 미완료 ${summary.pendingCount}단계, 건너뛴 ${summary.skippedCount}단계가 있습니다. 현재 상태로 저장하고 프로젝트 목록으로 돌아가시겠습니까? 나중에 이어서 수정할 수 있습니다.`,
+          actions: [{ id: STEP_TRANSITION_ACTION_IDS.CANCEL, label: "계속 편집" }, { id: STEP_TRANSITION_ACTION_IDS.SAVE_AND_EXIT, label: "저장 후 목록으로" }],
+        });
+        return;
+      }
+      saveAndReturnToProjects();
     }
-  }, [activeWizardSteps, editor.layoutDocument, requestStepChange, wizardStepId]);
+  }, [activeWizardSteps, editor.allMonitoringEquipment, pendingAssetUploads, requestStepChange, saveAndReturnToProjects, wizardStepId]);
   const handleLoad = useCallback(() => {
     const saved = loadLayout();
     setSaveStatus(saved && hydrateLayout(saved) ? "저장된 월드를 불러왔습니다" : "저장된 배치가 없습니다");
@@ -962,16 +998,16 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
   }, [clearFloorPlacement, clearSelection, clearSitePlacement, duplicateSelectedFloorEquipment, duplicateSelectedFloorPlanStructure, duplicateSelectedSiteEntity, handleDeleteSiteSelection, handleMovementEditComplete, handleRedo, handleUndo, hasTransformSelection, isCompositionStep, isFloorWorkspaceStep, removeSelectedFloorEquipment, removeSelectedFloorPlanStructure, selectFloorEquipment, selectFloorPlanStructure, siteInteractionMode, stepTransitionPrompt, toggleTransformTool, workspaceMode]);
 
   const hasNextWizardStep = wizardStepIndex < activeWizardSteps.length - 1;
-  const primaryDisabled = hasNextWizardStep && isFloorWorkspaceStep && !selectedFloor;
+  const primaryDisabled = pendingAssetUploads > 0 || (hasNextWizardStep && isFloorWorkspaceStep && !selectedFloor && !editor.allMonitoringEquipment.length);
   const stageContext = isCompositionStep
     ? `${editor.siteEnvironment.width.toFixed(0)} × ${editor.siteEnvironment.depth.toFixed(0)} m · 건축물 ${userBuildings.length} · 환경 ${environmentSiteObjects.length}`
     : isMonitoringStep
-      ? `관측 설비 ${editor.allFloorEquipment.length}개 · ${editor.selectedFloorEquipment?.name ?? "설비 등록 필요"}`
+      ? `관측 설비 ${editor.allMonitoringEquipment.length}개 · ${monitoringEquipment?.name ?? "설비 등록 필요"}`
     : `${focusedBuilding?.name ?? "건축물 미선택"} · ${selectedFloor?.name ?? "층 미선택"}`;
   const panelTitle = isCompositionStep
     ? activeFloatingPanelId === WORLD_PANEL_IDS.OBJECTS ? "오브젝트 배치" : activeFloatingPanelId === WORLD_PANEL_IDS.OBJECT_LIST ? "오브젝트 목록" : [WORLD_PANEL_IDS.TERRAIN, WORLD_PANEL_IDS.SETTINGS].includes(activeFloatingPanelId) ? "지형·부지 관리" : "오브젝트 설정"
     : isFloorWorkspaceStep
-      ? activeFloatingPanelId === WORLD_PANEL_IDS.OBJECTS
+      ? activeFloatingPanelId === WORLD_PANEL_IDS.TERRAIN ? "지형·부지 관리" : activeFloatingPanelId === WORLD_PANEL_IDS.OBJECTS
         ? "오브젝트"
         : activeFloatingPanelId === WORLD_PANEL_IDS.OBJECT_LIST
           ? "오브젝트 목록"
@@ -979,7 +1015,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
             ? editor.selectedFloorPlanStructure?.name ?? "구조 설정"
             : editor.selectedFloorEquipment?.name ?? "설비 설정"
       : "설비 상세";
-  const panelOpen = isMonitoringStep || (Boolean(activeFloatingPanelId) && (!isCompositionStep || activeFloatingPanelId !== WORLD_PANEL_IDS.DETAILS || hasSiteSelection));
+  const panelOpen = isMonitoringStep ? activeFloatingPanelId === WORLD_PANEL_IDS.DETAILS : (Boolean(activeFloatingPanelId) && (!isCompositionStep || activeFloatingPanelId !== WORLD_PANEL_IDS.DETAILS || hasSiteSelection));
   const targetFloorIds = equipmentTargetFloorIds.filter((id) => buildingFloors.some((floor) => floor.id === id) && id !== selectedFloor?.id);
   const floorNavigator = isFloorWorkspaceStep ? (
     <FloorPlanNavigator
@@ -1090,13 +1126,13 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
       <div
         className={`${styles.workspace} ${isMonitoringStep ? styles.monitoringWorkspace : ""}`}
         style={{
-          "--editor-overlay-right-safe": panelOpen && !isMonitoringStep
+          "--editor-overlay-right-safe": panelOpen
             ? "calc(var(--editor-overlay-panel-width) + (var(--editor-overlay-gap) * 2))"
             : "var(--editor-overlay-gap)",
           "--editor-overlay-mobile-bottom-safe": panelOpen
             ? "calc(40% + 86px)"
             : "74px",
-          "--scene-status-right": panelOpen && !isMonitoringStep
+          "--scene-status-right": panelOpen
             ? "calc(var(--editor-overlay-panel-width) + (var(--editor-overlay-gap) * 2))"
             : "var(--editor-overlay-gap)",
           "--floor-view-toggle-offset": isFloorWorkspaceStep
@@ -1112,21 +1148,21 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                 <label>
                   <span>관측 설비</span>
                   <select
-                    value={editor.selectedFloorEquipmentId ?? ""}
-                    disabled={editor.allFloorEquipment.length === 0}
+                    value={monitoringEquipmentId ?? ""}
+                    disabled={editor.allMonitoringEquipment.length === 0}
                     onChange={(event) => {
                       handleMonitoringEquipmentSelect(event.target.value || null);
                     }}
                   >
                     <option value="">설비를 선택하세요</option>
-                    {editor.allFloorEquipment.map((equipment) => <option key={equipment.id} value={equipment.id}>{equipment.name}</option>)}
+                    {editor.allMonitoringEquipment.map((equipment) => <option key={equipment.id} value={equipment.id}>{equipment.name} · {equipment.locationLabel}</option>)}
                   </select>
                 </label>
               ) : null}
               {isMonitoringStep ? <button type="button" onClick={() => setMonitoringEquipmentPickerOpen(true)}>설비 추가</button> : null}
               <button type="button" className={styles.expandScopeButton} onClick={() => setShowObservationScopeSelector(true)}>관측 범위 변경</button>
             </div>
-            <section className={styles.stageGuide} aria-label="현재 화면 작업"><button type="button" disabled={primaryDisabled} title={primaryDisabled ? "건축물과 층을 먼저 선택하세요" : wizardStep.primaryLabel} onClick={handlePrimaryAction}>{hasNextWizardStep ? <ArrowRightIcon size={16} /> : <SaveIcon size={16} />}<span>{hasNextWizardStep ? "다음" : "저장"}</span></button></section>
+            <section className={styles.stageGuide} aria-label="현재 화면 작업"><button type="button" disabled={primaryDisabled} title={pendingAssetUploads > 0 ? "3D 파일 저장 중입니다" : primaryDisabled ? "건축물과 층을 먼저 선택하세요" : wizardStep.primaryLabel} onClick={handlePrimaryAction}>{hasNextWizardStep ? <ArrowRightIcon size={16} /> : <SaveIcon size={16} />}<span>{pendingAssetUploads > 0 ? "파일 저장 중…" : hasNextWizardStep ? "다음" : "저장"}</span></button></section>
           </div>
 
           {isFloorWorkspaceStep ? (
@@ -1183,11 +1219,23 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                 onEnterFloor={(floorId) => { navigateToFloor(floorId); setWizardStepId(WORLD_WIZARD_STEP_IDS.FLOOR_AND_EQUIPMENT); setShowOnlySelectedBuilding(false); resetSiteInteraction(); setActiveFloatingPanelId(WORLD_PANEL_IDS.OBJECTS); }}
                 onAreaSelectionChange={setSiteAreaSelection} onPlaceTemplate={handleSiteTemplatePlace} onPlaceTemplateArea={completeAreaPlacement} onCancelPlacement={clearSitePlacement}
                 terrainBrush={terrainBrush} onTerrainChange={(terrain) => updateSiteEnvironment({ terrain })}
+                terrainAreaSelection={terrainAreaSelection} onTerrainAreaSelectionChange={setTerrainAreaSelection}
                 onMovementWaypointAdd={handleMovementWaypointAdd}
                 onMovementWaypointChange={handleMovementWaypointChange}
                 onMovementWaypointInsert={handleMovementWaypointInsert}
                 onMovementWaypointDelete={handleMovementWaypointDelete}
                 onMovementEditComplete={handleMovementEditComplete}
+              />
+            ) : editingFloorTerrain ? (
+              <SiteOverviewScene key={selectedFloor.id}
+                siteEnvironment={floorTerrainEnvironment} buildings={[]} floors={[]} siteObjects={[]}
+                selectedBuildingId={null} selectedSiteObjectId={null} selectedFloorId={null}
+                interactionMode={SITE_INTERACTION_MODES.EDIT_TERRAIN} theme={theme} groundViewMode={groundViewMode}
+                viewMode={workspaceView === WORKSPACE_VIEWS.PLAN_2D ? VIEW_MODES.LAYOUT_2D : VIEW_MODES.VIEW_3D}
+                transformTools={editor.transformTools} gridSettings={editor.gridSettings} gridScopeId={selectedFloor.id}
+                terrainBrush={terrainBrush} onTerrainChange={(terrain) => editor.actions.updateFloorTerrain({ terrain })}
+                terrainAreaSelection={terrainAreaSelection} onTerrainAreaSelectionChange={setTerrainAreaSelection}
+                onSelectBuilding={() => {}} onSelectSiteObject={() => {}} onCancelPlacement={clearFloorPlacement}
               />
             ) : isFloorWorkspaceStep && workspaceView === WORKSPACE_VIEWS.PLAN_2D ? (
               <FloorPlanScene
@@ -1211,8 +1259,15 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
               />
             ) : isMonitoringStep ? (
               <EquipmentDetailWorkspace
-                equipment={editor.selectedFloorEquipment}
-                equipmentCount={editor.allFloorEquipment.length}
+                equipment={monitoringEquipment}
+                listOpen={activeFloatingPanelId === WORLD_PANEL_IDS.OBJECT_LIST}
+                onCloseList={handleFloatingPanelClose}
+                onSetupStepChange={(detailSetup) => { handleMonitoringEquipmentChange({ metadata: { detailSetup } }); setActiveFloatingPanelId(WORLD_PANEL_IDS.DETAILS); }}
+                equipmentList={editor.allMonitoringEquipment}
+                equipmentCount={editor.allMonitoringEquipment.length}
+                onSelectEquipment={handleMonitoringEquipmentSelect}
+                sensorBindings={editor.sensorBindings}
+                observationPoints={editor.observationPoints}
                 assetBindings={editor.equipmentAssetBindings}
                 selectedAsset={editor.selectedAssetBinding}
                 selectedSensor={editor.selectedSensorBinding}
@@ -1223,20 +1278,23 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                 onViewerPresetChange={updateViewerPreset}
                 onEquipmentRepresentationChange={updateEquipmentRepresentationOverride}
                 onAddEquipment={() => setMonitoringEquipmentPickerOpen(true)}
-                equipmentPicker={(monitoringEquipmentPickerOpen || !editor.selectedFloorEquipment) ? <MonitoringEquipmentPicker
-                  equipment={editor.allFloorEquipment}
-                  selectedEquipmentId={editor.selectedFloorEquipmentId}
-                  required={!editor.selectedFloorEquipment}
+                equipmentPicker={(monitoringEquipmentPickerOpen || !monitoringEquipment) ? <MonitoringEquipmentPicker
+                  equipment={editor.allMonitoringEquipment}
+                  selectedEquipmentId={monitoringEquipmentId}
+                  required={!monitoringEquipment}
                   notice={monitoringEquipmentNotice}
                   onClose={() => setMonitoringEquipmentPickerOpen(false)}
                   onSelect={handleMonitoringEquipmentSelect}
                   onAddTemplate={handleMonitoringEquipmentAdd}
                   onUploadAsset={handleMonitoringNewAssetFiles}
                 /> : null}
-                onAlignmentChange={(changes) => editor.selectedAssetBinding && updateAssetBinding(editor.selectedAssetBinding.id, { alignmentTransform: changes })}
-                worldView={editor.selectedFloorEquipment ? <EquipmentObservationScene
-                  equipment={editor.selectedFloorEquipment}
-                  focusEquipmentId={editor.selectedFloorEquipment.id}
+                onAlignmentChange={(changes, bindingId) => bindingId && updateAssetBinding(bindingId, { alignmentTransform: changes })}
+                worldView={monitoringEquipment ? <EquipmentObservationScene
+                  equipment={monitoringEquipment}
+                  assetBindings={editor.equipmentAssetBindings}
+                  viewerPreset={editor.viewerPreset}
+                  previewReadings
+                  focusEquipmentId={monitoringEquipment.id}
                   sensors={editor.sensorBindings}
                   observationPoints={editor.observationPoints}
                   bindings={editor.serverBindings}
@@ -1248,7 +1306,9 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                   onSensorChange={updateMonitoringDevice}
                 /> : null}
                 overviewView={<EquipmentObservationScene
-                  equipmentList={editor.allFloorEquipment}
+                  equipmentList={editor.allMonitoringEquipment}
+                  focusEquipmentId={monitoringEquipmentId}
+                  onEquipmentSelect={handleMonitoringEquipmentSelect}
                   assetBindings={editor.equipmentAssetBindings}
                   viewerPreset={editor.viewerPreset}
                   sensors={editor.sensorBindings}
@@ -1298,21 +1358,21 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
 
           <EditorToolbar
             focusedScope hierarchyScopeLabel={wizardStep.contextLabel}
-            panelMode={isCompositionStep ? "SPACE" : isFloorWorkspaceStep ? "FLOOR" : null}
+            panelMode={isCompositionStep ? "SPACE" : isFloorWorkspaceStep ? "FLOOR" : "MONITORING"}
             activePanelId={activeFloatingPanelId} onPanelChange={handleFloatingPanelChange}
             viewerTranslucent={isCompositionStep ? buildingsTranslucent : isFloorWorkspaceStep ? equipmentTranslucent : undefined}
             viewerTransparencyLabel={isCompositionStep
               ? `건축물 반투명 보기 ${buildingsTranslucent ? "끄기" : "켜기"}`
               : `설비 반투명 보기 ${equipmentTranslucent ? "끄기" : "켜기"}`}
             onViewerTransparencyChange={isCompositionStep ? setBuildingsTranslucent : setEquipmentTranslucent}
-            showSelectionActions showSiteInteractionTools={isCompositionStep}
+            showSelectionActions={!isMonitoringStep || monitoringEquipment?.monitoringSource === "FLOOR"} showSiteInteractionTools={isCompositionStep}
             showMovementPathTool={Boolean(isCompositionStep && selectedMovableObject)}
             onMovementPathEdit={handleMovementEditStart}
             showBuildingIsolationToggle={isCompositionStep}
             buildingIsolationEnabled={showOnlySelectedBuilding}
             buildingIsolationAvailable={Boolean(editor.selectedBuilding)}
             showShadowToggle={isFloorWorkspaceStep || isMonitoringStep}
-            showGroundViewControl={isFloorWorkspaceStep || isMonitoringStep}
+            showGroundViewControl={isMonitoringStep}
             groundViewMode={groundViewMode}
             onGroundViewModeChange={setGroundViewMode}
             shadowEnabled={editorPreferences.shadowEnabled}
@@ -1327,7 +1387,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
             hasSelection={isCompositionStep ? hasSiteSelection : isMonitoringStep ? Boolean(editor.selectedFloorEquipment) : Boolean(activeWorkspaceSelection)} worldLocked={false}
             saveStatus={saveStatus} canUndo={editor.canUndo} canRedo={editor.canRedo}
             onEditorModeChange={() => {}} onSiteInteractionModeChange={handleSiteInteractionModeChange} onViewModeChange={isCompositionStep ? handleCompositionViewModeChange : setViewMode}
-            onTransformToolToggle={(tool) => { if (isFloorWorkspaceStep) clearFloorPlacement(); toggleTransformTool(tool); }} onSnapSizeChange={setSnapSize} onGridSnapChange={setGridSnapEnabled}
+            onTransformToolToggle={toggleTransformTool} onSnapSizeChange={setSnapSize} onGridSnapChange={setGridSnapEnabled}
             onToggleWorldLock={setWorldStructuresLocked}
             onDuplicate={isCompositionStep ? duplicateSelectedSiteEntity : isMonitoringStep ? handleMonitoringDuplicate : workspaceMode === WORKSPACE_MODES.PLAN ? duplicateSelectedFloorPlanStructure : duplicateSelectedFloorEquipment}
             onDelete={isCompositionStep ? handleDeleteSiteSelection : isMonitoringStep ? handleMonitoringDelete : workspaceMode === WORKSPACE_MODES.PLAN ? removeSelectedFloorPlanStructure : removeSelectedFloorEquipment}
@@ -1349,12 +1409,18 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
         </div>
 
         <div className={styles.floatingPanelHost}>
-          <FloatingPanel open={panelOpen} title={panelTitle} docked={isMonitoringStep} topAligned={!isMonitoringStep} contentScrollable={!isMonitoringStep} onClose={isMonitoringStep ? undefined : handleFloatingPanelClose}>
-            {isCompositionStep && activeFloatingPanelId === WORLD_PANEL_IDS.OBJECTS ? (
+          <FloatingPanel open={panelOpen} title={panelTitle} topAligned contentScrollable={!isMonitoringStep} onClose={handleFloatingPanelClose}>
+            {editingFloorTerrain ? (
+              <FloorTerrainPanel key={selectedFloor.id} floor={selectedFloor} floors={buildingFloors}
+                areaSelection={terrainAreaSelection} onAreaSelectionChange={setTerrainAreaSelection}
+                environment={floorTerrainEnvironment} brush={terrainBrush} gridCellSize={editor.gridSettings.baseSize}
+                onBrushChange={setTerrainBrush} onEnvironmentChange={editor.actions.updateFloorTerrain}
+                onApplyRange={editor.actions.applyFloorTerrainRange} groundViewMode={groundViewMode} onGroundViewModeChange={setGroundViewMode} />
+            ) : isCompositionStep && activeFloatingPanelId === WORLD_PANEL_IDS.OBJECTS ? (
               <SiteAuthoringPanel areaSelection={siteAreaSelection} placementPlan={sitePlacementPlan} placementNotice={sitePlacementNotice} activeTemplateId={activeSiteTemplateId} activeVariants={activeSiteVariants} onClearArea={resetSiteInteraction} onConfirmAreaPlacement={() => completeAreaPlacement(activeSiteTemplateId, siteAreaSelection)} onSelectTemplate={handleSiteTemplateSelect} onVariantsChange={setActiveSiteVariants} />
             ) : isCompositionStep && [WORLD_PANEL_IDS.TERRAIN, WORLD_PANEL_IDS.SETTINGS].includes(activeFloatingPanelId) ? (
               <>
-                <TerrainEditorPanel environment={editor.siteEnvironment} brush={terrainBrush} onBrushChange={setTerrainBrush} onEnvironmentChange={handleSiteEnvironmentChange} />
+                <TerrainEditorPanel environment={editor.siteEnvironment} brush={terrainBrush} gridCellSize={editor.gridSettings.baseSize} onBrushChange={setTerrainBrush} onEnvironmentChange={handleSiteEnvironmentChange} areaSelection={terrainAreaSelection} onAreaSelectionChange={setTerrainAreaSelection} />
                 <EnvironmentSettingsPanel
                   environment={editor.siteEnvironment}
                   boundaryNotice={editor.siteBoundaryNotice}
@@ -1414,14 +1480,17 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
               <EquipmentProperties equipment={editor.selectedFloorEquipment} detailAsset={null} hasCollision={false} snapCandidate={null} placementOnly floors={buildingFloors} spaces={currentFloorSpaces} onChange={handleFloorEquipmentChange} />
             ) : (
               <MonitoringSettingsPanel
-                equipment={editor.allFloorEquipment} selectedEquipmentId={editor.selectedFloorEquipmentId}
+                key={monitoringEquipmentId}
+                equipment={editor.allMonitoringEquipment} selectedEquipmentId={monitoringEquipmentId}
+                viewerPreset={editor.viewerPreset} onViewerPresetChange={updateViewerPreset} onEquipmentRepresentationChange={updateEquipmentRepresentationOverride}
+                uploadNotice={monitoringEquipmentNotice}
                 assetBindings={editor.equipmentAssetBindings} sensorBindings={editor.sensorBindings} observationPoints={editor.observationPoints} serverBindings={editor.serverBindings}
                 selectedAsset={editor.selectedAssetBinding} selectedPoint={editor.selectedObservationPoint} selectedSensor={editor.selectedSensorBinding} selectedServer={editor.selectedServerBinding}
                 onAddAsset={addAssetBinding} onSelectAsset={selectAssetBinding} onUpdateAsset={updateAssetBinding}
                 onAddPoint={addObservationPoint} onSelectPoint={selectObservationPoint} onUpdatePoint={updateObservationPoint}
                 onAddSensor={addMonitoringDevice} onSelectSensor={selectMonitoringDevice} onUpdateSensor={updateMonitoringDevice}
                 onAddServer={addMonitoringBinding} onSelectServer={selectMonitoringBinding} onUpdateServer={updateMonitoringBinding}
-                onUpdateEquipment={handleFloorEquipmentChange}
+                onUpdateEquipment={handleMonitoringEquipmentChange}
                 onUploadAssetFiles={handleMonitoringAssetFiles}
               />
             )}
@@ -1433,8 +1502,8 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
           if (event.target === event.currentTarget) setStepTransitionPrompt(null);
         }}>
           <section className={styles.transitionPrompt} role="alertdialog" aria-modal="true" aria-labelledby="step-transition-title" aria-describedby="step-transition-message">
-            <span>단계 이동 안내</span>
-            <h2 id="step-transition-title">선행 작업이 필요합니다</h2>
+            <span>{stepTransitionPrompt.caption ?? "단계 이동 안내"}</span>
+            <h2 id="step-transition-title">{stepTransitionPrompt.title ?? "선행 작업이 필요합니다"}</h2>
             <p id="step-transition-message">{stepTransitionPrompt.message}</p>
             <div className={styles.transitionPromptActions}>
               {stepTransitionPrompt.actions.map((action, index) => (

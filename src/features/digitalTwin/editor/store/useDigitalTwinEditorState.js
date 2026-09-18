@@ -54,6 +54,7 @@ import {
 } from "@/features/digitalTwin/editor/utils/editorMath";
 import { placeObjectsInArea } from "@/features/digitalTwin/editor/utils/siteAreaPlacement";
 import { createSequentialCopyName } from "@/features/digitalTwin/editor/utils/objectCopyName";
+import { collectMonitoringEquipment } from "@/features/digitalTwin/editor/model/monitoringEquipmentList";
 import {
   findPipeSnapCandidate,
   resolvePipeSnap,
@@ -81,6 +82,8 @@ import {
   getBasementFloorCount,
   getBasementFloorHeight,
   isUndergroundSiteObject,
+  getUndergroundObjectTransform,
+  updateUndergroundConnection,
 } from "@/features/digitalTwin/editor/model/undergroundModel";
 import { isMovableSiteObject, normalizeMovementConfig } from "@/features/digitalTwin/editor/model/movementPath";
 import {
@@ -276,13 +279,16 @@ function clampBuildingToSite(building, siteEnvironment) {
 }
 
 function clampSiteObjectToSite(object, siteEnvironment) {
+  const transform = getUndergroundObjectTransform(object);
   const result = clampObjectPositionToSite(
     object.position,
-    object.dimensions,
-    object.rotation?.y,
+    { ...object.dimensions, depth: object.dimensions.depth * transform.scaleZ },
+    transform.rotationY,
     siteEnvironment,
   );
-  return { entity: { ...object, position: result.position }, ...result };
+  return { entity: { ...object, position: result.position,
+    ...(object.undergroundConnection ? { undergroundConnection: updateUndergroundConnection(object, { position: result.position }) } : {}),
+  }, ...result };
 }
 
 function getSiteBoundaryNotice(movedCount, oversizedCount) {
@@ -546,7 +552,12 @@ export default function useDigitalTwinEditorState() {
   );
   const floorPlanEditor = useFloorPlanState({ buildings, floors, currentBuilding, currentFloor, gridSettings });
   const floorEquipmentEditor = useFloorEquipmentState({ buildings, floors, currentBuilding, currentFloor, gridSettings, floorPlansById: floorPlanEditor.floorPlansById });
-  const monitoringEditor = useMonitoringState({ equipment: floorEquipmentEditor.allFloorEquipment });
+  const allMonitoringEquipment = useMemo(() => collectMonitoringEquipment({
+    floorEquipment: floorEquipmentEditor.allFloorEquipment, roomScenes,
+    activeRoomId: hierarchy.activeRoomId, roomEquipment: equipmentInstances, siteObjects,
+    hierarchy: hierarchy.nodes, templates: UNIFIED_EQUIPMENT_TEMPLATE_MAP,
+  }), [equipmentInstances, floorEquipmentEditor.allFloorEquipment, hierarchy.activeRoomId, hierarchy.nodes, roomScenes, siteObjects]);
+  const monitoringEditor = useMonitoringState({ equipment: allMonitoringEquipment });
   const observationBuildingHasEdits = useMemo(() => {
     if (observationWorkflow.scopeType !== OBSERVATION_SCOPE_TYPES.BUILDING) return false;
     const userBuildings = buildings.filter((building) => !building.systemHost);
@@ -780,7 +791,7 @@ export default function useDigitalTwinEditorState() {
       {
         ...selectedEquipment,
         id: duplicateId,
-        name: `${selectedEquipment.name} COPY`,
+        name: createSequentialCopyName(selectedEquipment.name, items),
         parameters: { ...selectedEquipment.parameters },
         dimensions: { ...selectedEquipment.dimensions },
         position: duplicatedPosition,
@@ -1734,23 +1745,7 @@ export default function useDigitalTwinEditorState() {
   const updateSiteObject = useCallback((objectId, changes) => {
     const object = siteObjects.find((item) => item.id === objectId);
     if (!object || object.locked) return;
-    const undergroundConnectionChanges = changes.undergroundConnection
-      ? { ...object.undergroundConnection, ...changes.undergroundConnection }
-      : object.undergroundConnection && changes.position
-        ? {
-            ...object.undergroundConnection,
-            startPoint: {
-              ...object.undergroundConnection.startPoint,
-              x: (object.undergroundConnection.startPoint?.x ?? object.position.x) + ((changes.position.x ?? object.position.x) - object.position.x),
-              z: (object.undergroundConnection.startPoint?.z ?? object.position.z) + ((changes.position.z ?? object.position.z) - object.position.z),
-            },
-            endPoint: {
-              ...object.undergroundConnection.endPoint,
-              x: (object.undergroundConnection.endPoint?.x ?? object.position.x) + ((changes.position.x ?? object.position.x) - object.position.x),
-              z: (object.undergroundConnection.endPoint?.z ?? object.position.z) + ((changes.position.z ?? object.position.z) - object.position.z),
-            },
-          }
-        : object.undergroundConnection;
+    const undergroundConnectionChanges = updateUndergroundConnection(object, changes);
     const normalizedObject = normalizeSiteObject({
         ...object,
         ...changes,
@@ -1797,6 +1792,12 @@ export default function useDigitalTwinEditorState() {
           z: selectedSiteObject.position.z + Math.max(1, gridSettings.baseSize),
         },
       });
+      if (selectedSiteObject.undergroundConnection) {
+        normalizedDuplicate.undergroundConnection = {
+          ...updateUndergroundConnection(selectedSiteObject, { position: normalizedDuplicate.position }),
+          id: `UNDERGROUND_CONNECTION_${crypto.randomUUID()}`,
+        };
+      }
       const duplicate = clampSiteObjectToSite(normalizedDuplicate, siteEnvironment).entity;
       setSiteObjects((items) => [...items, duplicate]);
       setSelectedSiteObjectId(duplicate.id);
@@ -2081,6 +2082,17 @@ export default function useDigitalTwinEditorState() {
     },
   }), [currentRoomScene, floorEquipmentEditor.equipmentByFloorId, floorPlanEditor.floorPlansById, floorPlanEditor.verticalStructuresByBuildingId, gridSettings, hierarchy, monitoringEditor.equipmentAssetBindings, monitoringEditor.observationPoints, monitoringEditor.sensorBindings, monitoringEditor.serverBindings, observationWorkflow, representativeImage, roomScenes, siteEnvironment, siteObjects, viewerPreset]);
 
+  const updateMonitoringEquipment = useCallback((equipmentId, changes) => {
+    const equipment = allMonitoringEquipment.find((item) => item.id === equipmentId);
+    if (!equipment) return;
+    if (equipment.monitoringSource === "FLOOR") { floorEquipmentEditor.actions.updateFloorEquipment(equipmentId, changes); return; }
+    if (equipment.monitoringSource === "SITE") { updateSiteObject(equipmentId, { ...changes, ...(changes.metadata ? { metadata: { ...equipment.metadata, ...changes.metadata } } : {}) }); return; }
+    if (equipment.monitoringOwnerId === hierarchy.activeRoomId) { updateEquipment(equipmentId, changes); return; }
+    setRoomScenes((current) => ({ ...current, [equipment.monitoringOwnerId]: {
+      ...current[equipment.monitoringOwnerId], equipment: (current[equipment.monitoringOwnerId]?.equipment || []).map((item) => item.id === equipmentId ? mergeEquipment(item, changes) : item),
+    } }));
+  }, [allMonitoringEquipment, floorEquipmentEditor.actions, hierarchy.activeRoomId, updateEquipment, updateSiteObject]);
+
   const commitHistorySnapshot = useCallback((snapshot) => {
     const currentSnapshot = historyCurrentRef.current;
     if (!currentSnapshot) {
@@ -2294,6 +2306,7 @@ export default function useDigitalTwinEditorState() {
     activeFloorEquipment: floorEquipmentEditor.activeFloorEquipment,
     buildingFloorEquipment: floorEquipmentEditor.buildingEquipment,
     allFloorEquipment: floorEquipmentEditor.allFloorEquipment,
+    allMonitoringEquipment,
     selectedFloorEquipment: floorEquipmentEditor.selectedFloorEquipment,
     selectedFloorEquipmentId: floorEquipmentEditor.selectedFloorEquipmentId,
     activeFloorEquipmentTemplateId: floorEquipmentEditor.activeFloorEquipmentTemplateId,
@@ -2373,6 +2386,7 @@ export default function useDigitalTwinEditorState() {
       ...floorPlanEditor.actions,
       ...floorEquipmentEditor.actions,
       ...monitoringEditor.actions,
+      updateMonitoringEquipment,
       selectEquipment,
       clearSelection,
       setViewMode,

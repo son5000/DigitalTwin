@@ -26,9 +26,11 @@ export const OBJECT_LIBRARY_CATEGORY_IDS = Object.freeze({
   PARKING_FACILITY: "PARKING_FACILITY",
   OUTDOOR_EQUIPMENT: "OUTDOOR_EQUIPMENT",
   EQUIPMENT: "EQUIPMENT",
+  GENERIC_STRUCTURE: "GENERIC_STRUCTURE",
 });
 
 const CATEGORY_SOURCE = [
+  ["GENERIC_STRUCTURE", "범용 구조물", "Generic Structures", "크기·색상·회전을 조절하는 기본 도형", "building", [["SOLID", "기본 입체"], ["UTILITY", "구조·보조 도형"]]],
   ["BUILDING", "건축물", "Building", "일반·주거·업무 건축물", "building", [["CUSTOM", "내 커스텀"], ["OFFICE", "업무시설"], ["RESIDENTIAL", "주거시설"], ["COMMERCIAL", "상업시설"], ["BACKGROUND", "주변 표현"]]],
   ["INDUSTRIAL_BUILDING", "산업용 건축물", "Industrial Building", "생산·물류·유틸리티 건축물", "factory", [["FACTORY", "생산 공장"], ["PROCESS", "공정 시설"], ["WAREHOUSE", "창고·물류동"], ["UTILITY", "유틸리티동"]]],
   ["VEHICLE", "차량", "Vehicle", "승용·상용·산업 차량", "vehicle", [["PASSENGER", "승용 차량"], ["COMMERCIAL", "상용 차량"], ["INDUSTRIAL", "산업 차량"]]],
@@ -181,7 +183,7 @@ function site([id, categoryId, subcategoryId, name, description, assetKind, prof
     id, categoryId, subcategoryId, name, nameKo: SITE_OBJECT_DISPLAY_NAMES[id] ?? name,
     nameEn: id.replaceAll("_", " ").toLocaleLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()),
     description, type: "SITE_OBJECT", assetKind, profile, geometryMode,
-    modelSource: `procedural:${id}`, thumbnailSource: `/assets/object-thumbnails/${id}.png`,
+    modelSource: `procedural:${id}`, thumbnailSource: `/assets/object-thumbnails/${id}.${id === "BOUNDARY_WALL" ? "svg" : "png"}`,
     iconKey: category?.iconKey ?? "environment", width, depth, height, color, material,
     parameters, defaultVariants: {}, variantGroups: [], keywords: [name, description, id, assetKind, profile],
   };
@@ -226,6 +228,7 @@ const SITE_OBJECTS = [
   ["BOLLARD", "ROAD_FACILITY", "BOUNDARY", "볼라드", "반사 Band가 있는 안전 Bollard", "TRAFFIC", "BOLLARD", 0.25, 0.25, 1, "#68747a", "METAL"],
   ["ROAD_BARRIER", "ROAD_FACILITY", "BOUNDARY", "방호벽", "분절형 Concrete Barrier", "TRAFFIC", "ROAD_BARRIER", 4, 0.7, 0.9, "#a5a9a8", "CONCRETE", "LINEAR"],
   ["FENCE", "ROAD_FACILITY", "BOUNDARY", "도로 펜스", "Post와 Rail로 구성된 경계 펜스", "FENCE", "ROAD_FENCE", 10, 3, 1.5, "#727f84", "METAL", "PERIMETER", { spacing: 2.5 }],
+  ["BOUNDARY_WALL", "ROAD_FACILITY", "BOUNDARY", "담장", "경사 지면에 밀착하며 지형 추종 또는 상단 수평 유지가 가능한 담장", "FENCE", "BOUNDARY_WALL", 10, 0.5, 2, "#b1aaa0", "CONCRETE", "LINEAR", { wallHeightMode: "FOLLOW_TERRAIN", verticalPathMode: "FOLLOW_TERRAIN", terrainClearance: 0 }],
 
   ["GRASS", "ENVIRONMENT", "GROUND", "잔디", "낮은 잔디 Area", "SURFACE", "GRASS", 8, 8, 0.04, "#607b5a", "GRASS", "AREA"],
   ["EXTERIOR_FLOOR", "ENVIRONMENT", "GROUND", "외부 바닥", "콘크리트 광장과 Joint", "SURFACE", "PLAZA", 10, 10, 0.08, "#9aa1a3", "CONCRETE", "AREA"],
@@ -306,6 +309,23 @@ const SITE_OBJECTS = [
   ["EV_CHARGER", "PARKING_FACILITY", "AMENITY", "EV 충전기", "Display와 Cable이 있는 Charger", "PARKING", "EV_CHARGER", 0.55, 0.45, 1.5, "#4f8275", "METAL"],
   ["BIKE_RACK", "PARKING_FACILITY", "AMENITY", "자전거 거치대", "반복 U Frame Bike Rack", "PARKING", "BIKE_RACK", 3, 0.8, 0.9, "#718087", "METAL"],
 ].map(site);
+
+const GENERIC_STRUCTURES = [
+  ["BOX", "직육면체", "SOLID", 3, 3, 3],
+  ["SPHERE", "구", "SOLID", 3, 3, 3],
+  ["CYLINDER", "원기둥", "SOLID", 3, 3, 4],
+  ["CONE", "원뿔", "SOLID", 3, 3, 4],
+  ["PYRAMID", "사각뿔", "SOLID", 3, 3, 4],
+  ["PRISM", "삼각기둥", "SOLID", 3, 4, 3],
+  ["WEDGE", "쐐기·경사 블록", "UTILITY", 3, 5, 2],
+  ["TORUS", "고리", "UTILITY", 3, 3, 0.7],
+  ["SLAB", "평판", "UTILITY", 5, 4, 0.2],
+  ["BEAM", "보·기둥", "UTILITY", 0.5, 0.5, 4],
+].map(([profile, name, subcategory, width, depth, height]) => ({
+  ...site([`GENERIC_${profile}`, "GENERIC_STRUCTURE", subcategory, name, "크기·위치·색상·회전을 자유롭게 조절하는 범용 도형",
+    "GENERIC_STRUCTURE", profile, width, depth, height, "#91a4b1", "CONCRETE", SITE_OBJECT_GEOMETRY_MODES.AREA]),
+  thumbnailSource: `/assets/object-thumbnails/GENERIC_${profile}.svg`,
+}));
 
 function outdoor([id, subcategoryId, name, description, profile, width, depth, height, color, material, allowedModes, parameters = {}]) {
   return {
@@ -393,6 +413,7 @@ export const OBJECT_LIBRARY_DEFINITIONS = Object.freeze([
   ...BUILDINGS,
   ...INDUSTRIAL_BUILDINGS,
   ...SITE_OBJECTS,
+  ...GENERIC_STRUCTURES,
   ...OUTDOOR_EQUIPMENT,
 ]);
 

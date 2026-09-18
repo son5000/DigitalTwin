@@ -5,6 +5,7 @@ import {
   createFloorDisplayOffsets,
   formatFloorOptionLabel,
   normalizeFloorDisplayGap,
+  resolveFloorSelectionGap,
   resolveFloorOwnerId,
   sortFloorsByLevel,
 } from "../src/features/digitalTwin/editor/model/floorDisplay.js";
@@ -33,6 +34,13 @@ test("0m와 범위를 벗어난 표시 간격을 안전하게 정규화한다", 
   assert.equal(normalizeFloorDisplayGap(""), 0);
   assert.equal(normalizeFloorDisplayGap(-3), 0);
   assert.equal(normalizeFloorDisplayGap(18), 12);
+});
+
+test("층 사이를 이동할 때 사용자가 조정한 표시 간격을 유지한다", () => {
+  assert.equal(resolveFloorSelectionGap({ currentGap: 4.5, previousFloorId: "floor-1", nextFloorId: "floor-2" }), 4.5);
+  assert.equal(resolveFloorSelectionGap({ currentGap: 0, previousFloorId: "floor-1", nextFloorId: "floor-2" }), 0);
+  assert.equal(resolveFloorSelectionGap({ currentGap: 0, previousFloorId: null, nextFloorId: "floor-1" }), 7);
+  assert.equal(resolveFloorSelectionGap({ currentGap: 4.5, previousFloorId: "floor-1", nextFloorId: null }), 0);
 });
 
 test("여러 층을 연결하는 구조물은 안정적인 시작 층 그룹을 소유한다", () => {

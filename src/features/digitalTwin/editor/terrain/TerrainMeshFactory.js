@@ -8,7 +8,11 @@ import {
   sampleTerrainElevation,
   TERRAIN_MATERIALS,
 } from "./TerrainModel";
-import { isPointInsideExcavation } from "../model/undergroundModel";
+import { updateTerrainPaint } from "./TerrainPaintGeometry";
+import { getTerrainGradientRatio } from "./terrainCellColors";
+
+import { clipTerrainSurface, createTerrainCutSkirt, getFootprintTriangles, clipToFootprint } from "./TerrainShapeGeometry";
+import { clipTerrainPolygon, clipExcavationPolygon } from "./TerrainFootprint";
 
 const HEIGHT_LOW = new THREE.Color("#315c82");
 const HEIGHT_MID = new THREE.Color("#7b9665");
@@ -39,7 +43,9 @@ function getVertexColor(terrain, features, x, z, elevation, range) {
   }
   const base = TERRAIN_MATERIALS[terrain.material] ?? TERRAIN_MATERIALS.CONCRETE;
   const resolved = materialAtPoint(terrain, features, x, z);
-  const color = new THREE.Color(base.color).lerp(new THREE.Color(resolved.material.color), resolved.blend);
+  const color = new THREE.Color(terrain.color ?? base.color);
+  if (terrain.colorGradient) color.lerp(new THREE.Color(terrain.colorGradient.endColor), getTerrainGradientRatio(terrain.colorGradient, x, z));
+  if (!terrain.colorGradient) color.lerp(new THREE.Color(resolved.material.color), resolved.blend);
   if (terrain.showContours && Math.abs((elevation / 0.5) - Math.round(elevation / 0.5)) < 0.08) color.multiplyScalar(0.72);
   return color;
 }
@@ -73,8 +79,6 @@ function createSurfaceGeometry(terrain, features, excavations = []) {
   }
   for (let row = 0; row < terrain.rows - 1; row += 1) {
     for (let column = 0; column < terrain.columns - 1; column += 1) {
-      const center = getTerrainVertexPosition(terrain, column + 0.5, row + 0.5);
-      if (excavations.some((excavation) => isPointInsideExcavation(center.x, center.z, excavation))) continue;
       const topLeft = row * terrain.columns + column;
       const topRight = topLeft + 1;
       const bottomLeft = topLeft + terrain.columns;
@@ -91,10 +95,11 @@ function createSurfaceGeometry(terrain, features, excavations = []) {
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
   geometry.userData.terrainTopology = `${terrain.columns}:${terrain.rows}:${terrain.width}:${terrain.depth}:${getExcavationSignature(excavations)}`;
-  return geometry;
+  return clipTerrainSurface(geometry, terrain, excavations);
 }
 
 function updateSurfaceGeometry(geometry, terrain, features, excavations = []) {
+  if (geometry.userData.clippedTerrain || terrain.shape === "CIRCLE" || terrain.removedAreas?.length) return false;
   const expectedTopology = `${terrain.columns}:${terrain.rows}:${terrain.width}:${terrain.depth}:${getExcavationSignature(excavations)}`;
   if (geometry.userData.terrainTopology !== expectedTopology) return false;
   const positions = geometry.attributes.position;
@@ -173,6 +178,7 @@ function createBoundarySkirtGeometry(terrain, features) {
 
 export function createTerrainMesh(environment, terrainFeatures = [], excavations = []) {
   const terrain = normalizeTerrainModel(environment?.terrain, environment?.width, environment?.depth, environment?.groundMaterial);
+  terrain.footprintRegions = environment?.footprintRegions;
   const baseMaterial = TERRAIN_MATERIALS[terrain.material] ?? TERRAIN_MATERIALS.CONCRETE;
   const mesh = new THREE.Mesh(
     createSurfaceGeometry(terrain, terrainFeatures, excavations),
@@ -187,31 +193,34 @@ export function createTerrainMesh(environment, terrainFeatures = [], excavations
   mesh.name = "편집 지형";
   mesh.receiveShadow = true;
   const skirt = new THREE.Mesh(
-    createBoundarySkirtGeometry(terrain, terrainFeatures),
-    new THREE.MeshStandardMaterial({ color: baseMaterial.color, roughness: 1, metalness: 0 }),
+    mesh.geometry.userData.clippedTerrain ? createTerrainCutSkirt(mesh.geometry, Math.min(-0.35, getTerrainElevationRange(terrain, terrainFeatures).min - 0.35)) : createBoundarySkirtGeometry(terrain, terrainFeatures),
+    new THREE.MeshStandardMaterial({ color: terrain.color ?? baseMaterial.color, roughness: 1, metalness: 0, side: THREE.DoubleSide }),
   );
   skirt.name = "지형 경계 마감";
   skirt.userData.terrainSkirt = true;
   mesh.add(skirt);
   mesh.add(createExcavationGroup(terrain, terrainFeatures, excavations, skirt.material));
+  updateTerrainPaint(mesh, terrain, excavations);
   mesh.userData.terrainRevision = terrain.revision;
   return mesh;
 }
 
 export function updateTerrainMesh(mesh, environment, terrainFeatures = [], excavations = []) {
   const terrain = normalizeTerrainModel(environment?.terrain, environment?.width, environment?.depth, environment?.groundMaterial);
+  terrain.footprintRegions = environment?.footprintRegions;
   if (!updateSurfaceGeometry(mesh.geometry, terrain, terrainFeatures, excavations)) {
     const nextGeometry = createSurfaceGeometry(terrain, terrainFeatures, excavations);
     mesh.geometry.dispose();
     mesh.geometry = nextGeometry;
   }
+  terrain.footprintRegions = environment?.footprintRegions;
   const baseMaterial = TERRAIN_MATERIALS[terrain.material] ?? TERRAIN_MATERIALS.CONCRETE;
   mesh.material.roughness = baseMaterial.roughness;
   const currentSkirt = mesh.children.find((child) => child.userData.terrainSkirt);
   if (currentSkirt) {
     currentSkirt.geometry.dispose();
-    currentSkirt.geometry = createBoundarySkirtGeometry(terrain, terrainFeatures);
-    currentSkirt.material.color.set(baseMaterial.color);
+    currentSkirt.geometry = mesh.geometry.userData.clippedTerrain ? createTerrainCutSkirt(mesh.geometry, Math.min(-0.35, getTerrainElevationRange(terrain, terrainFeatures).min - 0.35)) : createBoundarySkirtGeometry(terrain, terrainFeatures);
+    currentSkirt.material.color.set(terrain.color ?? baseMaterial.color);
   }
   const currentExcavations = mesh.children.find((child) => child.userData.terrainExcavations);
   if (currentExcavations) {
@@ -222,6 +231,7 @@ export function updateTerrainMesh(mesh, environment, terrainFeatures = [], excav
     mesh.remove(currentExcavations);
   }
   mesh.add(createExcavationGroup(terrain, terrainFeatures, excavations, currentSkirt?.material ?? mesh.material));
+  updateTerrainPaint(mesh, terrain, excavations);
   mesh.userData.terrainRevision = terrain.revision;
   return terrain;
 }
@@ -231,8 +241,9 @@ export function syncTerrainPicker(picker, terrainMesh) {
   picker.position.set(0, 0.004, 0);
 }
 
-export function createTerrainGrid(environment, terrainFeatures, cellSize, colors) {
+export function createTerrainGrid(environment, terrainFeatures, cellSize, colors, excavations = []) {
   const terrain = normalizeTerrainModel(environment?.terrain, environment?.width, environment?.depth, environment?.groundMaterial);
+  const footprintTriangles = getFootprintTriangles(environment?.footprintRegions);
   const group = new THREE.Group();
   group.name = "SiteGrid";
   const halfWidth = terrain.width / 2;
@@ -248,11 +259,15 @@ export function createTerrainGrid(environment, terrainFeatures, cellSize, colors
     for (let index = 0; index < count; index += 1) {
       const t0 = index / count;
       const t1 = (index + 1) / count;
-      [t0, t1].forEach((t) => {
-        const x = start.x + (end.x - start.x) * t;
-        const z = start.z + (end.z - start.z) * t;
-        target.push(new THREE.Vector3(x, sampleTerrainElevation(terrain, x, z, terrainFeatures) + 0.018, z));
-      });
+      const points = [t0, t1].map((t) => ({ x: start.x + (end.x - start.x) * t, z: start.z + (end.z - start.z) * t }));
+      const parts = clipTerrainPolygon([points[0], points[1], points[1]], terrain)
+        .flatMap((part) => clipToFootprint(part, footprintTriangles))
+        .flatMap((part) => clipExcavationPolygon(part, excavations));
+      for (const part of parts) {
+        const a = part[0], b = part.find((p) => Math.hypot(p.x - a.x, p.z - a.z) > 1e-8);
+        if (!b) continue;
+        for (const p of [a, b]) target.push(new THREE.Vector3(p.x, sampleTerrainElevation(terrain, p.x, p.z, terrainFeatures) + 0.018, p.z));
+      }
     }
   };
   for (let x = Math.ceil(-halfWidth / step) * step; x <= halfWidth + 1e-6; x += step) {
@@ -268,7 +283,7 @@ export function createTerrainGrid(environment, terrainFeatures, cellSize, colors
   const boundary = [
     [-halfWidth, -halfDepth], [halfWidth, -halfDepth], [halfWidth, halfDepth], [-halfWidth, halfDepth], [-halfWidth, -halfDepth],
   ].map(([x, z]) => new THREE.Vector3(x, sampleTerrainElevation(terrain, x, z, terrainFeatures) + 0.025, z));
-  group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(boundary), new THREE.LineBasicMaterial({ color: colors.edge })));
+  if (terrain.shape !== "CIRCLE" && !terrain.removedAreas?.length && !environment?.footprintRegions?.length) group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(boundary), new THREE.LineBasicMaterial({ color: colors.edge })));
   return group;
 }
 

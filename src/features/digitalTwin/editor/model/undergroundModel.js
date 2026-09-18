@@ -16,6 +16,13 @@ export function normalizeGroundViewMode(value) {
   return Object.values(GROUND_VIEW_MODES).includes(value) ? value : GROUND_VIEW_MODES.VISIBLE;
 }
 
+export function getUndergroundGroundOpacity(polarAngle, cameraY, surfaceY = 0) {
+  const angleFade = Math.min(1, Math.max(0, (polarAngle - Math.PI / 2) / (Math.PI / 12)));
+  const depthFade = Math.min(1, Math.max(0, (surfaceY - cameraY) / 3));
+  const fade = Math.max(angleFade, depthFade);
+  return 1 - fade * fade * (3 - 2 * fade);
+}
+
 export function getGroundViewPresentation(value, translucentOpacity = 0.28) {
   const mode = normalizeGroundViewMode(value);
   const translucent = mode === GROUND_VIEW_MODES.TRANSLUCENT;
@@ -45,6 +52,43 @@ export function formatFloorLevel(level) {
 
 export function isUndergroundSiteObject(object) {
   return UNDERGROUND_ASSET_KINDS.has(object?.assetKind);
+}
+
+export function getUndergroundAutoRotation(object) {
+  if (!isUndergroundSiteObject(object) || !object.undergroundConnection) return 0;
+  const { startPoint: start, endPoint: end } = object.undergroundConnection;
+  const dx = finite(end?.x, object.position?.x) - finite(start?.x, object.position?.x);
+  const dz = finite(end?.z, object.position?.z) - finite(start?.z, object.position?.z);
+  return Math.hypot(dx, dz) > 1e-8 ? Math.atan2(-dx, -dz) : 0;
+}
+
+// The model is centered on object.position; connection endpoints supply its
+// base heading and scale. Stored rotation is an additional user rotation.
+export function getUndergroundObjectTransform(object) {
+  const connection = isUndergroundSiteObject(object) ? object.undergroundConnection : null;
+  const start = connection?.startPoint, end = connection?.endPoint;
+  const length = connection ? Math.hypot(finite(end?.x) - finite(start?.x), finite(end?.z) - finite(start?.z)) : 0;
+  const depth = connection ? Math.abs(finite(end?.y) - finite(start?.y)) : 0;
+  return {
+    rotationY: getUndergroundAutoRotation(object) + finite(object.rotation?.y),
+    scaleZ: Math.max(1, length / Math.max(0.1, finite(object.dimensions?.depth, 1))),
+    scaleY: Math.max(1, depth / Math.max(0.1, finite(object.dimensions?.height, 1))),
+  };
+}
+
+export function updateUndergroundConnection(object, changes) {
+  const connection = object.undergroundConnection;
+  if (!connection) return changes.undergroundConnection ?? null;
+  const patch = changes.undergroundConnection ?? {};
+  const movePoint = (point) => Object.fromEntries(["x", "y", "z"].map((axis) => [axis,
+    finite(point?.[axis]) + finite(changes.position?.[axis], finite(object.position?.[axis])) - finite(object.position?.[axis]),
+  ]));
+  return {
+    ...connection,
+    ...patch,
+    startPoint: { ...movePoint(connection.startPoint), ...patch.startPoint },
+    endPoint: { ...movePoint(connection.endPoint), ...patch.endPoint },
+  };
 }
 
 export function createUndergroundConnection(object, buildings = [], floors = []) {
@@ -102,24 +146,30 @@ export function collectTerrainExcavations(buildings = [], floors = [], siteObjec
     if (!connection) return;
     const start = connection.startPoint;
     const end = connection.endPoint;
+    const transform = getUndergroundObjectTransform(object);
     excavations.push({
       id: `OBJECT_EXCAVATION_${object.id}`,
-      center: { x: (finite(start?.x) + finite(end?.x)) / 2, z: (finite(start?.z) + finite(end?.z)) / 2 },
+      center: { x: finite(object.position?.x), z: finite(object.position?.z) },
       width: Math.max(0.8, finite(connection.openingWidth, object.dimensions?.width)),
-      depth: Math.max(1, finite(connection.openingLength, Math.hypot(finite(end?.x) - finite(start?.x), finite(end?.z) - finite(start?.z)))),
+      depth: Math.max(1, finite(connection.openingLength, object.dimensions?.depth)) * transform.scaleZ,
       bottom: Math.min(finite(start?.y), finite(end?.y)),
-      rotationY: finite(object.rotation?.y),
+      rotationY: transform.rotationY,
     });
   });
   return excavations;
 }
 
-export function isPointInsideExcavation(x, z, excavation, padding = 0) {
+export function getExcavationLocalPoint(x, z, excavation) {
   const dx = x - finite(excavation?.center?.x);
   const dz = z - finite(excavation?.center?.z);
-  const angle = -finite(excavation?.rotationY);
+  const angle = finite(excavation?.rotationY);
   const localX = dx * Math.cos(angle) - dz * Math.sin(angle);
   const localZ = dx * Math.sin(angle) + dz * Math.cos(angle);
-  return Math.abs(localX) < Math.max(0, finite(excavation?.width) / 2 - padding)
-    && Math.abs(localZ) < Math.max(0, finite(excavation?.depth) / 2 - padding);
+  return { x: localX, z: localZ };
+}
+
+export function isPointInsideExcavation(x, z, excavation, padding = 0) {
+  const local = getExcavationLocalPoint(x, z, excavation);
+  return Math.abs(local.x) < Math.max(0, finite(excavation?.width) / 2 - padding)
+    && Math.abs(local.z) < Math.max(0, finite(excavation?.depth) / 2 - padding);
 }

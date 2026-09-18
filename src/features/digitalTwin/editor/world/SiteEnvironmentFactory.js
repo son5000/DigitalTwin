@@ -1,4 +1,6 @@
 import * as THREE from "three";
+import { addGenericStructure } from "./GenericStructureFactory";
+import { getUndergroundObjectTransform } from "../model/undergroundModel";
 
 import { createCustomEquipmentGroup } from "@/features/customAssets/equipment/customEquipmentRenderer";
 import { getRuntimeCustomAsset } from "@/features/customAssets/core/customAssetRegistry";
@@ -13,6 +15,8 @@ import {
   sliceGradedSamples,
 } from "@/features/digitalTwin/editor/terrain/GradedRoadFactory";
 import { VERTICAL_PATH_MODES } from "@/features/digitalTwin/editor/terrain/VerticalPathModel";
+import { createBoundaryWallGeometry } from "@/features/digitalTwin/editor/terrain/BoundaryWallFactory";
+import { projectGeometryOnTerrain } from "@/features/digitalTwin/editor/terrain/TerrainSurfaceProjection";
 import { createPresetMaterial } from "@/features/digitalTwin/editor/three/presetMaterial";
 
 function materialFor(object, selected) {
@@ -1023,29 +1027,31 @@ function addDirectionArrow(group, x, z, direction, color, y) {
   group.add(arrow);
 }
 
-function addGradedRibbon(group, samples, width, offset, material, elevationOffset) {
+function addGradedRibbon(group, samples, width, offset, material, elevationOffset, terrainProjection = null) {
   if (samples.length < 2) return null;
   const mesh = new THREE.Mesh(createGradedStripGeometry(samples, {
     width,
     offset,
     elevationOffset,
+    terrainProjection,
   }), material);
   mesh.renderOrder = 3;
   group.add(mesh);
   return mesh;
 }
 
-function addGradedDashedRibbon(group, samples, width, offset, material, elevationOffset) {
+function addGradedDashedRibbon(group, samples, width, offset, material, elevationOffset, terrainProjection = null) {
   const dashLength = 2.1;
   const gap = 2.6;
   const length = samples.at(-1)?.segmentDistance ?? 0;
   for (let start = 0; start < length; start += dashLength + gap) {
-    addGradedRibbon(group, sliceGradedSamples(samples, start, Math.min(length, start + dashLength)), width, offset, material, elevationOffset);
+    addGradedRibbon(group, sliceGradedSamples(samples, start, Math.min(length, start + dashLength)), width, offset, material, elevationOffset, terrainProjection);
   }
 }
 
 function addGradedRoadPath(group, object, material, pathRenderContext) {
   const verticalPath = pathRenderContext.verticalPath;
+  const terrainProjection = verticalPath.terrainProjection;
   const roadWidth = Math.max(2.4, object.path?.width ?? object.dimensions.depth);
   const laneCount = Math.min(8, Math.max(1, Math.round(object.parameters?.laneCount ?? 2)));
   const direction = object.parameters?.trafficDirection ?? "TWO_WAY";
@@ -1058,6 +1064,7 @@ function addGradedRoadPath(group, object, material, pathRenderContext) {
   verticalPath.segments.forEach((segment) => {
     const surface = new THREE.Mesh(createGradedStripGeometry(segment.samples, {
       width: roadWidth,
+      terrainProjection,
       thickness: object.dimensions.height,
       elevationOffset: object.dimensions.height,
     }), material);
@@ -1068,18 +1075,18 @@ function addGradedRoadPath(group, object, material, pathRenderContext) {
     const edgeOffset = Math.max(0, roadWidth / 2 - 0.14);
     ranges.forEach((range) => {
       const samples = sliceGradedSamples(segment.samples, range.start, range.end);
-      [-edgeOffset, edgeOffset].forEach((offset) => addGradedRibbon(group, samples, 0.1, offset, edgeMaterial, markingOffset));
+      [-edgeOffset, edgeOffset].forEach((offset) => addGradedRibbon(group, samples, 0.1, offset, edgeMaterial, markingOffset, terrainProjection));
       for (let boundary = 1; boundary < laneCount; boundary += 1) {
         const offset = -roadWidth / 2 + laneWidth * boundary;
         const centerLine = direction === "TWO_WAY" && laneCount > 1 && boundary === Math.ceil(laneCount / 2);
         if (centerLine) {
           const offsets = centerLineStyle.startsWith("DOUBLE") ? [-0.11, 0.11] : [0];
           offsets.forEach((lineOffset) => {
-            if (centerLineStyle.endsWith("DASHED")) addGradedDashedRibbon(group, samples, 0.08, offset + lineOffset, centerMaterial, markingOffset);
-            else addGradedRibbon(group, samples, 0.08, offset + lineOffset, centerMaterial, markingOffset);
+            if (centerLineStyle.endsWith("DASHED")) addGradedDashedRibbon(group, samples, 0.08, offset + lineOffset, centerMaterial, markingOffset, terrainProjection);
+            else addGradedRibbon(group, samples, 0.08, offset + lineOffset, centerMaterial, markingOffset, terrainProjection);
           });
-        } else if (laneStyle === "SOLID") addGradedRibbon(group, samples, 0.09, offset, laneMaterial, markingOffset);
-        else addGradedDashedRibbon(group, samples, 0.09, offset, laneMaterial, markingOffset);
+        } else if (laneStyle === "SOLID") addGradedRibbon(group, samples, 0.09, offset, laneMaterial, markingOffset, terrainProjection);
+        else addGradedDashedRibbon(group, samples, 0.09, offset, laneMaterial, markingOffset, terrainProjection);
       }
     });
   });
@@ -1161,6 +1168,7 @@ function addRoadPath(group, object, material, pathRenderContext = null) {
 
 function addGradedWalkwayPath(group, object, material, pathRenderContext) {
   const verticalPath = pathRenderContext.verticalPath;
+  const terrainProjection = verticalPath.terrainProjection;
   const pathWidth = Math.max(1, object.path?.width ?? object.dimensions.depth);
   const curbWidth = Math.min(pathWidth * 0.18, Math.max(0.08, Number(object.parameters?.curbWidth) || 0.18));
   const curbHeight = Math.max(0.04, Number(object.parameters?.curbHeight) || 0.14);
@@ -1169,6 +1177,7 @@ function addGradedWalkwayPath(group, object, material, pathRenderContext) {
   verticalPath.segments.forEach((segment) => {
     const surface = new THREE.Mesh(createGradedStripGeometry(segment.samples, {
       width: pathWidth,
+      terrainProjection,
       thickness: object.dimensions.height,
       elevationOffset: object.dimensions.height,
     }), material);
@@ -1183,6 +1192,7 @@ function addGradedWalkwayPath(group, object, material, pathRenderContext) {
         side * (pathWidth / 2 - curbWidth / 2),
         curbMaterial,
         object.dimensions.height + curbHeight,
+        terrainProjection,
       ));
       if (object.parameters?.tactileEnabled !== false) addGradedRibbon(
         group,
@@ -1191,6 +1201,7 @@ function addGradedWalkwayPath(group, object, material, pathRenderContext) {
         0,
         tactileMaterial,
         object.dimensions.height + 0.014,
+        terrainProjection,
       );
     });
   });
@@ -1513,11 +1524,11 @@ function addWalkwayJunctionTactile(group, junction) {
   addPolylineStripe(group, points, 0, Math.min(0.32, junction.width * 0.18), material, 0.02);
 }
 
-export function createSitePathConnectionObject(junction, { preview = false } = {}) {
+export function createSitePathConnectionObject(junction, { preview = false, terrainProjection = null } = {}) {
   const group = new THREE.Group();
   group.name = `${junction.profile} 자동 연결부`;
   group.userData.sitePathConnectionId = junction.id;
-  group.userData.geometrySignature = JSON.stringify({ junction, preview });
+  group.userData.geometrySignature = JSON.stringify({ junction, preview, terrainProjection });
   const connectionColor = averageConnectionColor(junction.approaches);
   const shape = createJunctionShape(junction);
   if (!shape) return group;
@@ -1551,6 +1562,16 @@ export function createSitePathConnectionObject(junction, { preview = false } = {
   } else {
     addWalkwayJunctionCurbs(group, junction);
     addWalkwayJunctionTactile(group, junction);
+  }
+  if (terrainProjection) {
+    group.children.filter((child) => child.isMesh).forEach((child) => {
+      child.updateMatrix();
+      child.geometry.applyMatrix4(child.matrix);
+      projectGeometryOnTerrain(child.geometry, terrainProjection);
+      child.position.set(0, 0, 0);
+      child.rotation.set(0, 0, 0);
+      child.scale.set(1, 1, 1);
+    });
   }
   group.position.set(junction.center.x, junction.center.y, junction.center.z);
 
@@ -1597,13 +1618,20 @@ export function createSiteEnvironmentObject(object, {
   const customAsset = object.customAssetId ? getRuntimeCustomAsset(object.customAssetId) ?? object.customAssetSnapshot : null;
 
   const generators = {
+    GENERIC_STRUCTURE: () => addGenericStructure(group, object, material, resolvedEdge),
     BUILDING: () => addEnvironmentBuilding(group, object, material, resolvedEdge),
     VEHICLE: () => addVehicle(group, object, material, resolvedEdge),
     PERSON: () => addPerson(group, object, material),
     UNDERGROUND_ACCESS: () => addUndergroundObject(group, object, material, resolvedEdge),
     UNDERGROUND_PATH: () => addUndergroundObject(group, object, material, resolvedEdge),
     TRAFFIC: () => addTrafficObject(group, object, material),
-    FENCE: () => addFence(group, object, material),
+    FENCE: () => {
+      if (object.profile !== "BOUNDARY_WALL") return addFence(group, object, material);
+      const wall = new THREE.Mesh(createBoundaryWallGeometry(object, pathRenderContext?.verticalPath), material);
+      wall.castShadow = true;
+      wall.receiveShadow = true;
+      group.add(wall);
+    },
     VEGETATION: () => addTreeCluster(group, object, material),
     LANDSCAPE: () => addLandscape(group, object, material, resolvedEdge),
     INDUSTRIAL: () => addIndustrialEquipment(group, object, material, resolvedEdge),
@@ -1647,15 +1675,10 @@ export function createSiteEnvironmentObject(object, {
   group.position.set(object.position.x, object.position.y, object.position.z);
   group.rotation.set(object.rotation.x, object.rotation.y, object.rotation.z);
   if (object.undergroundConnection && ["UNDERGROUND_ACCESS", "UNDERGROUND_PATH"].includes(object.assetKind)) {
-    const start = object.undergroundConnection.startPoint;
-    const end = object.undergroundConnection.endPoint;
-    const dx = (end?.x ?? object.position.x) - (start?.x ?? object.position.x);
-    const dz = (end?.z ?? object.position.z) - (start?.z ?? object.position.z);
-    const horizontalLength = Math.hypot(dx, dz);
-    const verticalDepth = Math.abs((end?.y ?? 0) - (start?.y ?? 0));
-    group.rotation.y = Math.atan2(-dx, -dz) + (object.rotation.y ?? 0);
-    group.scale.z = Math.max(1, horizontalLength / Math.max(0.1, object.dimensions.depth));
-    group.scale.y = Math.max(1, verticalDepth / Math.max(0.1, object.dimensions.height));
+    const transform = getUndergroundObjectTransform(object);
+    group.rotation.y = transform.rotationY;
+    group.scale.z = transform.scaleZ;
+    group.scale.y = transform.scaleY;
   }
   group.visible = object.visible;
   group.userData.geometrySignature = getSiteObjectSignature(object, selected, theme, pathRenderContext, enableLod);
