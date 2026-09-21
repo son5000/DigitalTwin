@@ -8,12 +8,13 @@
   max-height: calc(100% - (var(--editor-overlay-gap, 12px) * 2));
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 5px;
-  border: 1px solid var(--color-border-strong);
+  gap: 5px;
+  padding: 6px 5px;
+  border: 1px solid var(--color-border);
   border-radius: var(--editor-overlay-radius, 8px);
   background: var(--color-surface-overlay);
-  box-shadow: var(--shadow-panel);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 14%);
+  backdrop-filter: blur(16px) saturate(1.15);
   transform: none;
 }
 
@@ -30,9 +31,9 @@
 .overflow > summary {
   position: relative;
   display: grid;
-  width: 40px;
-  height: 40px;
-  flex: 0 0 40px;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
   place-items: center;
   padding: 0;
   border: 1px solid transparent;
@@ -57,7 +58,7 @@
   border-color: var(--state-selected-border);
   color: var(--color-accent-strong);
   background: var(--state-selected);
-  box-shadow: inset 2px 0 var(--color-accent), inset 0 0 0 1px var(--state-selected-border);
+  box-shadow: inset 3px 0 var(--color-accent), inset 0 0 0 1px var(--state-selected-border);
 }
 
 .button:disabled {
@@ -140,6 +141,11 @@
   grid-template-columns: 24px auto;
   gap: 6px;
   padding: 0 10px;
+}
+
+.button:active:not(:disabled),
+.snapToggle:active {
+  transform: scale(.96);
 }
 
 .divider {
@@ -352,7 +358,7 @@
   left: calc(100% + 12px);
   z-index: 10;
   width: max-content;
-  max-width: 190px;
+  max-width: 240px;
   padding: 6px 8px;
   border: 1px solid var(--color-border-strong);
   border-radius: 5px;
@@ -367,6 +373,7 @@
   letter-spacing: 0;
   pointer-events: none;
   opacity: 0;
+  transition-delay: 320ms;
   transform: translate(4px, -50%);
   transition: opacity 120ms ease, transform 120ms ease;
   white-space: nowrap;
@@ -379,6 +386,7 @@
 .snapSize:hover::after,
 .overflow:not([open]) > summary:hover::after {
   opacity: 1;
+  transition-delay: 0ms;
   transform: translate(0, -50%);
 }
 

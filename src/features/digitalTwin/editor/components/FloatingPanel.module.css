@@ -8,12 +8,12 @@
   min-height: 0;
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--color-border);
   border-radius: var(--editor-overlay-radius, 8px);
   color: var(--editor-panel-text-body);
   background: var(--editor-panel-bg);
-  box-shadow: var(--shadow-popover);
-  backdrop-filter: blur(14px);
+  box-shadow: 0 14px 36px rgb(0 0 0 / 24%), 0 0 0 1px rgb(255 255 255 / 2%);
+  backdrop-filter: blur(18px) saturate(1.1);
   animation: panelEnter 180ms ease-out both;
 }
 
@@ -44,10 +44,10 @@
   justify-content: space-between;
   gap: 12px;
   border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface);
+  background: var(--color-surface-raised);
 }
 
-.header h2 { overflow: hidden; color: var(--color-heading); font-size: var(--editor-font-size-md); font-weight: var(--editor-font-weight-semibold); text-overflow: ellipsis; white-space: nowrap; }
+.header h2 { overflow: hidden; color: var(--color-heading); font-size: var(--editor-font-size-md); font-weight: var(--editor-font-weight-semibold); letter-spacing: -.01em; text-overflow: ellipsis; white-space: nowrap; }
 .header button { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; border: 1px solid transparent; border-radius: 6px; color: var(--color-text-muted); background: transparent; }
 .header button:hover { border-color: var(--color-border); color: var(--color-heading); background: var(--state-hover); }
 .content { min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-color: var(--color-scrollbar) transparent; scrollbar-width: thin; }

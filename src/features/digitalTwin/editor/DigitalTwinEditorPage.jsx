@@ -1091,7 +1091,10 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     return (
       <main className={styles.editor}>
         <header className={styles.header}>
-          <div className={styles.brandMark} aria-hidden="true"><WorldIcon size={24} /></div>
+          <div className={styles.brandIdentity} aria-label="Check Guard Digital Twin Spatial Editor">
+            <div className={styles.brandMark} aria-hidden="true"><WorldIcon size={24} /></div>
+            <div className={styles.brandCopy}><strong>Digital Twin</strong><span>Spatial Editor</span></div>
+          </div>
           <div className={styles.headerMeta}><span>{showObservationScopeSelector ? "관측 범위 확장" : "새 관측 프로젝트"}</span></div>
           <button type="button" className={styles.themeToggle} onClick={toggleTheme} aria-label={`${theme === EDITOR_THEMES.DARK ? "라이트" : "다크"} 테마로 전환`}>
             <span aria-hidden="true">{theme === EDITOR_THEMES.DARK ? <MoonIcon size={19} /> : <SunIcon size={19} />}</span>
@@ -1110,7 +1113,10 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
   return (
     <main className={styles.editor}>
       <header className={styles.header}>
-        <div className={styles.brandMark} aria-hidden="true"><WorldIcon size={24} /></div>
+        <div className={styles.brandIdentity} aria-label="Check Guard Digital Twin Spatial Editor">
+          <div className={styles.brandMark} aria-hidden="true"><WorldIcon size={24} /></div>
+          <div className={styles.brandCopy}><strong>Digital Twin</strong><span>Spatial Editor</span></div>
+        </div>
         <div className={styles.headerMeta}><span>{stageContext}</span></div>
         <button
           type="button"

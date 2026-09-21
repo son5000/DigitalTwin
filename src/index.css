@@ -16,6 +16,12 @@
   --editor-font-weight-medium: 500;
   --editor-font-weight-semibold: 600;
   --editor-line-height: 1.5;
+  --editor-space-1: 4px;
+  --editor-space-2: 8px;
+  --editor-space-3: 12px;
+  --editor-space-4: 16px;
+  --editor-control-height: 36px;
+  --editor-touch-target: 44px;
   --editor-panel-bg: #18212c;
   --editor-panel-bg-elevated: #202b38;
   --editor-panel-bg-input: #141c26;
@@ -91,6 +97,8 @@
   --shadow-focus: 0 0 0 3px rgb(var(--color-primary-rgb) / 22%);
   --radius-small: 4px;
   --radius-medium: 7px;
+  --transition-fast: 120ms ease;
+  --transition-ui: 180ms ease;
   color: var(--color-text);
   background: var(--color-background);
 }
@@ -224,6 +232,11 @@ textarea:disabled {
   opacity: var(--state-disabled-opacity);
 }
 
+button:not(:disabled) {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
 input[type="number"],
 output,
 dd {
@@ -233,4 +246,14 @@ dd {
 #root {
   min-height: 100vh;
   min-height: 100dvh;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
 }

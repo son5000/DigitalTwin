@@ -6,14 +6,14 @@
   --scene-status-inline-size: 92px;
   --view-toggle-inline-size: 83px;
   --floor-view-toggle-offset: 0px;
-  --editor-overlay-toolbar-width: 50px;
-  --editor-overlay-left-safe: 74px;
-  --editor-overlay-top-secondary: 62px;
-  --editor-overlay-viewport-top: 72px;
-  --editor-overlay-panel-width: clamp(300px, 23vw, 360px);
+  --editor-overlay-toolbar-width: 54px;
+  --editor-overlay-left-safe: 78px;
+  --editor-overlay-top-secondary: 60px;
+  --editor-overlay-viewport-top: 64px;
+  --editor-overlay-panel-width: clamp(320px, 24vw, 380px);
 
   display: grid;
-  grid-template-rows: 72px minmax(0, 1fr);
+  grid-template-rows: 64px minmax(0, 1fr);
   width: 100%;
   min-width: 0;
   min-height: 100vh;
@@ -160,19 +160,26 @@
   z-index: 6;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   min-width: 0;
-  padding: 0 16px;
+  padding: 0 14px;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
-  box-shadow: var(--shadow-panel);
+  box-shadow: 0 1px 0 rgb(0 0 0 / 8%);
+}
+
+.brandIdentity {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 9px;
 }
 
 .brandMark {
   display: grid;
   flex: 0 0 auto;
-  width: 42px;
-  height: 42px;
+  width: 38px;
+  height: 38px;
   place-items: center;
   border: 1px solid rgb(var(--color-accent-rgb) / 52%);
   border-radius: 5px;
@@ -183,6 +190,10 @@
   background: rgb(var(--color-accent-rgb) / 12%);
 }
 
+.brandCopy { display: grid; gap: 1px; line-height: 1; }
+.brandCopy strong { color: var(--color-heading); font-size: 13px; font-weight: var(--font-weight-semibold); letter-spacing: .01em; }
+.brandCopy span { color: var(--color-text-faint); font-size: 10px; font-weight: var(--font-weight-medium); letter-spacing: .08em; text-transform: uppercase; }
+
 .headerMeta {
   display: flex;
   align-items: center;
@@ -191,7 +202,7 @@
   color: var(--color-text-subtle);
 
   font-size: 12px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.02em;
   white-space: nowrap;
 }
 
@@ -200,8 +211,8 @@
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   margin-left: auto;
   padding: 0;
   border: 1px solid var(--color-border);
@@ -296,17 +307,18 @@
   padding: 3px;
   align-items: center;
   gap: 4px;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--color-border);
   border-radius: var(--editor-overlay-radius);
   background: var(--color-surface-overlay);
   box-shadow: var(--shadow-panel);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(16px) saturate(1.15);
 }
 
 .workflowControls label { display: flex; min-width: 0; align-items: center; gap: 6px; padding-left: 6px; color: var(--color-text-muted); font-size: var(--editor-font-size-xs); white-space: nowrap; }
 .workflowControls select { min-width: 140px; max-width: min(220px, 32vw); min-height: var(--editor-overlay-inner-height); padding: 0 26px 0 8px; border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-heading); background: var(--color-input); text-overflow: ellipsis; }
 .workflowControls button { display: inline-flex; min-height: var(--editor-overlay-inner-height); flex: 0 0 auto; padding: 0 10px; align-items: center; justify-content: center; gap: 5px; border: 1px solid transparent; border-radius: 6px; color: var(--color-heading); background: var(--color-input); font-size: var(--editor-font-size-xs); font-weight: var(--editor-font-weight-medium); white-space: nowrap; }
 .workflowControls button:hover:not(:disabled) { border-color: var(--color-border); color: var(--color-accent-strong); background: var(--state-hover); }
+.workflowControls button:focus-visible { position: relative; z-index: 1; }
 .workflowControls button:active:not(:disabled) { background: var(--state-active); }
 .workflowControls button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
 .workflowControls button:disabled { color: var(--color-disabled); background: var(--state-disabled-bg); cursor: not-allowed; }
@@ -321,7 +333,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 0;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid rgb(var(--color-primary-rgb) / 48%);
   border-radius: var(--editor-overlay-radius);
   background: var(--color-surface-overlay);
   box-shadow: var(--shadow-panel);
@@ -340,11 +352,14 @@
   background: var(--color-primary);
   font-size: var(--editor-font-size-xs);
   font-weight: var(--font-weight-semibold);
+  box-shadow: 0 2px 8px rgb(var(--color-primary-rgb) / 20%);
 }
 
 .stageGuide button:hover:not(:disabled) {
   background: var(--color-primary-strong);
 }
+
+.stageGuide button:active:not(:disabled) { transform: translateY(1px); }
 
 .stageGuide button:disabled {
   color: var(--color-disabled);
