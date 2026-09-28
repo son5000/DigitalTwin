@@ -21,6 +21,7 @@ import MonitoringEquipmentPicker from "@/features/digitalTwin/editor/components/
 import MovementTimeline from "@/features/digitalTwin/editor/components/MovementTimeline";
 import ObservationScopeSelector from "@/features/digitalTwin/editor/components/ObservationScopeSelector";
 import ObjectDetailPanel from "@/features/digitalTwin/editor/components/ObjectDetailPanel";
+import PropertySection from "@/features/digitalTwin/editor/components/PropertySection";
 import SiteAuthoringPanel from "@/features/digitalTwin/editor/components/SiteAuthoringPanel";
 import TerrainEditorPanel from "@/features/digitalTwin/editor/components/TerrainEditorPanel";
 import ViewModeToggle from "@/features/digitalTwin/editor/components/ViewModeToggle";
@@ -1012,10 +1013,31 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
         : activeFloatingPanelId === WORLD_PANEL_IDS.OBJECT_LIST
           ? "오브젝트 목록"
           : workspaceMode === WORKSPACE_MODES.PLAN
-            ? editor.selectedFloorPlanStructure?.name ?? "구조 설정"
-            : editor.selectedFloorEquipment?.name ?? "설비 설정"
+            ? "구조 속성"
+            : "설비 속성"
       : "설비 상세";
   const panelOpen = isMonitoringStep ? activeFloatingPanelId === WORLD_PANEL_IDS.DETAILS : (Boolean(activeFloatingPanelId) && (!isCompositionStep || activeFloatingPanelId !== WORLD_PANEL_IDS.DETAILS || hasSiteSelection));
+  const workspaceSelection = isCompositionStep
+    ? editor.selectedSiteObject ?? editor.selectedBuilding
+    : isMonitoringStep ? monitoringEquipment : activeWorkspaceSelection;
+  const panelDescription = activeFloatingPanelId === WORLD_PANEL_IDS.OBJECTS
+    ? "항목을 선택한 뒤 작업 영역에 배치하세요."
+    : activeFloatingPanelId === WORLD_PANEL_IDS.OBJECT_LIST
+      ? "배치된 항목을 선택해 위치와 속성을 확인하세요."
+      : [WORLD_PANEL_IDS.TERRAIN, WORLD_PANEL_IDS.SETTINGS].includes(activeFloatingPanelId)
+        ? "지형 편집과 부지·표시 설정"
+        : isMonitoringStep ? undefined : workspaceSelection?.name ?? "작업 영역에서 항목을 선택하세요.";
+  const interactionLabel = editingFloorTerrain ? "지형 편집"
+    : isCompositionStep ? ({
+      [SITE_INTERACTION_MODES.NAVIGATE]: "선택·탐색",
+      [SITE_INTERACTION_MODES.AREA_SELECT]: "영역 선택",
+      [SITE_INTERACTION_MODES.PLACE_OBJECT]: "오브젝트 배치",
+      [SITE_INTERACTION_MODES.EDIT_TERRAIN]: "지형 편집",
+      [SITE_INTERACTION_MODES.EDIT_MOVEMENT_PATH]: "이동 경로 편집",
+    }[siteInteractionMode] ?? "선택·탐색")
+    : isMonitoringStep ? "관측 설정"
+    : (workspaceMode === WORKSPACE_MODES.PLAN ? editor.activeFloorPlanTemplateId : editor.activeFloorEquipmentTemplateId)
+      ? "오브젝트 배치" : "선택·탐색";
   const targetFloorIds = equipmentTargetFloorIds.filter((id) => buildingFloors.some((floor) => floor.id === id) && id !== selectedFloor?.id);
   const floorNavigator = isFloorWorkspaceStep ? (
     <FloorPlanNavigator
@@ -1130,47 +1152,41 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
       </header>
 
       <div
-        className={`${styles.workspace} ${isMonitoringStep ? styles.monitoringWorkspace : ""}`}
+        className={`${styles.workspace} ${panelOpen ? styles.panelOpen : ""} ${isMonitoringStep ? styles.monitoringWorkspace : ""}`}
         style={{
-          "--editor-overlay-right-safe": panelOpen
-            ? "calc(var(--editor-overlay-panel-width) + (var(--editor-overlay-gap) * 2))"
-            : "var(--editor-overlay-gap)",
-          "--editor-overlay-mobile-bottom-safe": panelOpen
-            ? "calc(40% + 86px)"
-            : "74px",
-          "--scene-status-right": panelOpen
-            ? "calc(var(--editor-overlay-panel-width) + (var(--editor-overlay-gap) * 2))"
-            : "var(--editor-overlay-gap)",
+          "--editor-overlay-right-safe": "var(--editor-overlay-gap)",
+          "--editor-overlay-mobile-bottom-safe": "74px",
+          "--scene-status-right": "var(--editor-overlay-gap)",
           "--floor-view-toggle-offset": isFloorWorkspaceStep
             ? "calc(var(--view-toggle-inline-size) + 8px)"
             : "0px",
         }}
       >
-        <div className={styles.sceneArea} data-scene-area>
-          <div className={styles.topNavigationRow} data-camera-safe-ui>
-            <div className={styles.workspaceNavigation}><WorldWorkspaceNavigation activeViewId={wizardStepId} onViewChange={requestStepChange} steps={activeWizardSteps} /></div>
-            <div className={styles.workflowControls}>
-              {isMonitoringStep ? (
-                <label>
-                  <span>관측 설비</span>
-                  <select
-                    value={monitoringEquipmentId ?? ""}
-                    disabled={editor.allMonitoringEquipment.length === 0}
-                    onChange={(event) => {
-                      handleMonitoringEquipmentSelect(event.target.value || null);
-                    }}
-                  >
-                    <option value="">설비를 선택하세요</option>
-                    {editor.allMonitoringEquipment.map((equipment) => <option key={equipment.id} value={equipment.id}>{equipment.name} · {equipment.locationLabel}</option>)}
-                  </select>
-                </label>
-              ) : null}
-              {isMonitoringStep ? <button type="button" onClick={() => setMonitoringEquipmentPickerOpen(true)}>설비 추가</button> : null}
-              <button type="button" className={styles.expandScopeButton} onClick={() => setShowObservationScopeSelector(true)}>관측 범위 변경</button>
-            </div>
-            <section className={styles.stageGuide} aria-label="현재 화면 작업"><button type="button" disabled={primaryDisabled} title={pendingAssetUploads > 0 ? "3D 파일 저장 중입니다" : primaryDisabled ? "건축물과 층을 먼저 선택하세요" : wizardStep.primaryLabel} onClick={handlePrimaryAction}>{hasNextWizardStep ? <ArrowRightIcon size={16} /> : <SaveIcon size={16} />}<span>{pendingAssetUploads > 0 ? "파일 저장 중…" : hasNextWizardStep ? "다음" : "저장"}</span></button></section>
+        <div className={styles.topNavigationRow} data-camera-safe-ui>
+          <div className={styles.workspaceNavigation}><WorldWorkspaceNavigation activeViewId={wizardStepId} onViewChange={requestStepChange} steps={activeWizardSteps} /></div>
+          <div className={styles.workflowControls}>
+            {isMonitoringStep ? (
+              <label>
+                <span>관측 설비</span>
+                <select
+                  value={monitoringEquipmentId ?? ""}
+                  disabled={editor.allMonitoringEquipment.length === 0}
+                  onChange={(event) => {
+                    handleMonitoringEquipmentSelect(event.target.value || null);
+                  }}
+                >
+                  <option value="">설비를 선택하세요</option>
+                  {editor.allMonitoringEquipment.map((equipment) => <option key={equipment.id} value={equipment.id}>{equipment.name} · {equipment.locationLabel}</option>)}
+                </select>
+              </label>
+            ) : null}
+            {isMonitoringStep ? <button type="button" onClick={() => setMonitoringEquipmentPickerOpen(true)}>설비 추가</button> : null}
+            <button type="button" className={styles.expandScopeButton} onClick={() => setShowObservationScopeSelector(true)}>관측 범위 변경</button>
           </div>
+          <section className={styles.stageGuide} aria-label="현재 화면 작업"><button type="button" disabled={primaryDisabled} title={pendingAssetUploads > 0 ? "3D 파일 저장 중입니다" : primaryDisabled ? "건축물과 층을 먼저 선택하세요" : wizardStep.primaryLabel} onClick={handlePrimaryAction}>{hasNextWizardStep ? <ArrowRightIcon size={16} /> : <SaveIcon size={16} />}<span>{pendingAssetUploads > 0 ? "파일 저장 중…" : hasNextWizardStep ? "다음" : "저장"}</span></button></section>
+        </div>
 
+        <div className={styles.sceneArea} data-scene-area>
           {isFloorWorkspaceStep ? (
             <div className={styles.workspaceControls} data-camera-safe-ui>
               <label className={styles.floorSelectControl}>
@@ -1189,8 +1205,8 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
               </label>
               {workspaceView === WORKSPACE_VIEWS.SPACE_3D ? (
                 <div className={styles.workspaceControlGroup} role="group" aria-label="3D 표시 범위">
-                  <button type="button" className={viewScope === VIEW_SCOPES.FLOOR ? styles.activeControl : ""} onClick={() => setViewScope(VIEW_SCOPES.FLOOR)}>현재 층</button>
-                  <button type="button" className={viewScope === VIEW_SCOPES.BUILDING ? styles.activeControl : ""} onClick={() => setViewScope(VIEW_SCOPES.BUILDING)}>전체 건축물</button>
+                  <button type="button" aria-pressed={viewScope === VIEW_SCOPES.FLOOR} className={viewScope === VIEW_SCOPES.FLOOR ? styles.activeControl : ""} onClick={() => setViewScope(VIEW_SCOPES.FLOOR)}>현재 층</button>
+                  <button type="button" aria-pressed={viewScope === VIEW_SCOPES.BUILDING} className={viewScope === VIEW_SCOPES.BUILDING ? styles.activeControl : ""} onClick={() => setViewScope(VIEW_SCOPES.BUILDING)}>전체 건축물</button>
                 </div>
               ) : null}
               <div className={styles.workspaceControlGroup} role="group" aria-label="층 표시 간격 설정">
@@ -1414,8 +1430,8 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
           ) : null}
         </div>
 
-        <div className={styles.floatingPanelHost}>
-          <FloatingPanel open={panelOpen} title={panelTitle} topAligned contentScrollable={!isMonitoringStep} onClose={handleFloatingPanelClose}>
+        <div className={styles.floatingPanelHost} data-editor-inspector>
+          <FloatingPanel open={panelOpen} title={panelTitle} description={panelDescription} contentKey={`${wizardStepId}:${activeFloatingPanelId}`} docked onClose={handleFloatingPanelClose}>
             {editingFloorTerrain ? (
               <FloorTerrainPanel key={selectedFloor.id} floor={selectedFloor} floors={buildingFloors}
                 areaSelection={terrainAreaSelection} onAreaSelectionChange={setTerrainAreaSelection}
@@ -1426,7 +1442,10 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
               <SiteAuthoringPanel areaSelection={siteAreaSelection} placementPlan={sitePlacementPlan} placementNotice={sitePlacementNotice} activeTemplateId={activeSiteTemplateId} activeVariants={activeSiteVariants} onClearArea={resetSiteInteraction} onConfirmAreaPlacement={() => completeAreaPlacement(activeSiteTemplateId, siteAreaSelection)} onSelectTemplate={handleSiteTemplateSelect} onVariantsChange={setActiveSiteVariants} />
             ) : isCompositionStep && [WORLD_PANEL_IDS.TERRAIN, WORLD_PANEL_IDS.SETTINGS].includes(activeFloatingPanelId) ? (
               <>
+                <PropertySection title="지형 편집" summary="브러시·영역" defaultOpen flush>
                 <TerrainEditorPanel environment={editor.siteEnvironment} brush={terrainBrush} gridCellSize={editor.gridSettings.baseSize} onBrushChange={setTerrainBrush} onEnvironmentChange={handleSiteEnvironmentChange} areaSelection={terrainAreaSelection} onAreaSelectionChange={setTerrainAreaSelection} />
+                </PropertySection>
+                <PropertySection title="부지·환경 설정" summary="크기·배경·표시" flush>
                 <EnvironmentSettingsPanel
                   environment={editor.siteEnvironment}
                   boundaryNotice={editor.siteBoundaryNotice}
@@ -1434,6 +1453,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                   onChange={handleSiteEnvironmentChange}
                   onGroundViewModeChange={setGroundViewMode}
                 />
+                </PropertySection>
               </>
             ) : isCompositionStep && activeFloatingPanelId === WORLD_PANEL_IDS.OBJECT_LIST ? (
               <WorldHierarchyPanel buildings={editor.buildings} siteObjects={editor.siteObjects} selectedBuildingId={editor.selectedBuilding?.id ?? null} selectedSiteObjectId={editor.selectedSiteObjectId} onSelectBuilding={handleSiteBuildingSelect} onSelectSiteObject={handleSiteObjectSelect} />
@@ -1502,6 +1522,14 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
             )}
           </FloatingPanel>
         </div>
+        <footer className={styles.workspaceStatus} aria-label="편집 상태">
+          <span className={styles.interactionStatus}>{interactionLabel}</span>
+          <span className={styles.selectionStatus} role="status" aria-atomic="true">
+            {workspaceSelection ? `선택: ${workspaceSelection.name ?? "오브젝트"}` : editor.selectedSpatialEntity && isFloorWorkspaceStep ? "선택: 공간 요소" : "선택 없음"}
+          </span>
+          <span className={styles.shortcutHint}>Esc 취소·선택 해제{hasTransformSelection ? " · W 이동 · E 회전" : ""}</span>
+          {saveStatus ? <span className={styles.saveFeedback} role="status">{saveStatus}</span> : null}
+        </footer>
       </div>
       {stepTransitionPrompt ? (
         <div className={styles.transitionPromptBackdrop} onMouseDown={(event) => {

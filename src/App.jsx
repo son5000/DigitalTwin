@@ -9,7 +9,6 @@ import { useCustomAssets } from "@/features/customAssets/components/customAssetC
 import CustomWorkshopPage from "@/features/customAssets/components/CustomWorkshopPage";
 import DigitalTwinEditorPage from "@/features/digitalTwin/editor/DigitalTwinEditorPage";
 import LandingPage from "@/features/portal/landing/LandingPage";
-import ObservationPage from "@/features/portal/viewer/ObservationPage";
 import ProjectsPage from "@/features/portal/projects/ProjectsPage";
 import ProjectViewerPage from "@/features/portal/projects/ProjectViewerPage";
 import { getOperationsSection } from "@/features/portal/viewer/operationsNavigation";
@@ -34,7 +33,9 @@ function AppRoute() {
   const operationsSection = getOperationsSection(pathname);
   if (pathname === "/viewer" || pathname === "/viewer/" || operationsSection) {
     const projectId = new URLSearchParams(search).get("project");
-    return projectId ? <ProjectViewerPage key={projectId} projectId={projectId} operationsSection={operationsSection} operationsRecord={location.record} /> : <ObservationPage operationsSection={operationsSection} operationsRecord={location.record} />;
+    return projectId
+      ? <ProjectViewerPage key={projectId} projectId={projectId} operationsSection={operationsSection} operationsRecord={location.record} />
+      : <ProjectsPage />;
   }
   if (pathname === "/custom" || pathname === "/custom/" || pathname === "/custom/buildings" || pathname === "/custom/buildings/" || pathname === "/custom/equipment" || pathname === "/custom/equipment/") return <CustomWorkshopPage />;
   if (pathname === "/custom/buildings/new") return <CustomBuildingEditorPage />;

@@ -1,13 +1,17 @@
 .panel { border-bottom: 1px solid var(--color-border); }
 .areaSummary button { min-height: 38px; padding: 0 10px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-small); color: var(--color-text-muted); background: var(--color-input); }
 .areaSummary button:disabled { cursor: not-allowed; opacity: .55; }
-.areaSummary { display: flex; min-height: 58px; align-items: center; justify-content: space-between; gap: 10px; margin: 0 16px 14px; padding: 10px; border: 1px dashed var(--color-border-strong); border-radius: var(--radius-small); background: var(--color-surface-raised); }
+.areaSummary { display: flex; min-height: 58px; align-items: center; justify-content: space-between; gap: 10px; margin: 8px 12px; padding: 10px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-small); background: var(--color-surface-raised); }
 .areaSummary div { display: grid; gap: 3px; }
 .areaSummary span, .areaSummary p { color: var(--color-text-subtle); font-size: 12px; }
 .areaSummary strong { color: var(--color-heading); font-size: 13px; line-height: 1.2; }
-.areaSummary small { max-width: 170px; color: var(--color-text-faint); font-size: 11px; line-height: 1.4; }
+.areaSummary small { max-width: 170px; color: var(--color-text-faint); font-size: 12px; line-height: 1.4; }
 .areaSummary .placementReady { color: var(--color-positive); }
 .areaSummary .placementBlocked { color: var(--color-danger); }
 .areaSummary .areaActions { flex: 0 0 auto; }
 .areaSummary .confirmPlacement { border-color: var(--color-accent); color: var(--color-accent-contrast); background: var(--color-accent); font-weight: 600; }
-.placementNotice { margin: -6px 16px 12px; padding: 8px 10px; border-radius: var(--radius-small); color: var(--color-text-muted); background: var(--color-surface-raised); font-size: 11px; line-height: 1.4; }
+.placementNotice { margin: 8px 12px; padding: 8px 10px; border-radius: var(--radius-small); color: var(--color-text-muted); background: var(--color-surface-raised); font-size: 12px; line-height: 1.4; }
+
+.areaSummary { flex-wrap: wrap; }
+.areaDetails { min-width: 0; }
+.areaSummary .areaActions { display: flex; flex-wrap: wrap; gap: 6px; }

@@ -5,7 +5,6 @@ export const portalContent = {
   project: "창원 스마트 팩토리",
   customer: "한빛모터스",
   operator: "김",
-  heroImage: "/portal/digital-twin-hero.jpg",
   landingHeroImage: "/portal/digital-twin-hero-light.png",
   sampleTime: "2026. 09. 07 · 14:32:18",
   demoEmail: "dev",

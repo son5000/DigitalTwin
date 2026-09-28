@@ -1,4 +1,5 @@
 import NumericField from "./NumericField";
+import PropertySection from "./PropertySection";
 import {
   DEFAULT_TERRAIN_BRUSH,
   TERRAIN_BRUSH_SHAPES,
@@ -175,7 +176,7 @@ export default function TerrainEditorPanel({ environment, brush = DEFAULT_TERRAI
         </> : null}
       </div>
 
-      <div className={styles.section}>
+      <PropertySection title="부지 모양·표면" summary="색상·재질·해상도">
         <label className={styles.selectField}><span>부지 모양</span>
           <select value={terrain.shape ?? "RECTANGLE"} onChange={(event) => changeTerrain({ shape: event.target.value })}>
             <option value="RECTANGLE">사각형 / 그리드 편집</option><option value="CIRCLE">원형</option>
@@ -204,7 +205,7 @@ export default function TerrainEditorPanel({ environment, brush = DEFAULT_TERRAI
         <NumericField label="지형 해상도" value={terrain.resolution} min={1} max={10} step={0.5} unit="m" onChange={(resolution) => changeTerrain({ resolution })} />
         <label className={styles.switch}><input type="checkbox" checked={terrain.showContours} onChange={(event) => changeTerrain({ showContours: event.target.checked })} /><span>등고선</span></label>
         <label className={styles.switch}><input type="checkbox" checked={terrain.showHeightColors} onChange={(event) => changeTerrain({ showHeightColors: event.target.checked })} /><span>높이 색상</span></label>
-      </div>
+      </PropertySection>
     </section>
   );
 }

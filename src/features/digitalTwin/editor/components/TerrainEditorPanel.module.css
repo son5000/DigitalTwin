@@ -1,7 +1,7 @@
 .panel { display: grid; gap: 12px; padding: 10px 12px 16px; }
 .toolGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
 .toolGrid button,
-.segmented button { min-height: 34px; padding: 0 8px; border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-text-muted); font-size: var(--editor-font-size-xs); font-weight: var(--editor-font-weight-medium); background: var(--color-surface-raised); }
+.segmented button { min-height: 34px; padding: 0 8px; border: 1px solid var(--color-border); border-radius: 4px; color: var(--color-text-muted); font-size: var(--editor-font-size-xs); font-weight: var(--editor-font-weight-medium); background: var(--color-surface-raised); }
 .toolGrid button:hover,
 .segmented button:hover { border-color: var(--color-border-strong); color: var(--color-heading); background: var(--state-hover); }
 .segmented button:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -16,7 +16,14 @@
 .swatches button { width: 30px; height: 30px; border: 1px solid var(--color-border); border-radius: 5px; }
 .selectField input[type="color"] { width: 100%; height: 36px; border: 1px solid var(--color-border); border-radius: 5px; background: var(--color-input); }
 .selectField { display: grid; gap: 4px; color: var(--color-text-muted); font-size: var(--editor-font-size-xs); }
-.selectField select { min-height: 35px; padding: 0 9px; border: 1px solid var(--color-border); border-radius: 6px; color: var(--color-text); background: var(--color-input); }
+.selectField select { min-height: 35px; padding: 0 9px; border: 1px solid var(--color-border); border-radius: 4px; color: var(--color-text); background: var(--color-input); }
 .switch { display: flex; min-height: 34px; align-items: center; gap: 8px; color: var(--color-text); font-size: var(--editor-font-size-sm); }
 .switch input { width: 16px; height: 16px; accent-color: var(--color-accent); }
 @media (max-width: 640px) { .toolGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.contextHelp { margin: 0; padding: 10px 12px; border-bottom: 1px solid var(--color-border); color: var(--color-text-muted); font-size: var(--editor-font-size-xs); }
+.applyAction button { width: 100%; min-height: 36px; padding: 6px 10px; border: 1px solid var(--color-accent); border-radius: 4px; color: var(--color-accent-strong); background: var(--state-selected); }
+.toolGrid .active { box-shadow: inset 0 -2px var(--color-accent); }
+.toolGrid button { padding-block: 6px; overflow-wrap: anywhere; }
+.selectField { min-width: 0; }
+.selectField select { width: 100%; min-width: 0; }

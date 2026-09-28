@@ -178,9 +178,9 @@ export default function FloorWorkspaceCatalog({
   return (
     <section className={`${objectStyles.library} ${styles.catalog}`} aria-label="배치할 오브젝트">
       {!equipmentOnly ? (
-        <div className={styles.majorTabs} role="tablist" aria-label="오브젝트 대분류">
-          <button type="button" role="tab" aria-selected={!isEquipment} className={!isEquipment ? styles.majorTabActive : ""} onClick={() => onModeChange(CATALOG_MODES.PLAN)}><StructureIcon size={22} />구조</button>
-          <button type="button" role="tab" aria-selected={isEquipment} className={isEquipment ? styles.majorTabActive : ""} onClick={() => onModeChange(CATALOG_MODES.EQUIPMENT)}><EquipmentSystemsIcon size={22} />설비</button>
+        <div className={styles.majorTabs} role="group" aria-label="오브젝트 대분류">
+          <button type="button" aria-pressed={!isEquipment} className={!isEquipment ? styles.majorTabActive : ""} onClick={() => onModeChange(CATALOG_MODES.PLAN)}><StructureIcon size={22} />구조</button>
+          <button type="button" aria-pressed={isEquipment} className={isEquipment ? styles.majorTabActive : ""} onClick={() => onModeChange(CATALOG_MODES.EQUIPMENT)}><EquipmentSystemsIcon size={22} />설비</button>
         </div>
       ) : null}
 

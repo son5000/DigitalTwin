@@ -41,7 +41,7 @@ export default function MonitoringSettingsPanel({
   const scopedPoints = useMemo(() => observationPoints.filter((item) => item.equipmentId === selectedEquipment?.id), [observationPoints, selectedEquipment?.id]);
   const scopedServers = useMemo(() => serverBindings.filter((item) => item.equipmentId === selectedEquipment?.id), [selectedEquipment?.id, serverBindings]);
 
-  if (!selectedEquipment) return <section className={styles.panel}><div className={styles.emptyState}><strong>관측 설비를 등록하세요</strong><p>왼쪽 작업 화면의 ‘설비 추가’에서 카탈로그 설비를 선택하거나 OBJ·PLY 파일을 직접 등록할 수 있습니다.</p></div></section>;
+  if (!selectedEquipment) return <section className={styles.panel}><div className={styles.emptyState}><strong>관측 설비를 등록하세요</strong><p>상단 ‘설비 추가’에서 카탈로그 설비를 선택하거나 OBJ·PLY 파일을 직접 등록할 수 있습니다.</p></div></section>;
   const selectedAsset = scopedAssets.find((item) => item.id === assetSelection?.id);
   const selectedSensor = scopedSensors.find((item) => item.id === sensorSelection?.id);
   const selectedPoint = scopedPoints.find((item) => item.id === pointSelection?.id);
@@ -76,9 +76,15 @@ export default function MonitoringSettingsPanel({
   }
 
   return <section className={styles.panel}>
-    <header><span>{stepIndex + 1} / 5 단계 · 완료 {setup.completed} · 건너뜀 {setup.skipped}</span><h2>{selectedEquipment.name}</h2><p>{step.description}</p><progress aria-label="설비 설정 완료 단계" value={setup.completed} max={5} /></header>
-    <nav className={styles.tabs} aria-label="설비별 설정 단계">{EQUIPMENT_SETUP_STEPS.map(({ id, label }, index) => <button key={id} type="button" aria-current={tab === id ? "step" : undefined} onClick={() => setStep(id)}>{index + 1}. {label}<small>{STATUS_TEXT[setup.steps[id]]}</small></button>)}</nav>
-    <div className={styles.stepBody}>
+    <header><span>{stepIndex + 1} / 5 단계 · 완료 {setup.completed} · 건너뜀 {setup.skipped}</span><h2>{selectedEquipment.name}</h2><progress aria-label="설비 설정 완료 단계" value={setup.completed} max={5} /></header>
+    <label className={styles.stepPicker}>
+      <span>설정 단계</span>
+      <select value={tab} onChange={(event) => setStep(event.target.value)}>
+        {EQUIPMENT_SETUP_STEPS.map(({ id, label }, index) => <option key={id} value={id}>{index + 1}. {label} · {STATUS_TEXT[setup.steps[id]]}</option>)}
+      </select>
+    </label>
+    <div className={styles.stepBody} key={tab}>
+    <p className={styles.stepDescription}>{step.description}</p>
 
     {tab === "BASIC" ? <div className={styles.content}>
       {[["name", "설비명"], ["model", "모델명"], ["manufacturer", "제조사"], ["serialNumber", "일련번호"], ["assetTag", "자산 번호"]].map(([key, label]) => <label className={styles.field} key={key}><span>{label}</span><input value={key === "name" ? selectedEquipment.name : selectedEquipment.metadata?.[key] ?? ""} onChange={(event) => onUpdateEquipment?.(key === "name" ? { name: event.target.value } : { metadata: { [key]: event.target.value } })} /></label>)}
@@ -144,9 +150,8 @@ export default function MonitoringSettingsPanel({
     </div>
     <footer className={styles.stepFooter}>
       {stepError && <p role="alert">{stepError}</p>}
-      <p>이전: {EQUIPMENT_SETUP_STEPS[stepIndex - 1]?.label ?? "없음"} · 다음: {EQUIPMENT_SETUP_STEPS[stepIndex + 1]?.label ?? "설정 검토 완료"}</p>
       <div><button type="button" disabled={stepIndex === 0} onClick={() => setStep(EQUIPMENT_SETUP_STEPS[stepIndex - 1].id)}>이전</button><button type="button" onClick={() => setStep(tab, "SKIPPED")}>건너뛰기</button><button type="button" onClick={() => setStep(tab, "PENDING")}>다시 편집</button><button type="button" disabled={uploading || (tab === "BASIC" && !selectedEquipment.name.trim())} onClick={() => setStep(tab, "DONE")}>{stepIndex === 4 ? "검토 완료" : "완료 후 다음"}</button></div>
-      <small>입력은 편집 내용에 반영됩니다. 프로젝트 저장으로 보관하세요. 모든 단계는 다시 수정할 수 있습니다.</small>
+      <small>입력 후 프로젝트를 저장해 보관하세요.</small>
     </footer>
   </section>;
 }

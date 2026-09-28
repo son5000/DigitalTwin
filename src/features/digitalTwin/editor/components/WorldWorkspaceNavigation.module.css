@@ -6,18 +6,17 @@
   min-width: 0;
   min-height: var(--editor-overlay-control-height, 40px);
   box-sizing: border-box;
-  padding: 3px;
+  padding: 2px;
   overflow: hidden;
-  border: 1px solid var(--color-border);
-  border-radius: var(--editor-overlay-radius, 8px);
-  background: var(--color-surface-overlay);
-  box-shadow: var(--shadow-panel);
-  backdrop-filter: blur(16px) saturate(1.15);
+  border: 0;
+  border-radius: 0;
+  background: var(--color-surface);
 }
 
 .navigation ul {
   display: grid;
-  grid-template-columns: repeat(3, max-content);
+  grid-auto-flow: column;
+  grid-auto-columns: max-content;
   gap: 2px;
   counter-reset: editor-step;
 }
@@ -29,7 +28,7 @@
   min-height: var(--editor-overlay-inner-height, 32px);
   padding: 2px 11px;
   border: 1px solid transparent;
-  border-radius: 5px;
+  border-radius: 3px;
   color: var(--color-text-subtle);
   background: transparent;
   font-size: var(--editor-font-size-xs);
@@ -49,15 +48,14 @@
   height: 20px;
   margin-right: 6px;
   place-items: center;
-  border-radius: 4px;
-  color: var(--color-text-faint);
-  background: var(--color-surface-raised);
+  color: var(--color-text-subtle);
+  background: transparent;
   content: "0" counter(editor-step);
-  font-size: 9px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
-.navigation button.active::before { color: var(--color-primary-contrast); background: var(--color-primary); }
+.navigation button.active::before { color: var(--color-accent-strong); }
 
 .navigation button.active::after {
   position: absolute;
@@ -73,4 +71,8 @@
 @media (max-width: 760px), (orientation: portrait) {
   .navigation { overflow-x: auto; }
   .navigation ul { width: max-content; min-width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .navigation button { transition: none; }
 }
