@@ -100,6 +100,7 @@ export default function useMonitoringState({ equipment }) {
   const updateMonitoringDevice = useCallback((id, changes) => setSensorBindings((items) => items.map((item) => item.id === id ? normalizeSensorBinding({
     ...item, ...changes,
     sensorType: changes.sourceType ?? changes.sensorType ?? item.sensorType,
+    calibrationConfirmed: ["position", "rotation", "mountMode", "fieldOfView", "aspectRatio", "near", "far"].some((key) => key in changes) ? false : changes.calibrationConfirmed ?? item.calibrationConfirmed,
     position: changes.position ? { ...item.position, ...changes.position } : item.position,
     rotation: changes.rotation ? { ...item.rotation, ...changes.rotation } : item.rotation,
   }) : item)), []);

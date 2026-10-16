@@ -19,6 +19,10 @@ import { createSiteEnvironmentObject } from "../world/SiteEnvironmentFactory";
 import { focusEquipmentInWorld, updateViewerCameraRange } from "./viewerEquipmentFocus";
 import { bindCameraFocusCancellation, updateCameraFocus } from "./cameraFocus";
 import { setScanLoadState } from "./scanLoadState";
+import { bindSurfaceRoiInteraction } from "./surfaceRoiInteraction";
+import { rememberViewerCamera, restoreViewerCamera } from "./viewerCameraMemory";
+import { applySensorView } from "./sensorCamera";
+import { bindMonitoringLayers } from "./monitoringLayers";
 
 import styles from "./EquipmentAssetViewer.module.css";
 import { getSensorReadingState } from "../model/equipmentSetup";
@@ -63,12 +67,11 @@ function addCameraFrustum(marker, sensor) {
   const length = Math.max(1, Number(sensor.far) || 10);
   const fov = THREE.MathUtils.clamp(Number(sensor.fieldOfView) || 50, 10, 160);
   const radius = Math.tan(THREE.MathUtils.degToRad(fov / 2)) * length;
-  const frustum = new THREE.Mesh(
-    new THREE.ConeGeometry(radius, length, 18, 1, true),
-    new THREE.MeshBasicMaterial({ color: 0x4da8ff, transparent: true, opacity: 0.12, wireframe: true, depthWrite: false }),
-  );
-  frustum.position.y = -length / 2;
-  frustum.scale.x = Math.max(0.2, Number(sensor.aspectRatio) || 1);
+  const width = radius * Math.max(.2, Number(sensor.aspectRatio) || 1);
+  const corners = [[-width, -length, -radius], [width, -length, -radius], [width, -length, radius], [-width, -length, radius]].map((point) => new THREE.Vector3(...point));
+  const points = [];
+  corners.forEach((point, index) => points.push(new THREE.Vector3(), point, point, corners[(index + 1) % 4]));
+  const frustum = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineBasicMaterial({ color: 0x4da8ff, transparent: true, opacity: .3 }));
   marker.add(frustum);
 }
 
@@ -116,8 +119,21 @@ export default function EquipmentObservationScene({
   onSensorChange,
   onCameraControlsChange,
   onZoomChange,
+  roiOptions,
+  monitoringOptions,
+  sensorViewId = null,
+  cameraMemory: sharedCameraMemory,
+  cameraResetVersion = 0,
+  cameraScope = "OBSERVATION",
 }) {
   const mountRef = useRef(null);
+  const localCameraMemoryRef = useRef(new Map());
+  const focusRequestRef = useRef(null);
+  const roiFocusRequestRef = useRef(null);
+  const roiOptionsRef = useRef(roiOptions);
+  const monitoringOptionsRef = useRef(monitoringOptions);
+  useEffect(() => { monitoringOptionsRef.current = monitoringOptions; }, [monitoringOptions]);
+  useEffect(() => { roiOptionsRef.current = roiOptions; }, [roiOptions]);
   const focusRuntimeRef = useRef(null);
   const selectedScanRef = useRef(focusEquipmentId);
   useEffect(() => { selectedScanRef.current = focusEquipmentId; }, [focusEquipmentId]);
@@ -128,6 +144,10 @@ export default function EquipmentObservationScene({
     const mount = mountRef.current;
     const entries = equipmentList.length ? equipmentList : equipment ? [equipment] : [];
     if (!mount || !entries.length) return undefined;
+    const cameraMemory = sharedCameraMemory ?? localCameraMemoryRef.current;
+    const cameraKey = JSON.stringify([cameraScope, sceneFocusId, scenePartId, cameraResetVersion, entries.map((item) => item.id).sort(), sensorViewId]);
+    const savedCamera = cameraMemory.get(cameraKey);
+    let allowDetailedFit = !savedCamera && !sensorViewId;
     let frameId;
     let dragging = false;
     let disposed = false;
@@ -144,6 +164,10 @@ export default function EquipmentObservationScene({
     const camera = new THREE.PerspectiveCamera(46, 1, 0.01, 500);
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
+    const stopAutomaticFit = () => { allowDetailedFit = false; };
+    controls.addEventListener("start", stopAutomaticFit);
+    renderer.domElement.addEventListener("pointerdown", stopAutomaticFit, true);
+    renderer.domElement.addEventListener("wheel", stopAutomaticFit, { passive: true });
     scene.add(new THREE.HemisphereLight(0xe8f7ff, 0x26333a, 2.2));
     const light = new THREE.DirectionalLight(0xffffff, 2.5);
     light.position.set(5, 8, 6);
@@ -220,9 +244,10 @@ export default function EquipmentObservationScene({
         invalidateWorldSnapshot(snapshotRequest);
         requestSnapshot();
         worldBounds.copy(new THREE.Box3().setFromObject(root)).union(new THREE.Box3().setFromObject(floor));
-        if (entry.item.id === sceneFocusId && !scenePartId) {
+        if (allowDetailedFit && entry.item.id === sceneFocusId && !scenePartId) {
           if (animateEquipmentFocus) focusEquipmentInWorld(focusRuntime, entry.object, entry.item);
           else fitCamera(camera, controls, aligned);
+          allowDetailedFit = false;
         }
       }).catch((error) => {
         if (controller.signal.aborted) return;
@@ -301,7 +326,7 @@ export default function EquipmentObservationScene({
     const sensorMarkers = new Map();
     sensors.filter((sensor) => sensor.equipmentIds?.some((id) => renderedEquipment.has(id))).forEach((sensor) => {
       const host = sensor.mountMode === "EQUIPMENT" ? renderedEquipment.get(sensor.equipmentIds?.[0]) : null;
-      const base = host?.position ?? new THREE.Vector3(-(Number(origin.x) || 0), -(Number(origin.y) || 0), -(Number(origin.z) || 0));
+      const base = host ? new THREE.Vector3() : new THREE.Vector3(-(Number(origin.x) || 0), -(Number(origin.y) || 0), -(Number(origin.z) || 0));
       const position = base.clone().add(new THREE.Vector3(Number(sensor.position?.x) || 0, Number(sensor.position?.y) || 0, Number(sensor.position?.z) || 0));
       const isCamera = (sensor.sensorType ?? sensor.sourceType) === "CAMERA";
       const marker = new THREE.Mesh(
@@ -314,19 +339,19 @@ export default function EquipmentObservationScene({
       marker.userData.sensorBase = base.toArray();
       if (isCamera) addCameraFrustum(marker, sensor);
       addSensorReadout(marker, sensor, observationPoints.filter((point) => renderedEquipment.has(point.equipmentId)), previewReadings);
-      root.add(marker);
-      sensorPositions.set(sensor.id, position);
+      (host?.object ?? root).add(marker);
+      sensorPositions.set(sensor.id, marker.getWorldPosition(new THREE.Vector3()));
       sensorMarkers.set(sensor.id, marker);
     });
 
     const pointPositions = new Map();
     observationPoints.filter((point) => renderedEquipment.has(point.equipmentId)).forEach((point) => {
       const host = renderedEquipment.get(point.equipmentId);
-      const position = host.position.clone().add(new THREE.Vector3(Number(point.localPosition?.x) || 0, Number(point.localPosition?.y) || 0, Number(point.localPosition?.z) || 0));
+      const position = new THREE.Vector3(Number(point.localPosition?.x) || 0, Number(point.localPosition?.y) || 0, Number(point.localPosition?.z) || 0);
       const marker = new THREE.Mesh(new THREE.SphereGeometry(0.1, 14, 10), new THREE.MeshBasicMaterial({ color: 0xffc14d }));
       marker.position.copy(position);
-      root.add(marker);
-      pointPositions.set(point.id, position);
+      host.object.add(marker);
+      pointPositions.set(point.id, marker.getWorldPosition(new THREE.Vector3()));
     });
 
     bindings.filter((binding) => renderedEquipment.has(binding.equipmentId)).forEach((binding) => {
@@ -353,7 +378,7 @@ export default function EquipmentObservationScene({
     const selectedMarker = sensorMarkers.get(selectedSensorId);
     const axis = getMoveAxisConfiguration(transformTools);
     const rotationAxis = getRotationAxisConfiguration(transformTools);
-    const transformActive = Boolean(selectedMarker && (rotationAxis.enabled || axis.enabled));
+    const transformActive = Boolean(!sensorViewId && selectedMarker && (rotationAxis.enabled || axis.enabled));
     transform.enabled = transformActive;
     transformHelper.visible = transformActive;
     transform.setMode(rotationAxis.enabled ? "rotate" : "translate");
@@ -380,7 +405,7 @@ export default function EquipmentObservationScene({
     let pointerStart = null;
     function handlePointerDown(event) { pointerStart = { x: event.clientX, y: event.clientY }; }
     function handlePointerUp(event) {
-      if (dragging || !pointerStart || event.button !== 0 || Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 5) return;
+      if (roiOptionsRef.current?.drawing || roiOptionsRef.current?.pointPicking || sensorViewId || dragging || !pointerStart || event.button !== 0 || Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 5) return;
       pointerStart = null;
       raycaster.setFromCamera(pointer(event, renderer.domElement), camera);
       const hit = raycaster.intersectObjects([...sensorMarkers.values()], true)[0];
@@ -407,12 +432,28 @@ export default function EquipmentObservationScene({
       if ((object.isGroup && object.userData.customEquipmentPartId === scenePartId) || (object.isMesh && object.userData.partId === scenePartId)) focusObject = object;
     });
     const focusRuntime = { activeCamera: camera, orbitControls: controls, container: mount };
+    const roiInteraction = bindSurfaceRoiInteraction({ renderer, camera, controls, renderedEquipment,
+      getOptions: () => roiOptionsRef.current ?? {},
+      focus: (object) => {
+        const request = JSON.stringify([roiOptionsRef.current?.selectedId, roiOptionsRef.current?.focusVersion]);
+        if (roiFocusRequestRef.current === request) return;
+        roiFocusRequestRef.current = request;
+        focusEquipmentInWorld(focusRuntime, object, renderedEquipment.get(object.userData.equipmentId)?.item);
+      },
+      cancelFocus: () => { focusRuntime.cameraFocus = null; },
+    });
     focusRuntimeRef.current = { runtime: focusRuntime, renderedEquipment };
     const disconnectFocus = bindCameraFocusCancellation(focusRuntime, renderer.domElement);
     // Start from the complete world, then approach the selected equipment from its front.
-    fitCamera(camera, controls, animateEquipmentFocus ? equipmentRoot : focusObject);
-    if (animateEquipmentFocus && focusEquipment) focusEquipmentInWorld(focusRuntime, focusObject, focusEquipment);
+    if (!restoreViewerCamera(camera, controls, savedCamera)) {
+      fitCamera(camera, controls, animateEquipmentFocus ? equipmentRoot : focusObject);
+      if (animateEquipmentFocus && focusEquipment) focusEquipmentInWorld(focusRuntime, focusObject, focusEquipment);
+    }
     const worldBounds = new THREE.Box3().setFromObject(root).union(new THREE.Box3().setFromObject(floor));
+    const viewSensor = sensors.find((sensor) => sensor.id === sensorViewId);
+    const viewMarker = sensorMarkers.get(sensorViewId);
+    if (viewMarker && viewSensor) { applySensorView(camera, viewMarker, viewSensor); viewMarker.visible = false; controls.enabled = false; }
+    const monitoringLayers = bindMonitoringLayers({ renderedEquipment, getOptions: () => monitoringOptionsRef.current ?? {} });
     const disconnectViewerCamera = bindViewerCamera(controls, onCameraControlsChange, onZoomChange);
     controls.addEventListener("end", syncEquipmentRepresentations);
     syncEquipmentRepresentations();
@@ -421,18 +462,29 @@ export default function EquipmentObservationScene({
       const rect = mount.getBoundingClientRect();
       if (!rect.width || !rect.height) return;
       renderer.setSize(rect.width, rect.height, false);
-      camera.aspect = rect.width / rect.height;
+      camera.aspect = viewSensor ? Math.max(.1, Number(viewSensor.aspectRatio) || 16 / 9) : rect.width / rect.height;
       camera.updateProjectionMatrix();
+      if (viewSensor) {
+        const width = Math.min(rect.width, rect.height * camera.aspect), height = width / camera.aspect;
+        renderer.setViewport((rect.width - width) / 2, (rect.height - height) / 2, width, height);
+        renderer.setScissor((rect.width - width) / 2, (rect.height - height) / 2, width, height);
+      }
     }
     const observer = new ResizeObserver(resize);
     observer.observe(mount);
     resize();
+    let sampleStart = performance.now(), sampleFrames = 0;
     function render() {
-      updateCameraFocus(focusRuntime);
+      if (!viewSensor) updateCameraFocus(focusRuntime);
       syncEquipmentRepresentations();
-      controls.update();
-      updateViewerCameraRange(camera, worldBounds);
+      roiInteraction.update();
+      monitoringLayers.update();
+      if (!viewSensor) { controls.update(); updateViewerCameraRange(camera, worldBounds); }
+      else { controls.enabled = false; renderer.setScissorTest(false); renderer.clear(); renderer.setScissorTest(true); }
       renderer.render(scene, camera);
+      sampleFrames++;
+      const elapsed = performance.now() - sampleStart;
+      if (elapsed >= 1000) { if (!document.hidden) monitoringOptionsRef.current?.onFps?.(Math.round(sampleFrames * 1000 / elapsed)); sampleStart = performance.now(); sampleFrames = 0; }
       frameId = requestAnimationFrame(render);
     }
     render();
@@ -453,8 +505,11 @@ export default function EquipmentObservationScene({
     }
     requestSnapshot();
     return () => {
+      rememberViewerCamera(cameraMemory, cameraKey, camera, controls);
       cancelSnapshot();
       disconnectViewerCamera();
+      roiInteraction.dispose();
+      monitoringLayers.dispose();
       disconnectFocus();
       focusRuntimeRef.current = null;
       disposed = true;
@@ -463,6 +518,9 @@ export default function EquipmentObservationScene({
       observer.disconnect();
       renderer.domElement.removeEventListener("pointerup", handlePointerUp);
       renderer.domElement.removeEventListener("pointerdown", handlePointerDown);
+      renderer.domElement.removeEventListener("pointerdown", stopAutomaticFit, true);
+      renderer.domElement.removeEventListener("wheel", stopAutomaticFit);
+      controls.removeEventListener("start", stopAutomaticFit);
       controls.removeEventListener("end", syncEquipmentRepresentations);
       transform.detach();
       transform.dispose();
@@ -476,14 +534,16 @@ export default function EquipmentObservationScene({
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, [snapshotRequest, onSnapshot, assetBindings, bindings, equipment, equipmentList, sceneFocusId, scenePartId, animateEquipmentFocus, onEquipmentSelect, groundViewMode, observationPoints, onCameraControlsChange, onZoomChange, onSensorChange, onSensorSelect, selectedSensorId, sensors, theme, transformTools, viewerPreset, previewReadings]);
+  }, [snapshotRequest, onSnapshot, assetBindings, bindings, equipment, equipmentList, sceneFocusId, scenePartId, animateEquipmentFocus, onEquipmentSelect, groundViewMode, observationPoints, onCameraControlsChange, onZoomChange, onSensorChange, onSensorSelect, selectedSensorId, sensors, theme, transformTools, viewerPreset, previewReadings, sharedCameraMemory, cameraResetVersion, cameraScope, sensorViewId]);
 
   useEffect(() => {
     if (!preserveWorldOnSelection) return;
+    const request = JSON.stringify([focusEquipmentId, focusSelectionVersion, cameraResetVersion]);
+    if (focusRequestRef.current === request) return;
     const current = focusRuntimeRef.current;
     const entry = current?.renderedEquipment.get(focusEquipmentId);
-    if (entry) focusEquipmentInWorld(current.runtime, entry.object, entry.item);
-  }, [preserveWorldOnSelection, focusEquipmentId, focusSelectionVersion, equipmentList, theme]);
+    if (entry) { focusRequestRef.current = request; focusEquipmentInWorld(current.runtime, entry.object, entry.item); }
+  }, [preserveWorldOnSelection, focusEquipmentId, focusSelectionVersion, equipmentList, theme, cameraResetVersion]);
 
   return <section className={styles.viewer} aria-label="설비와 센서 위치·화각"><div ref={mountRef} className={styles.canvas} /></section>;
 }

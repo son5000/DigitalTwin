@@ -7,6 +7,20 @@
 .heading > span { color: #2f6bff; font-size: 12px; font-weight: 700; }
 .heading h1 { font-size: 38px; letter-spacing: -.05em; margin: 12px 0; }
 .heading p, .empty p { color: #536681; line-height: 1.8; font-size: 14px; }
+.bundleImport { margin-bottom: 28px; padding: 22px 24px; border: 1px solid #dbe5f2; border-radius: 12px; background: #fff; }
+.bundleRow { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.bundleCopy { min-width: 0; }
+.bundleCopy h2 { margin: 0; font-size: 16px; font-weight: 700; }
+.bundleCopy p { margin: 7px 0 5px; color: #536681; font-size: 13px; line-height: 1.6; }
+.bundleCopy small { display: block; color: #536681; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.filePicker { position: relative; display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 0 18px; border: 1px solid #c8daf8; border-radius: 8px; background: #edf4ff; color: #2458d6; font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.filePicker:not([data-disabled="true"]):hover { background: #e1ecff; border-color: #9cbdf2; }
+.filePicker:focus-within { outline: 2px solid #2f6bff; outline-offset: 4px; }
+.filePicker[data-disabled="true"] { opacity: .6; cursor: not-allowed; }
+.fileInput { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.fileInput:disabled { opacity: 0; cursor: not-allowed; }
+.bundleMessage { margin: 16px 0 0; padding: 12px 14px; border-radius: 8px; background: #edf4ff; color: #2458d6; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.bundleMessage[data-error="true"] { background: #fff1f0; color: #a52a2a; }
 .empty { padding: 28px 0 36px; }
 .empty h2 { font-size: 21px; margin-bottom: 10px; }
 .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; }
@@ -36,4 +50,5 @@
 .equipmentList button { padding: 8px 12px; border: 1px solid #c8daf8; border-radius: 8px; white-space: nowrap; }
 .equipmentList button[aria-pressed="true"] { background: #2f6bff; color: #fff; }
 @media (max-width: 950px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .bundleImport { padding: 18px; } .bundleRow { align-items: stretch; flex-direction: column; gap: 16px; } .filePicker { width: 100%; box-sizing: border-box; } }
 @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } .main { padding-top: 30px; } .heading h1 { font-size: 32px; } .header, .main { width: calc(100% - 36px); } .viewerHeader { padding: 12px; gap: 10px; } }

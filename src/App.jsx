@@ -33,8 +33,9 @@ function AppRoute() {
   const operationsSection = getOperationsSection(pathname);
   if (pathname === "/viewer" || pathname === "/viewer/" || operationsSection) {
     const projectId = new URLSearchParams(search).get("project");
+    const equipmentId = new URLSearchParams(search).get("equipment");
     return projectId
-      ? <ProjectViewerPage key={projectId} projectId={projectId} operationsSection={operationsSection} operationsRecord={location.record} />
+      ? <ProjectViewerPage key={`${projectId}:${equipmentId ?? ""}`} projectId={projectId} requestedEquipmentId={equipmentId} operationsSection={operationsSection} operationsRecord={location.record} />
       : <ProjectsPage />;
   }
   if (pathname === "/custom" || pathname === "/custom/" || pathname === "/custom/buildings" || pathname === "/custom/buildings/" || pathname === "/custom/equipment" || pathname === "/custom/equipment/") return <CustomWorkshopPage />;

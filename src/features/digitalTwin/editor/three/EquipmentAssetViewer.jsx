@@ -17,6 +17,7 @@ import { disposeObject3D } from "@/features/digitalTwin/editor/three/disposeObje
 
 import styles from "./EquipmentAssetViewer.module.css";
 import { parseScanInWorker, restoreScanGeometry } from "./scanWorkerClient";
+import { captureViewerCamera, rememberViewerCamera, restoreViewerCamera } from "./viewerCameraMemory";
 
 function createProxy(equipment, translucent = false, theme = "dark") {
   return createEquipmentObject({
@@ -221,8 +222,10 @@ function updateDisplayMode(runtime, mode, transformTools) {
   else configureDualTransformControls(runtime.transformControls, transformTools, { camera: runtime.camera });
 }
 
-export default function EquipmentAssetViewer({ equipment, binding, forcedDisplayMode, focusDetail = false, groundViewMode = GROUND_VIEW_MODES.VISIBLE, transformTools, theme = "dark", onAlignmentChange }) {
+export default function EquipmentAssetViewer({ equipment, binding, forcedDisplayMode, focusDetail = false, groundViewMode = GROUND_VIEW_MODES.VISIBLE, transformTools, theme = "dark", onAlignmentChange, cameraMemory: sharedCameraMemory, cameraResetVersion = 0 }) {
   const mountRef = useRef(null);
+  const localCameraMemoryRef = useRef(new Map());
+  const cameraKey = JSON.stringify(["ASSET", equipment?.id, cameraResetVersion]);
   const callbackRef = useRef(onAlignmentChange);
   const runtimeRef = useRef(null);
   const equipmentRef = useRef(equipment);
@@ -267,6 +270,7 @@ export default function EquipmentAssetViewer({ equipment, binding, forcedDisplay
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount || !equipmentRef.current) return undefined;
+    const cameraMemory = sharedCameraMemory ?? localCameraMemoryRef.current;
     let frameId;
     const scene = new THREE.Scene(); scene.background = new THREE.Color(themeRef.current === "light" ? 0xe8eef1 : 0x0b1217);
     let renderer;
@@ -297,8 +301,12 @@ export default function EquipmentAssetViewer({ equipment, binding, forcedDisplay
     const grid = new THREE.GridHelper(planeSize, 24, 0x456577, 0x243843); scene.add(grid);
     const content = new THREE.Group(); scene.add(content);
     const transformControls = createDualTransformControls(camera, renderer.domElement, scene, { translationSnap: 0.01 });
-    const runtime = { scene, renderer, camera, controls, content, ground, grid, transformControls, proxy: null, aligned: null, actualObject: null, transformTarget: null, disposed: false };
+    const runtime = { scene, renderer, camera, controls, content, ground, grid, transformControls, proxy: null, aligned: null, actualObject: null, transformTarget: null, disposed: false, cameraMemory };
     runtimeRef.current = runtime;
+    const stopAutomaticFit = () => { runtime.autoFrameDetailed = false; runtime.focusPending = false; };
+    controls.addEventListener("start", stopAutomaticFit);
+    renderer.domElement.addEventListener("pointerdown", stopAutomaticFit, true);
+    renderer.domElement.addEventListener("wheel", stopAutomaticFit, { passive: true });
     const commitTransform = (control) => {
       if (!control.object || control.object !== runtime.aligned) return;
       const transform = {
@@ -334,6 +342,9 @@ export default function EquipmentAssetViewer({ equipment, binding, forcedDisplay
     function render() { controls.update(); renderer.render(scene, camera); frameId = requestAnimationFrame(render); }
     render();
     return () => {
+      if (runtime.cameraKey) rememberViewerCamera(cameraMemory, runtime.cameraKey, camera, controls, {
+        detailFocusActive: runtime.detailFocusActive, focusSnapshot: focusSnapshotRef.current,
+      });
       runtime.disposed = true;
       cancelAnimationFrame(frameId);
       observer.disconnect();
@@ -342,6 +353,9 @@ export default function EquipmentAssetViewer({ equipment, binding, forcedDisplay
       transformControls.translate.removeEventListener("dragging-changed", handleTranslateDragging);
       transformControls.rotate.removeEventListener("dragging-changed", handleRotateDragging);
       disposeDualTransformControls(transformControls);
+      controls.removeEventListener("start", stopAutomaticFit);
+      renderer.domElement.removeEventListener("pointerdown", stopAutomaticFit, true);
+      renderer.domElement.removeEventListener("wheel", stopAutomaticFit);
       controls.dispose();
       disposeObject3D(content);
       runtime.proxy = null;
@@ -355,7 +369,7 @@ export default function EquipmentAssetViewer({ equipment, binding, forcedDisplay
       renderer.domElement.remove();
       if (runtimeRef.current === runtime) runtimeRef.current = null;
     };
-  }, []);
+  }, [sharedCameraMemory]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -392,8 +406,18 @@ export default function EquipmentAssetViewer({ equipment, binding, forcedDisplay
       disposeObject3D(previousProxy);
     }
     updateDisplayMode(runtime, displayMode, transformToolsRef.current);
-    if (!runtime.aligned || displayMode === EQUIPMENT_DISPLAY_MODES.PROXY) fitCamera(runtime.camera, runtime.controls, proxy);
-  }, [displayMode, equipmentRenderKey, theme]);
+    if (runtime.cameraKey !== cameraKey) {
+      if (runtime.cameraKey) rememberViewerCamera(runtime.cameraMemory, runtime.cameraKey, runtime.camera, runtime.controls, {
+        detailFocusActive: runtime.detailFocusActive, focusSnapshot: focusSnapshotRef.current,
+      });
+      const saved = runtime.cameraMemory.get(cameraKey);
+      runtime.cameraKey = cameraKey;
+      runtime.autoFrameDetailed = !restoreViewerCamera(runtime.camera, runtime.controls, saved);
+      runtime.detailFocusActive = saved?.detailFocusActive ?? false;
+      focusSnapshotRef.current = saved?.focusSnapshot ?? null;
+      if (runtime.autoFrameDetailed) fitCamera(runtime.camera, runtime.controls, proxy);
+    }
+  }, [displayMode, equipmentRenderKey, theme, cameraKey]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -422,7 +446,10 @@ export default function EquipmentAssetViewer({ equipment, binding, forcedDisplay
         runtime.content.add(aligned);
         if (!applyAssetAlignment(runtime, bindingRef.current, equipmentRef.current)) throw new Error("EMPTY_MODEL");
         updateDisplayMode(runtime, bindingRef.current?.displayMode ?? EQUIPMENT_DISPLAY_MODES.ACTUAL, transformToolsRef.current);
-        if (!fitCamera(runtime.camera, runtime.controls, aligned)) throw new Error("EMPTY_MODEL");
+        if (runtime.autoFrameDetailed) {
+          if (!fitCamera(runtime.camera, runtime.controls, aligned)) throw new Error("EMPTY_MODEL");
+          runtime.autoFrameDetailed = false;
+        }
         setLoadState(loaded.fallbackMaterial ? "READY_FALLBACK" : "READY");
       } catch (error) {
         if (cancelled) return;
@@ -434,7 +461,6 @@ export default function EquipmentAssetViewer({ equipment, binding, forcedDisplay
           runtime.actualObject = null;
         }
         updateDisplayMode(runtime, EQUIPMENT_DISPLAY_MODES.PROXY, transformToolsRef.current);
-        if (runtime.proxy) fitCamera(runtime.camera, runtime.controls, runtime.proxy);
         const state = error.message === "MISSING_LOCAL_FILE" ? "MISSING" : error.message === "UNSUPPORTED" ? "UNSUPPORTED" : error.message === "EMPTY_MODEL" ? "EMPTY" : "ERROR";
         setLoadState(state);
         setLoadMessage(state === "ERROR" ? (error.message || "알 수 없는 로딩 오류") : "");
@@ -470,19 +496,23 @@ export default function EquipmentAssetViewer({ equipment, binding, forcedDisplay
     const runtime = runtimeRef.current;
     if (!runtime) return;
     if (focusDetail) {
-      if (!focusSnapshotRef.current) {
-        focusSnapshotRef.current = { position: runtime.camera.position.clone(), target: runtime.controls.target.clone() };
+      if (!runtime.detailFocusActive) {
+        focusSnapshotRef.current = captureViewerCamera(runtime.camera, runtime.controls);
+        fitCamera(runtime.camera, runtime.controls, runtime.aligned ?? runtime.proxy);
+        runtime.detailFocusActive = true;
+        runtime.focusPending = shouldLoadDetailed && !runtime.aligned;
+      } else if (runtime.focusPending && runtime.aligned) {
+        fitCamera(runtime.camera, runtime.controls, runtime.aligned);
+        runtime.focusPending = false;
       }
-      fitCamera(runtime.camera, runtime.controls, runtime.aligned ?? runtime.proxy);
       return;
     }
     if (!focusSnapshotRef.current) return;
-    runtime.camera.position.copy(focusSnapshotRef.current.position);
-    runtime.controls.target.copy(focusSnapshotRef.current.target);
-    runtime.camera.updateProjectionMatrix();
-    runtime.controls.update();
+    restoreViewerCamera(runtime.camera, runtime.controls, focusSnapshotRef.current);
+    runtime.detailFocusActive = false;
+    runtime.focusPending = false;
     focusSnapshotRef.current = null;
-  }, [focusDetail, loadState]);
+  }, [focusDetail, loadState, cameraKey, shouldLoadDetailed]);
 
   const messages = { PROXY: "Proxy Model 표시 중", LOADING: "대용량 스캔 자산을 불러오는 중…", READY: "실제 자산 정합 모드", READY_FALLBACK: "모델 표시 중 · 텍스처 대신 기본 재질 적용", NO_3D: "이미지·텍스처는 하단 카메라 화면에서 확인합니다.", MISSING: "업로드 원본 파일을 다시 연결해 주세요.", UNSUPPORTED: "지원하지 않는 파일 형식입니다.", EMPTY: "파일에 표시할 3D 형상이 없습니다.", WEBGL_ERROR: "WebGL 뷰어를 초기화하지 못했습니다.", ERROR: "자산을 불러오지 못했습니다." };
   return <section className={styles.viewer} aria-label="설비 실제 자산 뷰어"><div ref={mountRef} className={styles.canvas} /><div className={styles.status} data-state={loadState}>{loadMessage || messages[loadState]}</div></section>;

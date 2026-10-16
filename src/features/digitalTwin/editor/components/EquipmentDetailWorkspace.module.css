@@ -15,10 +15,9 @@
 .emptyWorkspace {
   display: block;
   background:
-    linear-gradient(rgb(8 16 22 / 72%), rgb(8 16 22 / 72%)),
-    repeating-linear-gradient(0deg, transparent 0 39px, rgb(93 142 161 / 15%) 39px 40px),
-    repeating-linear-gradient(90deg, transparent 0 39px, rgb(93 142 161 / 15%) 39px 40px),
-    #0b141a;
+    repeating-linear-gradient(0deg, transparent 0 39px, var(--color-border) 39px 40px),
+    repeating-linear-gradient(90deg, transparent 0 39px, var(--color-border) 39px 40px),
+    var(--color-input);
 }
 
 .viewer {

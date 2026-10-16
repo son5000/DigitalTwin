@@ -1,0 +1,45 @@
+.workspace { --roi-bg: var(--portal-panel, var(--color-surface, #17242b)); --roi-text: var(--portal-text, var(--color-heading, #e5edf3)); --roi-muted: var(--portal-muted, var(--color-text-muted, #a9b8c4)); --roi-border: var(--portal-border, var(--color-border-strong, #456071)); position: relative; width: 100%; height: 100%; min-width: 0; color: var(--roi-text); }
+.workspace button, .workspace input, .workspace select { font: inherit; color: inherit; }
+.workspace button { min-height: 38px; padding: 7px 10px; border: 1px solid var(--roi-border); border-radius: 6px; background: var(--roi-bg); cursor: pointer; }
+.workspace button:hover, .workspace button[aria-pressed="true"] { border-color: #469beb; }
+.workspace button:disabled { opacity: .55; cursor: default; }
+.workspace :is(button, input, select, summary):focus-visible { outline: 2px solid #469beb; outline-offset: 3px; }
+.toggle { position: absolute; top: 12px; right: 12px; z-index: 25; font-size: 12px !important; }
+.dataToggle { position: absolute; top: 12px; left: var(--editor-overlay-left-safe, 12px); z-index: 25; font-size: 12px !important; }
+.alarmBadge { position: absolute; top: 12px; left: calc(var(--editor-overlay-left-safe, 12px) + 135px); z-index: 25; color: #e99347 !important; font-size: 12px !important; }
+.panel.dataPanel { left: var(--editor-overlay-left-safe, 12px); right: auto; display: grid; align-content: start; gap: 12px; }
+.modeButtons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.dataPanel label { display: grid; gap: 6px; }
+.dataPanel .check { display: flex; align-items: center; gap: 8px; }
+.dataPanel select { min-height: 38px; width: 100%; color: var(--roi-text); background: var(--roi-bg); border: 1px solid var(--roi-border); border-radius: 5px; }
+.dataPanel hr { width: 100%; border: 0; border-top: 1px solid var(--roi-border); }
+.dataPanel audio { width: 100%; }
+.dataPanel article { padding: 8px; border: 1px solid var(--roi-border); border-radius: 5px; }
+.dataPanel article button { display: block; margin-top: 8px; }
+.panel.pickingPanel { max-height: 210px; bottom: auto; }
+.panel { position: absolute; top: 58px; right: 12px; bottom: 70px; z-index: 25; width: min(310px, calc(100% - 24px)); box-sizing: border-box; overflow: auto; overscroll-behavior: contain; padding: 14px; border: 1px solid var(--roi-border); border-radius: 9px; background: var(--roi-bg); box-shadow: 0 8px 24px rgb(0 0 0 / 15%); font-size: 12px; line-height: 1.6; }
+.panel header, .draftHeading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.drawingPanel { bottom: auto; max-height: calc(100% - 80px); }
+.panel header span, .hint { color: var(--roi-muted); font-size: 12px; overflow-wrap: anywhere; }
+.list { display: grid; gap: 6px; margin: 12px 0; }
+.list button { display: flex; gap: 8px; justify-content: space-between; text-align: left; }
+.list span { overflow-wrap: anywhere; min-width: 0; }
+.list small { flex-shrink: 0; }
+.workspace [data-status="WARNING"] { border-left: 3px solid #bd7418; padding-left: 8px; }
+.workspace [data-status="DANGER"] { border-left: 3px solid #d64747; padding-left: 8px; }
+.form, .fields { display: grid; gap: 12px; }
+.fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+.form label { display: grid; gap: 5px; min-width: 0; }
+.form :is(input:not([type="checkbox"]), select) { width: 100%; min-height: 36px; box-sizing: border-box; border: 1px solid var(--roi-border); border-radius: 5px; padding: 6px; background: var(--roi-bg); }
+.form fieldset:not(.fields) { margin: 0; min-width: 0; padding: 8px; border: 1px solid var(--roi-border); border-radius: 6px; }
+.choices, .columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.form .check, .choices label { display: flex; align-items: center; gap: 7px; min-height: 32px; }
+.rule { display: grid; gap: 8px; margin-bottom: 8px !important; }
+.readings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.readings > div { padding: 8px; border: 1px solid var(--roi-border); border-radius: 5px; }
+.readings dt { color: var(--roi-muted); }
+.readings dd { margin: 4px 0 0; font-size: 17px; font-weight: 600; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.error { border-left: 3px solid #d64747; padding-left: 8px; overflow-wrap: anywhere; }
+@media (pointer: coarse) { .workspace button, .form :is(input:not([type="checkbox"]), select), .form .check, .choices label { min-height: 44px; } }
+@media (max-width: 600px) { .panel { bottom: 12px; } }

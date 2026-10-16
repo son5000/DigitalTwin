@@ -15,7 +15,10 @@ import { getOperationsDirectory, readViewerPreferences } from "../viewer/operati
 import portalStyles from "../viewer/ObservationPage.module.css";
 import { navigateTo } from "@/features/customAssets/core/customAssetNavigation";
 import SiteOverviewScene from "@/features/digitalTwin/editor/three/SiteOverviewScene";
-import EquipmentObservationScene from "@/features/digitalTwin/editor/three/EquipmentObservationScene";
+import MonitoringRoiWorkspace from "@/features/digitalTwin/editor/components/MonitoringRoiWorkspace";
+import useRoiMonitoring from "@/features/digitalTwin/editor/store/useRoiMonitoring";
+import { getRoiReading, ROI_STATUSES, viewerLink } from "@/features/digitalTwin/editor/model/roiMonitoring";
+import { loadMonitoringProject, monitoringApiBase } from "@/features/digitalTwin/editor/api/roiRepository";
 import { normalizeHierarchy } from "@/features/digitalTwin/editor/model/digitalTwinHierarchy";
 import { resolveSiteEnvironmentFromLayout } from "@/features/digitalTwin/editor/constants/siteEnvironmentSettings";
 import { DEFAULT_GRID_SETTINGS } from "@/features/digitalTwin/editor/constants/gridSettings";
@@ -32,14 +35,24 @@ const VIEWER_MOVEMENT_PLAYBACK = { status: MOVEMENT_PLAYBACK_STATES.PLAYING, cur
 const VIEWER_MOVEMENT_PAUSED = { status: MOVEMENT_PLAYBACK_STATES.PAUSED, currentTime: 0, revision: 0 };
 const METRIC_LABELS = { TEMPERATURE: "온도", PRESSURE: "압력", VIBRATION: "진동", NOISE: "소음", POWER: "전력", FLOW: "유량", VIDEO: "영상" };
 
-export default function ProjectViewerPage({ projectId, operationsSection = null, operationsRecord = null }) {
+export default function ProjectViewerPage({ projectId, requestedEquipmentId = null, operationsSection = null, operationsRecord = null }) {
   const [result, setResult] = useState(() => {
+    if (monitoringApiBase) return { loading: true };
     try {
       const project = readProjects().projects.find((item) => item.id === projectId);
       return project ? { project } : { error: "프로젝트를 찾을 수 없습니다." };
     } catch (error) { return { error: error.message }; }
   });
   useEffect(() => {
+    if (!monitoringApiBase) return;
+    const controller = new AbortController();
+    loadMonitoringProject(projectId, AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]))
+      .then((project) => { if (!controller.signal.aborted) setResult({ project }); })
+      .catch((error) => { if (!controller.signal.aborted) setResult({ error: error.message }); });
+    return () => controller.abort();
+  }, [projectId]);
+  useEffect(() => {
+    if (monitoringApiBase) return;
     let timer;
     function refresh(event) {
       if (![LAYOUT_STORAGE_KEY, PROJECT_STORAGE_KEY].includes(event.key)) return;
@@ -54,13 +67,19 @@ export default function ProjectViewerPage({ projectId, operationsSection = null,
     window.addEventListener("storage", refresh);
     return () => { clearTimeout(timer); window.removeEventListener("storage", refresh); };
   }, [projectId]);
-  return result.project ? <SavedWorldViewer project={result.project} operationsSection={operationsSection} operationsRecord={operationsRecord} /> : <main className={styles.page}><div className={styles.main}><p role="alert" className={styles.notice}>{result.error}</p><button className={styles.back} onClick={() => navigateTo("/projects")}>프로젝트 목록</button></div></main>;
+  if (result.loading) return <main className={styles.page}><p role="status">프로젝트를 불러오는 중입니다.</p></main>;
+  return result.project ? <SavedWorldViewer project={result.project} requestedEquipmentId={requestedEquipmentId} operationsSection={operationsSection} operationsRecord={operationsRecord} /> : <main className={styles.page}><div className={styles.main}><p role="alert" className={styles.notice}>{result.error}</p><button className={styles.back} onClick={() => navigateTo("/projects")}>프로젝트 목록</button></div></main>;
 }
 
-function SavedWorldViewer({ project, operationsSection, operationsRecord }) {
+function SavedWorldViewer({ project, requestedEquipmentId, operationsSection, operationsRecord }) {
   const { layout } = project;
   const [preferences] = useState(() => readViewerPreferences(project.id));
   const tree = useMemo(() => createWorldTree(layout, getRuntimeCustomAsset), [layout]);
+  const linkedNode = requestedEquipmentId ? [...tree.nodes.values()].find((node) => node.id === requestedEquipmentId && getViewerEquipmentContext(tree, node)) : null;
+  const monitoring = useRoiMonitoring(project.id);
+  const [roiTarget, setRoiTarget] = useState(null);
+  const [linkNotice, setLinkNotice] = useState("");
+  const [copiedLink, setCopiedLink] = useState("");
   const directory = useMemo(() => getOperationsDirectory(tree), [tree]);
   const details = getProjectDetails({ ...project, layout: { ...layout, hierarchy: { nodes: tree.hierarchy }, equipmentByFloorId: { viewer: tree.equipment }, observationWorkflow: { ...layout.observationWorkflow, scopeType: tree.scope } } });
   const [selectedBuildingId, setSelectedBuildingId] = useState(tree.scope === "BUILDING" ? tree.root?.id : layout.observationWorkflow?.viewerSettings?.focusBuildingId ?? null);
@@ -69,22 +88,22 @@ function SavedWorldViewer({ project, operationsSection, operationsRecord }) {
   const [observedBuildingId, setObservedBuildingId] = useState(null);
   const [floorDisplayGap, setFloorDisplayGap] = useState(0);
   const [wallOpacity, setWallOpacity] = useState(0.1);
-  const [equipmentId, setEquipmentId] = useState(tree.scope === "SINGLE_EQUIPMENT" ? tree.root?.id : layout.observationWorkflow?.viewerSettings?.activeEquipmentId ?? null);
+  const [equipmentId, setEquipmentId] = useState(linkedNode?.id ?? (tree.scope === "SINGLE_EQUIPMENT" ? tree.root?.id : layout.observationWorkflow?.viewerSettings?.activeEquipmentId ?? null));
   const equipmentScope = tree.scope.includes("EQUIPMENT");
   const [showEquipment, setShowEquipment] = useState(equipmentScope);
-  const [equipmentDetail, setEquipmentDetail] = useState(false);
+  const [equipmentDetail, setEquipmentDetail] = useState(Boolean(linkedNode));
   const [theme, setTheme] = useState(preferences.theme === "dark" ? "dark" : "light");
   const snapshotRequest = useMemo(() => ({ scope: tree.scope, targetId: tree.root?.id, theme }), [tree, theme]);
   const [snapshot, setSnapshot] = useState(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(Boolean(linkedNode));
   const activeService = operationsSection;
   const setActiveService = navigateViewerService;
   const [movementEnabled, setMovementEnabled] = useState(preferences.movementEnabled !== false);
   const [cameraControls, setCameraControls] = useState(null);
   const [zoom, setZoom] = useState(100);
-  const [treeSelection, setTreeSelection] = useState(() => ({ key: equipmentScope && equipmentId ? worldNodeKey("EQUIPMENT", equipmentId) : selectedBuildingId ? worldNodeKey("BUILDING", selectedBuildingId) : tree.root?.key, version: 0 }));
+  const [treeSelection, setTreeSelection] = useState(() => ({ key: linkedNode?.key ?? (equipmentScope && equipmentId ? worldNodeKey("EQUIPMENT", equipmentId) : selectedBuildingId ? worldNodeKey("BUILDING", selectedBuildingId) : tree.root?.key), version: 0 }));
   const [selectedPartId, setSelectedPartId] = useState(null);
   const [viewMode, setViewMode] = useState(preferences.viewMode === "2D" ? VIEW_MODES.LAYOUT_2D : VIEW_MODES.VIEW_3D);
   const [selectedSensorId, setSelectedSensorId] = useState(null);
@@ -213,6 +232,17 @@ function SavedWorldViewer({ project, operationsSection, operationsRecord }) {
     if (window.confirm("관측 화면을 나가 프로젝트 목록으로 돌아가시겠습니까?")) navigateTo("/projects");
   }
 
+  async function copyViewerLink(targetId) {
+    const link = viewerLink(project.id, targetId);
+    setCopiedLink(link);
+    try { await navigator.clipboard.writeText(link); setLinkNotice("뷰어 링크를 복사했습니다."); }
+    catch { setLinkNotice("아래 링크를 선택해 복사하세요."); }
+  }
+  const roiIssues = monitoring.rois.map((roi) => ({ roi, reading: getRoiReading(roi, monitoring.readings.find((item) => item.roiId === roi.id), monitoring.now) }))
+    .filter(({ roi, reading }) => roi.monitoringEnabled && ["WARNING", "DANGER", "NO_DATA"].includes(reading.status));
+
+  if (requestedEquipmentId && !linkedNode) return <main className={styles.page}><p role="alert">이 프로젝트에서 링크의 설비를 찾을 수 없습니다.</p><a href={viewerLink(project.id)}>공간 전체 보기</a></main>;
+
   return <div className={portalStyles.page} data-theme={theme}>
     <div className={activeService ? portalStyles.worldViewInactive : undefined} inert={Boolean(activeService)} aria-hidden={activeService ? true : undefined}>
     <WorldMenu open={mobileMenuOpen} onToggle={toggleMenu} sidebarOpen={!sidebarCollapsed} onSidebarToggle={toggleSidebar}
@@ -226,22 +256,36 @@ function SavedWorldViewer({ project, operationsSection, operationsRecord }) {
           <button type="button" className={portalStyles.collapseButton} onClick={toggleSidebar} aria-label={sidebarCollapsed ? "메뉴 펼치기" : "메뉴 접기"} aria-expanded={!sidebarCollapsed}><ChevronRightIcon size={16} /></button>
           <span>워크스페이스</span><strong>{details.name}</strong><small>{tree.config.label}</small>
         </div>
+        {(showEquipment || equipmentDetail) && !detailEquipment.length && <p className={viewerStyles.empty} role="status">등록된 설비가 없습니다. 프로젝트 목록에서 편집하기로 설비를 추가하세요.</p>}
         <WorldTreePanel tree={tree} snapshot={snapshot?.request === snapshotRequest ? snapshot : null} representativeImage={layout.representativeImage} selectedKey={treeSelection.key} selectionVersion={treeSelection.version} onSelect={selectTreeNode} />
+        <section className={viewerStyles.roiSummary} aria-label="ROI 감시 현황"><strong>ROI 감시 현황</strong>
+          <p>{monitoring.shared ? "서버 상태 기준" : "서버 연결 전 · 실측값 없음"}</p>
+          {roiIssues.map(({ roi, reading }) => <button type="button" key={roi.id} data-status={reading.status} onClick={() => {
+            const node = [...tree.nodes.values()].find((item) => item.id === roi.equipmentId && getViewerEquipmentContext(tree, item));
+            if (!node) return;
+            selectEquipment(roi.equipmentId, null, node.type); setEquipmentDetail(true); setRoiTarget(roi); setDetailOpen(false);
+          }}><span>{model.equipment.find((item) => item.id === roi.equipmentId)?.name ?? "설비"} · {roi.name}</span><small>{ROI_STATUSES[reading.status].label}</small></button>)}
+          {!roiIssues.length && <p>{monitoring.rois.some((roi) => roi.monitoringEnabled) ? "표시할 이상 상태가 없습니다." : "감시 중인 ROI가 없습니다."}</p>}
+        </section>
         <div className={portalStyles.sidebarFooter}><button type="button" onClick={goHome}>프로젝트 목록으로</button></div>
       </aside>
       <main className={viewerStyles.world} data-scene-area aria-label={`${details.name} 관측 뷰어`}>
         <div className={viewerStyles.scene}>
-          {showEquipment || equipmentDetail ? detailEquipment.length ? <EquipmentObservationScene equipmentList={detailEquipment} focusEquipmentId={equipmentId} selectedPartId={selectedPartId} onEquipmentSelect={equipmentDetail ? undefined : selectEquipment}
+          {showEquipment || equipmentDetail ? detailEquipment.length ? <MonitoringRoiWorkspace key={`${equipmentId ?? "world"}:${roiTarget?.id ?? ""}`} projectId={project.id} initialRoi={roiTarget?.equipmentId === equipmentId ? roiTarget : null} onRoiPanelOpen={() => { setDetailOpen(false); if (window.matchMedia("(max-width: 800px)").matches) setSidebarCollapsed(true); }} equipmentList={detailEquipment} focusEquipmentId={equipmentId} selectedPartId={selectedPartId} onEquipmentSelect={equipmentDetail ? undefined : selectEquipment}
             animateEquipmentFocus preserveWorldOnSelection={!equipmentDetail} focusSelectionVersion={treeSelection.version}
             snapshotRequest={equipmentScope && !equipmentDetail ? snapshotRequest : null} onSnapshot={setSnapshot}
             sensors={model.sensors} observationPoints={model.points} assetBindings={layout.equipmentAssetBindings ?? EMPTY_ITEMS}
-            viewerPreset={layout.viewerPreset} selectedSensorId={selectedSensorId} onSensorSelect={selectSensor} transformTools={DISABLED_TRANSFORM_TOOLS} theme={theme} onCameraControlsChange={setCameraControls} onZoomChange={setZoom} /> : <p className={viewerStyles.empty}>등록된 설비가 없습니다. 프로젝트 목록에서 편집하기로 설비를 추가하세요.</p>
+            viewerPreset={layout.viewerPreset} selectedSensorId={selectedSensorId} onSensorSelect={selectSensor} transformTools={DISABLED_TRANSFORM_TOOLS} theme={theme} onCameraControlsChange={setCameraControls} onZoomChange={setZoom} /> : null
             : <SiteOverviewScene {...model} enableObjectLod={false} movementPlayback={movementEnabled ? VIEWER_MOVEMENT_PLAYBACK : VIEWER_MOVEMENT_PAUSED} showSceneControls={false} onCameraControlsChange={setCameraControls} onZoomChange={setZoom} selectedBuildingId={selectedBuildingId} selectedSiteObjectId={selectedSiteObjectId} selectedFloorId={selectedFloorId}
               buildingObservation={buildingObservation} equipmentFocus={equipmentFocus} worldEquipment={worldEquipment} snapshotRequest={!equipmentScope ? snapshotRequest : null} onSnapshot={setSnapshot}
               equipmentAssetBindings={layout.equipmentAssetBindings ?? EMPTY_ITEMS} viewerPreset={layout.viewerPreset}
               interactionMode={SITE_INTERACTION_MODES.NAVIGATE} viewMode={viewMode} theme={theme} transformTools={DISABLED_TRANSFORM_TOOLS} gridSettings={DEFAULT_GRID_SETTINGS}
               onSelectBuilding={selectBuilding} onSelectEquipment={selectEquipment} onSelectFloor={selectFloor} onEnterBuilding={selectBuilding} onEnterFloor={selectFloor} />}
         </div>
+        <section className={viewerStyles.linkTools} aria-label="뷰어 링크"><button type="button" onClick={() => copyViewerLink()}>공간 링크 복사</button>
+          {activeEquipment && <button type="button" onClick={() => copyViewerLink(activeEquipment.id)}>설비 링크 복사</button>}
+          {linkNotice && <p role="status">{linkNotice}</p>}{copiedLink && <input aria-label="복사할 뷰어 링크" readOnly value={copiedLink} onFocus={(event) => event.target.select()} />}
+        </section>
         <div className={portalStyles.zoom} aria-label="월드 줌"><button type="button" title="확대" aria-label="확대" disabled={!cameraControls} onClick={() => cameraControls.zoomBy(1.25)}>+</button><output aria-label="현재 줌 비율">{zoom}%</output><button type="button" title="축소" aria-label="축소" disabled={!cameraControls} onClick={() => cameraControls.zoomBy(0.8)}>−</button></div>
       </main>
       <aside className={`${portalStyles.detailPanel} ${detailOpen ? portalStyles.detailPanelOpen : ""}`} data-camera-safe-ui={detailOpen ? "right" : undefined} aria-label={buildingDetails ? "건축물 상세 정보" : "관측 지표"} inert={!detailOpen}>

@@ -8,6 +8,7 @@ import { UNIFIED_EQUIPMENT_TEMPLATE_MAP } from "@/features/digitalTwin/editor/co
 import NumericField from "./NumericField";
 import { EQUIPMENT_SETUP_STEPS, getEquipmentSetup, updateEquipmentSetup, getSetupStepIssue } from "../model/equipmentSetup";
 import styles from "./MonitoringSettingsPanel.module.css";
+import SensorConnectionFields from "./SensorConnectionFields";
 
 const STATUS_TEXT = { DONE: "완료", SKIPPED: "건너뜀", PENDING: "미완료" };
 const METRICS = ["TEMPERATURE", "PRESSURE", "VIBRATION", "NOISE", "POWER", "FLOW", "VIDEO"];
@@ -120,9 +121,9 @@ export default function MonitoringSettingsPanel({
     {tab === "SENSOR" ? <div className={styles.content}>
       <p className={styles.help}>센서 배치 보기에서 관측 이미지와 모델을 비교해 위치·방향·화각을 맞추세요. 자동 위치 역산에는 카메라 보정값과 이미지·모델 대응점이 필요합니다.</p>
       {selectedSensor && <>
+        <SensorConnectionFields key={selectedSensor.id} sensor={selectedSensor} equipment={selectedEquipment} sensors={sensorBindings} assets={scopedAssets} onChange={onUpdateSensor} />
         <label className={styles.field}><span>관측 장치 종류</span><select value={selectedSensor.deviceKind ?? (selectedSensor.sensorType === "CAMERA" ? "VISION" : "GENERIC")} onChange={(event) => onUpdateSensor(selectedSensor.id, { deviceKind: event.target.value, sensorType: ["VISION", "THERMAL"].includes(event.target.value) ? "CAMERA" : "SENSOR" })}><option value="VISION">비전 카메라</option><option value="THERMAL">열화상 카메라</option><option value="ULTRASONIC">초음파 센서</option><option value="GENERIC">일반 센서</option></select></label>
         <label className={styles.field}><span>스틸컷 이미지 URL</span><input type="url" placeholder="https://…/latest.jpg" value={selectedSensor.frameUrl ?? ""} onChange={(event) => onUpdateSensor(selectedSensor.id, { frameUrl: event.target.value })} /></label>
-        <label className={styles.check}><input type="checkbox" checked={selectedSensor.calibrationConfirmed === true} onChange={(event) => onUpdateSensor(selectedSensor.id, { calibrationConfirmed: event.target.checked })} />위치·화각 수동 보정 확인</label>
       </>}
       <div className={styles.actionRow}><button type="button" onClick={() => onAddSensor(selectedEquipment.id, "SENSOR")}>센서 추가</button><button type="button" onClick={() => onAddSensor(selectedEquipment.id, "CAMERA")}>비전 카메라 추가</button></div>
       <div className={styles.itemList}>{scopedSensors.map((sensor) => <button type="button" key={sensor.id} aria-pressed={selectedSensor?.id === sensor.id} onClick={() => onSelectSensor(sensor.id)}><span>{sensor.name}</span><small>{SENSOR_TYPE_LABELS[sensor.sensorType] ?? sensor.sensorType} · {sensor.serverKey || "키 미지정"}</small></button>)}</div>

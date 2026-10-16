@@ -77,6 +77,8 @@ export function normalizeSensorBinding(device = {}) {
     id: device.id ?? createId("SENSOR_BINDING"),
     equipmentIds,
     serverKey: device.serverKey ?? device.identifier ?? "",
+    serialNumber: device.serialNumber ?? "",
+    serverSensorId: device.serverSensorId ?? null,
     sensorType: device.sensorType ?? device.sourceType ?? "SENSOR",
     sourceType: device.sensorType ?? device.sourceType ?? "SENSOR",
     mountMode: device.mountMode ?? "WORLD",

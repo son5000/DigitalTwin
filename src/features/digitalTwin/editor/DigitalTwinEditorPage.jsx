@@ -46,6 +46,7 @@ import useEditorPreferences from "@/features/digitalTwin/editor/store/useEditorP
 import useEditorTheme from "@/features/digitalTwin/editor/store/useEditorTheme";
 import FloorPlan3DScene from "@/features/digitalTwin/editor/three/FloorPlan3DScene";
 import EquipmentObservationScene from "@/features/digitalTwin/editor/three/EquipmentObservationScene";
+import MonitoringRoiWorkspace from "@/features/digitalTwin/editor/components/MonitoringRoiWorkspace";
 import FloorPlanScene from "@/features/digitalTwin/editor/three/FloorPlanScene";
 import SiteOverviewScene from "@/features/digitalTwin/editor/three/SiteOverviewScene";
 import { placeObjectsInArea } from "@/features/digitalTwin/editor/utils/siteAreaPlacement";
@@ -1016,7 +1017,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
             ? "구조 속성"
             : "설비 속성"
       : "설비 상세";
-  const panelOpen = isMonitoringStep ? activeFloatingPanelId === WORLD_PANEL_IDS.DETAILS : (Boolean(activeFloatingPanelId) && (!isCompositionStep || activeFloatingPanelId !== WORLD_PANEL_IDS.DETAILS || hasSiteSelection));
+  const panelOpen = isMonitoringStep ? Boolean(monitoringEquipment) && activeFloatingPanelId === WORLD_PANEL_IDS.DETAILS : (Boolean(activeFloatingPanelId) && (!isCompositionStep || activeFloatingPanelId !== WORLD_PANEL_IDS.DETAILS || hasSiteSelection));
   const workspaceSelection = isCompositionStep
     ? editor.selectedSiteObject ?? editor.selectedBuilding
     : isMonitoringStep ? monitoringEquipment : activeWorkspaceSelection;
@@ -1311,7 +1312,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                   onUploadAsset={handleMonitoringNewAssetFiles}
                 /> : null}
                 onAlignmentChange={(changes, bindingId) => bindingId && updateAssetBinding(bindingId, { alignmentTransform: changes })}
-                worldView={monitoringEquipment ? <EquipmentObservationScene
+                worldView={monitoringEquipment ? <MonitoringRoiWorkspace key={monitoringEquipment.id}
                   equipment={monitoringEquipment}
                   assetBindings={editor.equipmentAssetBindings}
                   viewerPreset={editor.viewerPreset}

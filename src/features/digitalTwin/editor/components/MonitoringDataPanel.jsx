@@ -1,0 +1,55 @@
+import { useEffect, useRef, useState } from "react";
+import { requestPointAudio } from "../api/monitoringClient";
+import { demoAudioBlob } from "../model/monitoringDemo";
+import { MONITORING_MODES, isFreshMeasurement } from "../model/monitoringContract";
+import styles from "./MonitoringRoiWorkspace.module.css";
+
+const STATUS = { DISCONNECTED: "서버 미연결", CONNECTING: "연결 중", CONNECTED: "수신 중", RECONNECTING: "재연결 중", ERROR: "연결 오류", DEMO: "예시 모드 · 실측 아님" };
+export default function MonitoringDataPanel({ projectId, equipmentId, telemetry, mode, setMode, opacity, setOpacity, point, picking, setPicking, fps, layerError, model, sensorView }) {
+  const [processing, setProcessing] = useState("AUDIBLE");
+  const [audio, setAudio] = useState(null);
+  const [busy, setBusy] = useState(null);
+  const [error, setError] = useState("");
+  const pending = useRef(null), audioObjectUrl = useRef(null);
+  const pointKey = JSON.stringify([point, equipmentId, telemetry.demo, processing]);
+  useEffect(() => () => { pending.current?.abort(); if (audioObjectUrl.current) URL.revokeObjectURL(audioObjectUrl.current); }, [pointKey]);
+  async function listen() {
+    pending.current?.abort(); const request = new AbortController(); pending.current = request;
+    setBusy(pointKey); setError(""); setAudio(null);
+    try {
+      if (audioObjectUrl.current) { URL.revokeObjectURL(audioObjectUrl.current); audioObjectUrl.current = null; }
+      let result;
+      if (telemetry.demo) { const url = URL.createObjectURL(demoAudioBlob(processing)); audioObjectUrl.current = url; result = { url }; }
+      else result = await requestPointAudio(projectId, equipmentId, { ...point, model }, processing, request.signal);
+      if (!request.signal.aborted) setAudio({ ...result, key: pointKey });
+    } catch (issue) { if (!request.signal.aborted) setError(issue.message); }
+    finally { if (!request.signal.aborted) setBusy(null); }
+  }
+  const currentAudio = audio?.key === pointKey ? audio : null;
+  const currentBusy = busy === pointKey;
+  return <>
+    <header><strong>관측 데이터</strong><span>{STATUS[telemetry.status]}</span></header>
+    <label className={styles.check}><input type="checkbox" checked={telemetry.demo} onChange={(event) => telemetry.setDemo(event.target.checked)} />예시 데이터로 기능 확인</label>
+    <p className={styles.hint}>{telemetry.demo ? "영상·온도·변화율·음원은 UI 확인용 예시입니다. 실제 센서 분석이나 경고 전송을 수행하지 않습니다." : "측정과 경고 판정은 서버에서 수행합니다. 수신되지 않거나 오래된 값은 표시하지 않습니다."}</p>
+    <div className={styles.modeButtons} role="group" aria-label="관측 데이터 표시">{Object.entries(MONITORING_MODES).map(([value, label]) => <button key={value} type="button" aria-pressed={mode === value} onClick={() => setMode(value)}>{label}</button>)}</div>
+    {["VISION", "THERMAL"].includes(mode) && <label>영상 투명도<input aria-label="영상 투명도" type="range" min="0" max="1" step="0.05" value={opacity} onChange={(event) => setOpacity(Number(event.target.value))} /></label>}
+    {mode === "THERMAL" && <p className={styles.hint}>{telemetry.demo ? "예시 색상: 파랑 → 빨강 → 노랑" : telemetry.legend ? `온도 범위 ${telemetry.legend.min} ~ ${telemetry.legend.max} ℃` : "온도 범례 수신 대기"}</p>}
+    {!telemetry.demo && mode !== "MODEL" && !(mode === "ULTRASOUND" ? telemetry.hotspots : telemetry.textures.filter((item) => item.kind === mode)).some((item) => item.equipmentId === equipmentId && item.modelVersion === model.version && isFreshMeasurement(item, telemetry.now)) && <p role="status">선택한 관측 데이터 수신 대기</p>}
+    {(layerError || telemetry.error) && <p className={styles.error} role="alert">{layerError || telemetry.error}</p>}
+    <hr />
+    <strong>선택 위치 소리 듣기</strong>
+    <button type="button" disabled={!equipmentId || sensorView} aria-pressed={picking} onClick={() => setPicking(!picking)}>{picking ? "위치 선택 취소" : "3D 표면에서 위치 선택"}</button>
+    {sensorView && <p className={styles.hint}>위치를 선택하려면 자유 시점으로 돌아가세요.</p>}
+    {picking && <p role="status" className={styles.hint}>설비 표면을 클릭하세요. Esc로 취소합니다.</p>}
+    {point && <p className={styles.hint}>설비 기준 (m) · {point.position.map((value) => value.toFixed(3)).join(", ")}</p>}
+    <label>음원 처리<select value={processing} onChange={(event) => setProcessing(event.target.value)}><option value="AUDIBLE">가청 음원</option><option value="HETERODYNE">초음파 가청 변환</option></select></label>
+    <button type="button" disabled={!point || currentBusy} onClick={listen}>{currentBusy ? "음원 요청 중…" : telemetry.demo ? "예시 음원 준비" : "선택 위치 음원 요청"}</button>
+    {currentAudio && <><audio key={`${pointKey}:${currentAudio.url}`} controls src={currentAudio.url} preload="metadata" aria-label={telemetry.demo ? "합성 예시 음원" : "선택 위치 음원"} onError={() => setError("음원을 재생할 수 없습니다. 서버의 오디오 형식을 확인하세요.")} /><small>{telemetry.demo ? "합성 테스트 톤 · 실제 위치의 소리가 아닙니다." : "서버에서 처리한 음원입니다."}</small></>}
+    {error && <p role="alert" className={styles.error}>{error}</p>}
+    <hr />
+    <header><strong>경고 이벤트</strong>{telemetry.demo && <button type="button" onClick={telemetry.simulateAlarm}>경고 수신 시험</button>}</header>
+    {!telemetry.alarms.length && <p className={styles.hint}>수신한 경고 이벤트가 없습니다.</p>}
+    <div className={styles.list}>{telemetry.alarms.map((alarm) => <article key={alarm.id} data-status={alarm.severity}><strong>{alarm.severity === "DANGER" ? "위험" : "주의"} · {alarm.name ?? alarm.roiId ?? "설비"}</strong><p>{alarm.message}</p><small>{new Date(alarm.occurredAt).toLocaleTimeString("ko-KR")}</small><button type="button" disabled={Boolean(alarm.acknowledgedAt)} onClick={async () => { try { await telemetry.acknowledge(alarm); } catch (issue) { setError(issue.message); } }}>{alarm.acknowledgedAt ? "확인됨" : "경고 확인"}</button></article>)}</div>
+    <p className={styles.hint}>렌더링 {fps === null ? "측정 중" : `${fps} fps`}{fps !== null && fps < 30 ? " · 30fps 미만" : ""} · 현재 화면 측정값</p>
+  </>;
+}

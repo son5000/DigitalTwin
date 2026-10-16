@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { cloneElement, useMemo, useState } from "react";
 
 import { ASSET_TYPES, EQUIPMENT_DISPLAY_MODES } from "@/features/digitalTwin/editor/model/equipmentDetailModel";
 import {
@@ -24,12 +24,18 @@ export default function EquipmentDetailWorkspace({
   onViewerPresetChange, onEquipmentRepresentationChange,
 }) {
   const [viewChoice, setViewChoice] = useState(null);
+  const [cameraMemory] = useState(() => new Map());
+  const [cameraResetVersion, setCameraResetVersion] = useState(0);
+  const [comparisonSensorId, setComparisonSensorId] = useState(null);
   const setup = getEquipmentSetup(equipment);
   const currentStepIndex = EQUIPMENT_SETUP_STEPS.findIndex((step) => step.id === setup.currentStep);
   const sensorStep = ["SENSOR", "POINT"].includes(setup.currentStep);
   const viewKey = `${equipment?.id}:${setup.currentStep}`;
   const viewMode = viewChoice?.key === viewKey ? viewChoice.mode : sensorStep ? "SENSORS" : "SELECTED";
-  function setViewMode(mode) { setViewChoice({ key: viewKey, mode }); }
+  function setViewMode(mode, resetCamera = true) {
+    setViewChoice({ key: viewKey, mode });
+    if (resetCamera) setCameraResetVersion((value) => value + 1);
+  }
   const [query, setQuery] = useState("");
   const [locationFilter, setLocationFilter] = useState("");
   const filteredEquipment = equipmentList.filter((item) => (!locationFilter || item.locationLabel === locationFilter)
@@ -75,13 +81,15 @@ export default function EquipmentDetailWorkspace({
         <button type="button" aria-pressed={viewMode === "SELECTED"} onClick={() => setViewMode("SELECTED")}>선택 설비 맞춤</button>
         <button type="button" aria-pressed={viewMode === "ALL"} disabled={equipmentCount < 2} onClick={() => setViewMode("ALL")}>전체 설비 맞춤</button>
         <button type="button" aria-pressed={viewMode === "SENSORS"} onClick={() => setViewMode("SENSORS")}>센서 배치 보기</button>
-        <button type="button" aria-pressed={detailFocus} disabled={!renderableAsset || forcedDisplayMode === EQUIPMENT_DISPLAY_MODES.PROXY} onClick={() => { setViewMode("SELECTED"); onViewerPresetChange?.({ detailFocusEquipmentId: detailFocus ? null : equipment.id }); }}>{detailFocus ? "상세 보기 종료" : "상세 모델 확대"}</button>
+        <button type="button" aria-pressed={detailFocus} disabled={!renderableAsset || forcedDisplayMode === EQUIPMENT_DISPLAY_MODES.PROXY} onClick={() => { setViewMode("SELECTED", false); onViewerPresetChange?.({ detailFocusEquipmentId: detailFocus ? null : equipment.id }); }}>{detailFocus ? "상세 보기 종료" : "상세 모델 확대"}</button>
         <button type="button" onClick={onAddEquipment}>설비 추가</button>
       </div>
       <div className={styles.viewer} aria-label="실제 설비 3D 뷰어">
-        {viewMode === "SENSORS" && worldView ? worldView : viewMode === "ALL" && overviewView ? overviewView : <EquipmentAssetViewer equipment={equipment} binding={renderableAsset} forcedDisplayMode={forcedDisplayMode} focusDetail={detailFocus} groundViewMode={groundViewMode} transformTools={transformTools} theme={theme} onAlignmentChange={onAlignmentChange} />}
+        {viewMode === "SENSORS" && worldView ? cloneElement(worldView, { cameraMemory, cameraResetVersion, cameraScope: "SENSORS", sensorViewId: comparisonSensorId === selectedSensor?.id ? comparisonSensorId : null })
+          : viewMode === "ALL" && overviewView ? cloneElement(overviewView, { cameraMemory, cameraResetVersion, cameraScope: "ALL" })
+            : <EquipmentAssetViewer cameraMemory={cameraMemory} cameraResetVersion={cameraResetVersion} equipment={equipment} binding={renderableAsset} forcedDisplayMode={forcedDisplayMode} focusDetail={detailFocus} groundViewMode={groundViewMode} transformTools={transformTools} theme={theme} onAlignmentChange={onAlignmentChange} />}
       </div>
-      {sensorStep && selectedSensor?.equipmentIds?.includes(equipment.id) && <SensorFramePreview key={selectedSensor.id} sensor={selectedSensor} />}
+      {sensorStep && selectedSensor?.equipmentIds?.includes(equipment.id) && <SensorFramePreview key={`${selectedSensor.id}:${selectedSensor.serverSensorId}`} sensor={selectedSensor} sensorView={comparisonSensorId === selectedSensor.id} onSensorViewChange={(active) => { setViewChoice({ key: viewKey, mode: "SENSORS" }); setComparisonSensorId(active ? selectedSensor.id : null); }} />}
       {equipmentPicker}
     </section>
   );
