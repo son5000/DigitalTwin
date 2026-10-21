@@ -13,7 +13,7 @@
   --editor-overlay-panel-width: clamp(300px, 25vw, 348px);
 
   display: grid;
-  grid-template-rows: 48px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   width: 100%;
   min-width: 0;
   min-height: 100vh;
@@ -281,17 +281,6 @@
   min-height: 0;
 }
 
-.topNavigationRow {
-  position: absolute;
-  top: var(--editor-overlay-gap);
-  right: var(--editor-overlay-right-safe, var(--editor-overlay-gap));
-  left: var(--editor-overlay-gap);
-  z-index: 8;
-  display: flex;
-  min-width: 0;
-  align-items: flex-start;
-  gap: 8px;
-}
 
 .workspaceNavigation {
   width: fit-content;
@@ -508,7 +497,7 @@
     --editor-overlay-left-safe: 8px;
     --editor-overlay-top-secondary: 100px;
 
-    grid-template-rows: 48px minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .header {
@@ -652,14 +641,14 @@
 /* Reserve UI space so panels never hide the canvas or its selection target. */
 .workspace,
 .workspace.monitoringWorkspace {
-  grid-template-areas: "navigation" "canvas" "status";
+  grid-template-areas: "canvas" "status";
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto;
   transition: none;
 }
 
 .workspace.panelOpen {
-  grid-template-areas: "navigation navigation" "canvas panel" "status status";
+  grid-template-areas: "canvas panel" "status status";
   grid-template-columns: minmax(0, 1fr) var(--editor-overlay-panel-width);
 }
 
@@ -699,17 +688,6 @@
   animation: none;
 }
 
-.topNavigationRow {
-  position: relative;
-  inset: auto;
-  grid-area: navigation;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  padding: 4px 8px;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface);
-}
 
 .workspaceNavigation { flex: 1 1 auto; }
 .workflowControls { border: 0; border-radius: 0; background: transparent; }
@@ -764,13 +742,12 @@
   .editor { --editor-overlay-gap: 8px; --editor-overlay-left-safe: 8px; }
   .headerMeta { display: none; }
   .workspace.panelOpen {
-    grid-template-areas: "navigation" "canvas" "panel" "status";
+    grid-template-areas: "canvas" "panel" "status";
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 3fr) minmax(0, 2fr) auto;
+    grid-template-rows: minmax(0, 3fr) minmax(0, 2fr) auto;
   }
   .floatingPanelHost > :global([data-editor-panel]) { border-left: 0; border-top: 1px solid var(--editor-panel-border); }
-  .topNavigationRow { display: flex; justify-content: space-between; gap: 4px; }
-  .workspaceNavigation { flex-basis: 100%; width: 100%; }
+    .workspaceNavigation { flex-basis: 100%; width: 100%; }
   .workflowControls { min-width: 0; max-width: calc(100% - 72px); flex-wrap: wrap; }
   .workflowControls label { flex-wrap: wrap; }
   .workflowControls select { min-width: 120px; max-width: 100%; }
@@ -784,16 +761,16 @@
 
 @media (pointer: coarse) {
   .themeToggle,
-  .topNavigationRow :where(button, select),
+  .compactHeader :where(button, select),
   .workspaceControls :where(button, select),
   .floatingPanelHost > :global([data-editor-panel]) > header button { min-width: 44px; min-height: 44px; }
 }
 
 @media (min-width: 700px) and (max-width: 900px) and (orientation: landscape) {
   .workspace.panelOpen {
-    grid-template-areas: "navigation navigation" "canvas panel" "status status";
+    grid-template-areas: "canvas panel" "status status";
     grid-template-columns: minmax(0, 1fr) 280px;
-    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-rows: minmax(0, 1fr) auto;
   }
   .workspaceNavigation { flex-basis: auto; width: auto; }
   .floatingPanelHost > :global([data-editor-panel]) { border-top: 0; border-left: 1px solid var(--editor-panel-border); }
@@ -889,4 +866,28 @@
   border-color: var(--color-primary);
   color: var(--color-primary-contrast);
   background: var(--color-primary);
+}
+
+/* Keep navigation, context and primary action in a single compact header. */
+.header { min-height: 48px; }
+.compactHeader { gap: 8px; padding: 4px 12px; flex-wrap: wrap; }
+.compactHeader .workspaceNavigation { flex: 1 1 auto; width: auto; min-width: 0; }
+.compactHeader .workflowControls { max-width: 100%; flex-wrap: wrap; min-height: 32px; padding: 0; }
+.compactHeader .workflowControls label { padding-left: 0; }
+.compactHeader .themeToggle { width: 32px; height: 32px; margin-left: 0; }
+.compactHeader .stageGuide button { min-height: 32px; }
+@media (max-width: 1100px) {
+  .compactHeader .brandCopy { display: none; }
+  .compactHeader .workspaceNavigation { flex: 1 1 60%; }
+  .compactHeader .workflowControls { margin-left: auto; }
+}
+@media (max-width: 600px) {
+  .compactHeader { gap: 4px; padding: 4px 8px; }
+  .compactHeader .brandIdentity { display: none; }
+  .compactHeader .workspaceNavigation { flex-basis: 100%; }
+  .compactHeader .workflowControls { flex: 1; margin-left: 0; gap: 4px; }
+  .compactHeader .workflowControls select { min-width: 100px; max-width: 160px; }
+}
+@media (pointer: coarse) {
+  .compactHeader .themeToggle, .compactHeader .stageGuide button { min-width: 44px; min-height: 44px; }
 }

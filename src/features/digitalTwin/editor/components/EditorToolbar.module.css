@@ -480,3 +480,4 @@
 @media (prefers-reduced-motion: reduce) {
   .toolbar *, .toolbar *::after { transition: none; }
 }
+

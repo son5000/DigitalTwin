@@ -15,6 +15,6 @@ export function generateDuct({ type, dimensions, appearance, edgeColor, sceneThe
   } else {
     addGeometry(group, new THREE.BoxGeometry(width, height, depth), { ...options, position: [0, height / 2, 0] });
   }
-  addEquipmentLabel(group, label, height, width, edgeColor, sceneTheme);
+  addEquipmentLabel(group, label, height, edgeColor, sceneTheme);
   return group;
 }

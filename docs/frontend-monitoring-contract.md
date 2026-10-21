@@ -90,12 +90,26 @@ SSE 연결 시 최신 스냅샷을 다시 조회한다. 재연결 시 미확인 
 }
 ```
 
-- 텍스처는 서버에서 만든 UV 매핑 결과를 받는다. 프론트가 촬영 사진으로 UV/정합을 추측하지 않는다. `meshPath`는 관측 장면의 proxy/actual 모델 루트부터 child index를 `/`로 연결한 경로다. 생략하면 UV가 있는 전체 메쉬에 공통 atlas를 적용한다. glTF 등 다른 로더 추가 시 안정적인 서버 메쉬 ID 계약으로 교체하는 것이 좋다.
+- `mapping: UV` 텍스처는 서버에서 만든 UV 매핑 결과를 받는다. `meshPath`는 관측 장면의 proxy/actual 모델 루트부터 child index를 `/`로 연결한 경로다. 생략하면 UV가 있는 전체 메쉬에 공통 atlas를 적용한다. glTF 등 다른 로더 추가 시 안정적인 서버 메쉬 ID 계약으로 교체하는 것이 좋다.
 - 모델/표현 불일치, 오래된 프레임, GOOD이 아닌 품질은 표시하지 않는다. 프레임 URL은 변경된 영상마다 버전이 다른 URL을 제공한다. 텍스처 다운로드 실패와 UV 누락은 화면 오류로 표시한다. 한 프레임에 최대 8개 텍스처를 적용한다.
 - hotspot 위치는 설비 로컬 m. 위치별 측정이 불가능한 센서에는 임의 위치를 채우지 않는다.
 - `readings`는 기존 ROI 응답 계약을 사용한다. `vision.changePercent`가 추가되며 연산자는 `gte`(이상), `gt`(초과), `lt`(미만)이다. revision, 측정 시각, 품질이 맞아야 표시한다.
 - 음원 `selection`은 `{coordinateSpace:"EQUIPMENT_LOCAL",representation,position:[x,y,z],equipmentId,modelVersion,model:{assetId,version}}`. 서버는 보정된 센서 위치·동기화된 원신호를 기반으로 처리해야 한다. 음원 URL은 브라우저가 재생 가능한 코덱/컨테이너로 제공한다. 프론트에서 비동기 요청 중 지점이 바뀌면 취소한다.
 - 열화상 이미지만으로 ROI 온도를 추정하지 않는다. 비전 변화율·dB·음원도 서버 결과를 사용한다.
+
+## 센서 영상의 부분 투영
+
+설정은 센서의 `textureProjection`에 저장하며 보정 내보내기에도 포함한다. `enabled`, `kind: VISION | THERMAL`, `target: ACTUAL | PROXY | BOTH`, 도형의 `surfaceId`, 스캔의 `meshPath`로 적용 대상을 고른다. `scaleX/Y`는 영상 늘림, `offsetX/Y`는 정규화 영상 이동, `rotation`은 도 단위 회전이다. `cropX/Y/Width/Height`는 0~1 범위이며 아래쪽이 Y 원점이다. `opacity`는 0~1이다. 센서의 설치 위치·방향·수직 화각·종횡비·근거리·원거리로 투영하며 가려진 표면은 센서 시점 깊이 검사로 제외한다. UV 자동 보정이나 렌즈 왜곡 추정은 수행하지 않는다.
+
+활성화한 센서는 `GET /sensors/:id/frame?kind=VISION|THERMAL`을 5초 간격으로 조회한다. 기존 monitoring SSE의 `textures`에도 아래 원본 프레임을 보낼 수 있다. 센서 ID가 일치하고 유효 시간이 남은 프레임만 표시한다. 영상 조회 실패나 오래된 프레임은 수신 대기로 바뀐다.
+
+`{ sensorId, kind, url, measuredAt, quality: "GOOD", staleAfterMs: 15000 }`
+
+온도 배열 응답은 URL 대신 `temperatureGrid: { width, height, values }`를 포함한다. values는 섭씨 온도의 행 우선 배열이며 첫 행이 위쪽이다. 누락 픽셀은 null로 보내면 투명하게 표시한다. 최대 1,048,576개 픽셀, 가로·세로 최대 2048을 받는다. `temperatureMin/Max`는 표시 색상 범위이며 측정값을 변경하지 않는다. 단일 온도 값을 면 전체의 온도 분포로 만들어내지 않는다. 열화상 이미지로 수치 온도를 역산하지 않는다.
+
+캐비넷 앞문은 기존 `enclosure.doorCount/doorLayout/doors`, 뒷문은 같은 구조의 `enclosure.rear`를 사용한다. 표면 ID `door-0-inside` 등은 그대로 유지하며 뒷문은 `rear-door-0-inside` 형태다. 문 설치 시 해당 앞판·뒷판은 제외한다. 센서의 `surfaceMount`는 문 로컬 좌표를 유지하며 문 개폐와 숨김 후에도 위치·방향을 계산한다. 스캔의 개별 문은 별도 가동 부품으로 분리되지 않은 경우 전체 스캔 형상으로 유지한다.
+
+모델 표시 조절은 현재 뷰어의 보기 상태이며 저장된 설치 구성을 덮어쓰지 않는다. 서버 이미지 제공·온도 배열 제공과 실제 카메라 보정 정확도는 현장 연동 검증이 필요하다.
 
 ## 성능·운영 경계
 
@@ -104,3 +118,14 @@ SSE 연결 시 최신 스냅샷을 다시 조회한다. 재연결 시 미확인 
 - 경고는 SSE 수신 후 즉시 UI에 반영한다. 실제 1초 이내 기준은 센서 측정 → 수집 → 판정 → 전송 → 표출 중 어느 구간인지 합의하고 통합 측정해야 한다. `durationSeconds`가 1초보다 크면 해당 조건의 의도적인 대기 시간도 구분해야 한다.
 - 브라우저 종료 중 이상 감지·관제 알림은 서버 워커 책임이다. 예시 모드의 타이머는 개발 확인용이며 상시 감시가 아니다.
 - 인증/운영자·고객 권한 집행, DB 공유 저장, 실제 텍스처 생성, 영상 변화 분석, 음원 합성, 외부 관제 전송은 백엔드 구현 및 현장 검증이 남아 있다.
+
+## 설비 설정 단계와 구형 관측 영역
+
+- 3단계는 센서 기능, 시리얼 조회, 배치·방향·화각 보정, 데이터 수신 설정을 담당한다. 4단계는 측정 대상인 관측 영역(ROI)과 그 영역의 표시 항목·경보 기준을 담당한다. 5단계는 확인만 수행한다.
+- 에디터는 단계 전환 시 동일한 장면을 유지한다. detailSetup 메타데이터와 센서 시점은 모델 재생성 조건에서 제외하며, 센서 시점 복귀 시 직전 자유 카메라를 복원한다. 에디터의 중복 ROI/관측 데이터 도구는 숨긴다. 뷰어의 표면 ROI 조회 기능은 유지한다.
+- 기존 observationPoints 저장 키를 유지하되 각 항목을 geometryType: SPHERE인 설비 로컬 좌표 ROI로 취급한다. localPosition, radius(m), opacity(0.05~0.8), revision을 저장하며 센서 식별자와 혼용하지 않는다.
+- measurements 배열은 항목별 id, name, metric, unit, sensorId(프로젝트 내 센서 바인딩 ID), visible, rules[]를 가진다. 각 rule에는 operator(gt/gte/lt/lte), threshold, severity(WARNING/DANGER)를 저장한다. 표시 여부와 경보 조건 수는 독립적이다. 기존 단일 관측 항목은 한 개의 measurement로 복원된다.
+- 실측 readings는 roiId(또는 observationPointId), equipmentId, revision, measurementId, sensorId(서버 센서 ID), value, measuredAt, quality, staleAfterMs를 포함해야 한다. 현재 영역 버전과 센서가 일치하고 신선도가 유효할 때만 표시한다. 센서 전체 latestValue를 영역별 실측값으로 대체하지 않는다. 테스트 값은 에디터에서만 테스트로 표시한다.
+- 구형 ROI 구성은 프로젝트 저장 데이터에 포함된다. 서버의 영역별 집계·상시 경보 처리는 이 계약에 대한 별도 서버 지원이 필요하며, 프런트엔드 설정만으로 상시 감시가 시작되지는 않는다. DB 변경은 수행하지 않는다.
+
+- 구형 ROI의 월드 표시는 화면 기준 24px 번호 배지다. 선택하거나 마우스를 올리면 이름·상태만 한 줄(최대 180px)로 펼친다. 확대·축소와 설비 배율에 따라 배지가 커지지 않으며, 상세 측정값은 에디터의 측정값 미리보기 또는 뷰어의 관측 영역 패널에서 확인한다. 화면 표시를 끈 항목의 경보 조건도 영역 상태에 반영한다.

@@ -18,7 +18,7 @@ export function bindMonitoringLayers({ renderedEquipment, getOptions }) {
       if (options === previousOptions && model === previousModel && second === previousSecond) return;
       previousOptions = options; previousModel = model; previousSecond = second;
       const representation = entry?.actual?.visible ? "ACTUAL" : "PROXY";
-      const records = options.mode === "ULTRASOUND" ? options.hotspots : (options.textures ?? []).filter((record) => record.kind === options.mode);
+      const records = options.mode === "ULTRASOUND" ? options.hotspots : (options.textures ?? []).filter((record) => record.kind === options.mode && record.mapping === "UV");
       const valid = (records ?? []).filter((record) => record.equipmentId === options.equipmentId && isFreshMeasurement(record, options.now)
         && record.modelVersion === options.model?.version && record.representation === representation);
       const mismatched = !valid.length && (records ?? []).some((record) => record.equipmentId === options.equipmentId && isFreshMeasurement(record, options.now) && (record.modelVersion !== options.model?.version || record.representation !== representation));

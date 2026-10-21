@@ -1,3 +1,6 @@
+import { getSensorMountPose } from "./equipmentEnclosure.js";
+import { getSensorCapabilities } from "./equipmentDetailModel.js";
+
 export const MONITORING_MODES = { MODEL: "모델", VISION: "비전", THERMAL: "열화상", ULTRASOUND: "초음파" };
 
 export function mediaUrl(value, demo = false) {
@@ -11,8 +14,8 @@ export function mediaUrl(value, demo = false) {
 export function modelReference(equipment, assets = []) {
   const asset = assets.filter((item) => item.equipmentId === equipment?.id && ["OBJ", "PLY"].includes(item.assetType)).at(-1);
   const identity = { equipmentId: equipment?.id, templateId: equipment?.shapeTemplateId, customAssetId: equipment?.customAssetId,
-    dimensions: equipment?.dimensions, parts: equipment?.parts, assetId: asset?.assetId ?? null, alignment: asset?.alignmentTransform ?? null,
-    sourceType: asset?.sourceType, sourceKey: asset?.sourceKey, assetType: asset?.assetType };
+    dimensions: equipment?.dimensions, ...(equipment?.enclosure ? { enclosure: equipment.enclosure } : {}), parts: equipment?.parts, assetId: asset?.assetId ?? null, alignment: asset?.alignmentTransform ?? null,
+    ...(asset?.includeProxy ? { includeProxy: true } : {}), sourceType: asset?.sourceType, sourceKey: asset?.sourceKey, assetType: asset?.assetType };
   let hash = 2166136261;
   for (const char of JSON.stringify(identity)) { hash ^= char.charCodeAt(0); hash = Math.imul(hash, 16777619); }
   return { assetId: asset?.assetId ?? null, version: `geometry-${(hash >>> 0).toString(16)}` };
@@ -20,10 +23,14 @@ export function modelReference(equipment, assets = []) {
 
 export function calibrationPayload(projectId, equipment, sensor, assets = []) {
   const vector = (value) => ["x", "y", "z"].map((axis) => Number(value?.[axis] ?? 0));
+  const mounted = getSensorMountPose(sensor, equipment);
+  const mountingIssue = sensor.surfaceMount && (!mounted || mounted.adjusted) ? "부착면과 센서 위치를 다시 확인하세요." : "";
   const payload = { schemaVersion: 1, projectId, equipmentId: equipment.id, sensorId: sensor.serverSensorId,
-    serialNumber: sensor.serialNumber, bindingId: sensor.id, model: modelReference(equipment, assets),
+    serialNumber: sensor.serialNumber, bindingId: sensor.id, capabilities: getSensorCapabilities(sensor), model: modelReference(equipment, assets),
     coordinateSystem: { unit: "m", handedness: "RIGHT", up: "+Y", rotationUnit: "rad", rotationOrder: "XYZ", sensorForward: "-Y", sensorUp: "-Z" },
-    pose: { space: sensor.mountMode === "EQUIPMENT" ? "EQUIPMENT_LOCAL" : "WORLD", position: vector(sensor.position), rotation: vector(sensor.rotation) },
+    pose: { space: sensor.mountMode === "EQUIPMENT" ? "EQUIPMENT_LOCAL" : "WORLD", position: vector(mounted?.position ?? sensor.position), rotation: vector(mounted?.rotation ?? sensor.rotation) },
+    ...(sensor.surfaceMount ? { surfaceMount: sensor.surfaceMount, mountingIssue } : {}),
+    ...(sensor.textureProjection ? { textureProjection: sensor.textureProjection } : {}),
     equipmentTransform: { position: vector(equipment.position), rotation: vector(equipment.rotation) },
     camera: { fieldOfView: Number(sensor.fieldOfView), aspectRatio: Number(sensor.aspectRatio), near: Number(sensor.near), far: Number(sensor.far),
       intrinsics: sensor.intrinsics ?? null, calibrationId: sensor.intrinsicCalibrationId ?? null, resolution: sensor.resolution ?? null },
@@ -32,6 +39,7 @@ export function calibrationPayload(projectId, equipment, sensor, assets = []) {
 }
 
 export function validateCalibration(payload) {
+  if (payload.mountingIssue) throw new Error(payload.mountingIssue);
   if (!payload.sensorId || !payload.serialNumber || !payload.equipmentId || !payload.projectId) throw new Error("먼저 시리얼 번호로 센서를 조회하세요.");
   if ([...payload.pose.position, ...payload.pose.rotation, ...payload.equipmentTransform.position, ...payload.equipmentTransform.rotation].some((value) => !Number.isFinite(value))) throw new Error("위치와 방향을 올바르게 입력하세요.");
   const { fieldOfView, aspectRatio, near, far } = payload.camera;

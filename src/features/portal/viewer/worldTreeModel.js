@@ -136,6 +136,23 @@ export function getTreeAncestors(tree, key) {
   return parents;
 }
 
+// Sidebar-only projection: keep the saved part hierarchy and scene model intact.
+export function createEquipmentRoiTree(tree, equipmentId, rois = []) {
+  const equipment = [...tree.nodes.values()].find((node) => node.id === equipmentId && ["EQUIPMENT", "SITE_OBJECT"].includes(node.type));
+  if (!equipment) return tree;
+  const root = { ...equipment, parentKey: undefined, parentId: undefined, children: [] };
+  const nodes = new Map([[root.key, root]]);
+  for (const roi of rois) {
+    if (!roi?.id || roi.equipmentId !== equipmentId) continue;
+    const key = worldNodeKey("ROI", roi.id, equipmentId);
+    if (nodes.has(key)) continue;
+    const node = { key, id: roi.id, type: "ROI", label: roi.name?.trim() || "이름 없는 ROI", item: roi, equipmentId, parentId: equipmentId, parentKey: root.key, children: [] };
+    nodes.set(key, node);
+    root.children.push(node);
+  }
+  return { ...tree, scope: "SINGLE_EQUIPMENT", config: WORLD_TREE_TYPES.SINGLE_EQUIPMENT, root, roots: [root], nodes, roiTree: true };
+}
+
 export function toggleTreeNode(expanded, key) {
   const next = new Set(expanded);
   if (next.has(key)) next.delete(key); else next.add(key);

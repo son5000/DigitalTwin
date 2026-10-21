@@ -47,3 +47,20 @@ test("다중 재질은 맞은 면의 표시 상태를 사용하고 점군은 선
   object.geometry.dispose(); materials.forEach((material) => material.dispose());
   points.geometry.dispose(); points.material.dispose();
 });
+
+
+test("빈 공간을 포함한 ROI는 저장 가능하고 빈 샘플을 측정 삼각형에서 제외한다", async () => {
+  const { buildRoiSurfaceSamples } = await import("../src/features/digitalTwin/editor/three/roiSurfaceSamples.js");
+  const { createSurfaceRoi, validateRoi } = await import("../src/features/digitalTwin/editor/model/roiMonitoring.js");
+  const samples = Array.from({ length: 9 }, (_, index) => [index % 3, Math.floor(index / 3), 0]);
+  samples[4] = null;
+  const surface = buildRoiSurfaceSamples(samples, 2, () => [1, 1, 0]);
+  assert.equal(surface.sampleMask[4], false);
+  assert.ok(surface.triangles.length > 0);
+  assert.ok(!surface.triangles.includes(4));
+  const roi = createSurfaceRoi("EQ", { ...surface, coordinateSpace: "EQUIPMENT_LOCAL", representation: "ACTUAL" });
+  assert.deepEqual(validateRoi(JSON.parse(JSON.stringify(roi))).surface.sampleMask, surface.sampleMask);
+  assert.throws(() => validateRoi({ ...roi, surface: { ...roi.surface, triangles: [0, 1, 4] } }), /빈 공간/);
+  assert.equal(buildRoiSurfaceSamples(Array(9).fill(null), 2, () => [0, 0, 0]), null);
+  assert.equal(buildRoiSurfaceSamples(Array.from({ length: 9 }, (_, i) => [i % 3, Math.floor(i / 3), 0]), 2, () => assert.fail()).triangles.length, 24);
+});

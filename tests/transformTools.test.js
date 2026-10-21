@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createServer } from "vite";
+import { fileURLToPath } from "node:url";
 
 import {
   cycleMoveAxisMode,
@@ -12,6 +14,28 @@ import {
   normalizeTransformTools,
   ROTATION_AXIS_MODES,
 } from "../src/features/digitalTwin/editor/constants/transformTools.js";
+
+test("센서 이동과 회전 가이드는 동시에 표시되고 드래그 중에만 다른 도구를 잠근다", async () => {
+  const server = await createServer({ configFile: false, server: { middlewareMode: true, hmr: false, watch: null }, optimizeDeps: { noDiscovery: true, include: [] }, resolve: { alias: { "@": fileURLToPath(new URL("../src", import.meta.url)) } } });
+  try {
+    const { attachDualTransformControls, setDualTransformDragging } = await server.ssrLoadModule("/src/features/digitalTwin/editor/three/dualTransformControls.js");
+    const makeControl = () => { const helper = {}; return { attach(object) { this.object = object; }, getHelper() { return helper; } }; };
+    const controls = { translate: makeControl(), rotate: makeControl() };
+    const tools = { moveAxisMode: "XYZ", rotationAxisMode: "XYZ" };
+    const sensor = {};
+    attachDualTransformControls(controls, sensor, tools);
+    for (const control of Object.values(controls)) {
+      assert.equal(control.object, sensor);
+      assert.equal(control.enabled, true);
+      assert.equal(control.getHelper().visible, true);
+      assert.equal(control.showY, true);
+    }
+    setDualTransformDragging(controls, controls.translate, true, tools);
+    assert.equal(controls.rotate.enabled, false);
+    setDualTransformDragging(controls, controls.translate, false, tools);
+    assert.equal(controls.rotate.enabled, true);
+  } finally { await server.close(); }
+});
 
 test("이동 모드는 XYZ, OFF, PLANAR 순서로 순환한다", () => {
   assert.equal(cycleMoveAxisMode(MOVE_AXIS_MODES.XYZ), MOVE_AXIS_MODES.OFF);

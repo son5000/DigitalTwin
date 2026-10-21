@@ -11,7 +11,6 @@ import {
   normalizeRotationAxisMode,
 } from "@/features/digitalTwin/editor/constants/transformTools";
 import { WORLD_PANEL_IDS } from "@/features/digitalTwin/editor/constants/worldPanel";
-import { GROUND_VIEW_MODES } from "@/features/digitalTwin/editor/model/undergroundModel";
 import { EDITOR_MODES } from "@/features/digitalTwin/editor/constants/worldStructureTemplates";
 import { ToolbarButton, ToolbarDivider, ToolbarGroup, ToolbarIcon } from "./ToolbarPrimitives";
 import { TOOLBAR_ACTION_IDS } from "./toolbarActionDefinitions";
@@ -165,47 +164,19 @@ function GridSnapControl({ enabled, snapSize, onToggle, onSnapSizeChange }) {
   );
 }
 
-const GROUND_VIEW_ACTIONS = Object.freeze([
-  [GROUND_VIEW_MODES.VISIBLE, TOOLBAR_ACTION_IDS.GROUND_VISIBLE],
-  [GROUND_VIEW_MODES.TRANSLUCENT, TOOLBAR_ACTION_IDS.GROUND_TRANSLUCENT],
-  [GROUND_VIEW_MODES.SECTION, TOOLBAR_ACTION_IDS.GROUND_SECTION],
-  [GROUND_VIEW_MODES.HIDDEN, TOOLBAR_ACTION_IDS.GROUND_HIDDEN],
-]);
-
-function GroundViewMenu({ value, onChange }) {
-  return (
-    <div className={styles.menuSection} role="group" aria-label="지면 보기 방식">
-      <span className={styles.menuHeading}>지면 보기</span>
-      {GROUND_VIEW_ACTIONS.map(([mode, actionId]) => (
-        <ToolbarButton
-          key={mode}
-          menuItem
-          actionId={actionId}
-          active={value === mode}
-          pressed={value === mode}
-          onClick={() => onChange?.(mode)}
-        />
-      ))}
-    </div>
-  );
-}
-
 function OverflowActions({
   hasSelection,
   secondaryActions = [],
   showSelectionActions = true,
   saveStatus,
   showShadowToggle,
-  showGroundViewControl,
   showBuildingIsolationToggle,
   buildingIsolationEnabled,
   buildingIsolationAvailable,
   viewerTranslucent,
   viewerTransparencyLabel,
   shadowEnabled,
-  groundViewMode,
   onShadowEnabledChange,
-  onGroundViewModeChange,
   onBuildingIsolationChange,
   onViewerTransparencyChange,
   onDuplicate,
@@ -254,8 +225,7 @@ function OverflowActions({
             onClick={() => onShadowEnabledChange?.(!shadowEnabled)}
           />
         ) : null}
-        {showGroundViewControl ? <GroundViewMenu value={groundViewMode} onChange={onGroundViewModeChange} /> : null}
-        {showShadowToggle || showGroundViewControl ? <ToolbarDivider /> : null}
+        {showShadowToggle ? <ToolbarDivider /> : null}
         {showSelectionActions ? (
           <>
             <ToolbarButton menuItem iconKey="duplicate" label="복제" shortcut="Ctrl+D" disabled={!hasSelection} disabledReason="복제할 항목을 먼저 선택하세요" onClick={onDuplicate} />
@@ -282,6 +252,7 @@ function OverflowActions({
 }
 
 export default function EditorToolbar({
+  onEquipmentEnvironmentOpen,
   hierarchyScope = false,
   focusedScope = false,
   hierarchyScopeLabel = "부지 편집",
@@ -297,8 +268,6 @@ export default function EditorToolbar({
   buildingIsolationEnabled = false,
   buildingIsolationAvailable = false,
   showShadowToggle = false,
-  showGroundViewControl = false,
-  groundViewMode = GROUND_VIEW_MODES.VISIBLE,
   shadowEnabled = true,
   siteInteractionMode = SITE_INTERACTION_MODES.NAVIGATE,
   editorMode,
@@ -319,7 +288,6 @@ export default function EditorToolbar({
   onMovementPathEdit,
   onBuildingIsolationChange,
   onShadowEnabledChange,
-  onGroundViewModeChange,
   onViewModeChange,
   onTransformToolToggle,
   onSnapSizeChange,
@@ -363,7 +331,10 @@ export default function EditorToolbar({
 
     return (
       <nav className={styles.toolbar} aria-label={`${hierarchyScopeLabel} 도구`} onClickCapture={handleToolbarClickCapture}>
-        {panelTools.leading.length ? <ToolbarGroup label={panelMode === "SPACE" ? "공간 구성" : panelMode === "FLOOR" ? "도면·설비" : panelMode === "CUSTOM_EQUIPMENT" ? "설비 도구" : "기타 설정"}>{panelTools.leading.map((tool) => renderPanelTool(tool))}</ToolbarGroup> : null}
+        {panelTools.leading.length || onEquipmentEnvironmentOpen ? <ToolbarGroup label={panelMode === "SPACE" ? "공간 구성" : panelMode === "FLOOR" ? "도면·설비" : panelMode === "CUSTOM_EQUIPMENT" ? "설비 도구" : "기타 설정"}>
+          {panelTools.leading.map((tool) => renderPanelTool(tool))}
+          {onEquipmentEnvironmentOpen && <ToolbarButton iconKey="ground-visible" label="배경·지면" onClick={onEquipmentEnvironmentOpen} />}
+        </ToolbarGroup> : null}
         {panelTools.leading.length ? <ToolbarDivider /> : null}
         <ToolbarGroup label="선택·변형">
           {showSiteInteractionTools ? <ToolbarButton
@@ -427,16 +398,13 @@ export default function EditorToolbar({
           showSelectionActions={showSelectionActions}
           saveStatus={saveStatus}
           showShadowToggle={showShadowToggle}
-          showGroundViewControl={showGroundViewControl}
           showBuildingIsolationToggle={showBuildingIsolationToggle}
           buildingIsolationEnabled={buildingIsolationEnabled}
           buildingIsolationAvailable={buildingIsolationAvailable}
           viewerTranslucent={viewerTranslucent}
           viewerTransparencyLabel={viewerTransparencyLabel}
           shadowEnabled={shadowEnabled}
-          groundViewMode={groundViewMode}
           onShadowEnabledChange={onShadowEnabledChange}
-          onGroundViewModeChange={onGroundViewModeChange}
           onBuildingIsolationChange={onBuildingIsolationChange}
           onViewerTransparencyChange={onViewerTransparencyChange}
           onDuplicate={onDuplicate}

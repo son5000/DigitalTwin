@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { generateEnclosure } from "../generators/EnclosureGenerator";
 
 import { createCustomEquipmentGroup } from "@/features/customAssets/equipment/customEquipmentRenderer";
 import { getRuntimeCustomAsset } from "@/features/customAssets/core/customAssetRegistry";
@@ -39,6 +40,7 @@ export function getEquipmentGeometrySignature(
     equipment.showNameLabel === true,
     JSON.stringify(equipment.dimensions),
     JSON.stringify(equipment.parameters),
+    JSON.stringify(equipment.enclosure),
     JSON.stringify(equipment.appearance),
     JSON.stringify(equipment.appearanceSlots),
     JSON.stringify(equipment.userTexture),
@@ -57,6 +59,7 @@ export function getEquipmentBatchKey(equipment, { theme = "dark", viewerTransluc
     equipment.showNameLabel === true,
     JSON.stringify(equipment.dimensions),
     JSON.stringify(equipment.parameters),
+    JSON.stringify(equipment.enclosure),
     JSON.stringify(equipment.appearance),
     JSON.stringify(equipment.appearanceSlots),
     JSON.stringify(equipment.userTexture),
@@ -84,7 +87,7 @@ export function createEquipmentObject(
     ? { ...sourceAppearance, opacity: Math.max(0.08, (sourceAppearance.opacity ?? 1) * 0.5) }
     : sourceAppearance;
   const customAsset = equipment.customAssetId ? getRuntimeCustomAsset(equipment.customAssetId) ?? equipment.customAssetSnapshot ?? template?.customAsset : null;
-  const visual = customAsset ? createCustomEquipmentGroup(customAsset, {
+  const visual = equipment.enclosure?.enabled ? generateEnclosure(equipment, { edgeColor, sceneTheme }) : customAsset ? createCustomEquipmentGroup(customAsset, {
     exposeParts,
     selectedPartId,
     equipmentId: equipment.id,
@@ -117,7 +120,7 @@ export function createEquipmentObject(
     equipment,
     { selected, colliding, dimmed, theme, viewerTranslucent },
   );
-  if (template?.lod && !selected && enableLod) {
+  if (template?.lod && !equipment.enclosure?.enabled && !selected && enableLod) {
     const lod = new THREE.LOD();
     const lowMaterial = new THREE.MeshStandardMaterial({
       color: appearance.color,

@@ -1,8 +1,23 @@
+import { Vector3 } from "three";
+import { normalizeEquipmentView } from "../model/viewerPreset.js";
+
+export function restoreEquipmentCamera(camera, controls, view, equipmentObject) {
+  const snapshot = normalizeEquipmentView(view);
+  if (!snapshot) return false;
+  if (equipmentObject) {
+    equipmentObject.updateWorldMatrix(true, false);
+    snapshot.position = equipmentObject.localToWorld(new Vector3().fromArray(snapshot.position)).toArray();
+    snapshot.target = equipmentObject.localToWorld(new Vector3().fromArray(snapshot.target)).toArray();
+    snapshot.up = new Vector3().fromArray(snapshot.up).transformDirection(equipmentObject.matrixWorld).toArray();
+  }
+  return restoreViewerCamera(camera, controls, snapshot);
+}
+
 // Keep view changes separate from model/configuration changes. Scope keys contain
 // only viewing targets and explicit fit requests, never editable sensor values.
 export function captureViewerCamera(camera, controls) {
   return { position: camera.position.toArray(), target: controls.target.toArray(), up: camera.up.toArray(),
-    zoom: camera.zoom, near: camera.near, far: camera.far };
+    zoom: camera.zoom, fov: camera.fov, near: camera.near, far: camera.far };
 }
 
 export function restoreViewerCamera(camera, controls, snapshot) {
@@ -10,6 +25,7 @@ export function restoreViewerCamera(camera, controls, snapshot) {
   camera.position.fromArray(snapshot.position);
   camera.up.fromArray(snapshot.up);
   camera.zoom = snapshot.zoom;
+  if (Number.isFinite(snapshot.fov)) camera.fov = snapshot.fov;
   camera.near = snapshot.near;
   camera.far = snapshot.far;
   controls.target.fromArray(snapshot.target);

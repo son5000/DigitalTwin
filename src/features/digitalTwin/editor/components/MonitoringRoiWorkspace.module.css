@@ -4,10 +4,7 @@
 .workspace button:hover, .workspace button[aria-pressed="true"] { border-color: #469beb; }
 .workspace button:disabled { opacity: .55; cursor: default; }
 .workspace :is(button, input, select, summary):focus-visible { outline: 2px solid #469beb; outline-offset: 3px; }
-.toggle { position: absolute; top: 12px; right: 12px; z-index: 25; font-size: 12px !important; }
-.dataToggle { position: absolute; top: 12px; left: var(--editor-overlay-left-safe, 12px); z-index: 25; font-size: 12px !important; }
-.alarmBadge { position: absolute; top: 12px; left: calc(var(--editor-overlay-left-safe, 12px) + 135px); z-index: 25; color: #e99347 !important; font-size: 12px !important; }
-.panel.dataPanel { left: var(--editor-overlay-left-safe, 12px); right: auto; display: grid; align-content: start; gap: 12px; }
+.panel.dataPanel { display: grid; align-content: start; gap: 12px; }
 .modeButtons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .dataPanel label { display: grid; gap: 6px; }
 .dataPanel .check { display: flex; align-items: center; gap: 8px; }
@@ -16,10 +13,8 @@
 .dataPanel audio { width: 100%; }
 .dataPanel article { padding: 8px; border: 1px solid var(--roi-border); border-radius: 5px; }
 .dataPanel article button { display: block; margin-top: 8px; }
-.panel.pickingPanel { max-height: 210px; bottom: auto; }
 .panel { position: absolute; top: 58px; right: 12px; bottom: 70px; z-index: 25; width: min(310px, calc(100% - 24px)); box-sizing: border-box; overflow: auto; overscroll-behavior: contain; padding: 14px; border: 1px solid var(--roi-border); border-radius: 9px; background: var(--roi-bg); box-shadow: 0 8px 24px rgb(0 0 0 / 15%); font-size: 12px; line-height: 1.6; }
 .panel header, .draftHeading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
-.drawingPanel { bottom: auto; max-height: calc(100% - 80px); }
 .panel header span, .hint { color: var(--roi-muted); font-size: 12px; overflow-wrap: anywhere; }
 .list { display: grid; gap: 6px; margin: 12px 0; }
 .list button { display: flex; gap: 8px; justify-content: space-between; text-align: left; }
@@ -43,3 +38,8 @@
 .error { border-left: 3px solid #d64747; padding-left: 8px; overflow-wrap: anywhere; }
 @media (pointer: coarse) { .workspace button, .form :is(input:not([type="checkbox"]), select), .form .check, .choices label { min-height: 44px; } }
 @media (max-width: 600px) { .panel { bottom: 12px; } }
+
+.panelTools { position: absolute; top: var(--drawer-top, 12px); right: 12px; z-index: 25; display: flex; flex-wrap: wrap; gap: 6px; max-width: calc(100% - 24px); }
+.toggle, .dataToggle, .alarmBadge { font-size: 12px !important; }
+.alarmBadge { color: #e99347 !important; }
+.viewerPanel.viewerPanel { position: absolute; top: calc(var(--drawer-top, 12px) + 50px); right: 12px; bottom: var(--drawer-bottom, 78px); left: auto; width: min(330px, calc(100% - 92px)); max-height: none; box-sizing: border-box; padding: 14px; border: 1px solid var(--portal-border, var(--roi-border)); border-radius: 9px; overflow: auto; overscroll-behavior: contain; }

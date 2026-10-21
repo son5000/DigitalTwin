@@ -39,7 +39,7 @@ import {
 import { SITE_INTERACTION_MODES } from "@/features/digitalTwin/editor/constants/siteEnvironmentTemplates";
 import { intersectAreaWithSite } from "@/features/digitalTwin/editor/constants/siteEnvironmentSettings";
 import { WORLD_PANEL_IDS } from "@/features/digitalTwin/editor/constants/worldPanel";
-import { ENVIRONMENT_TEMPLATE_IDS, getWizardStepIndex, WORLD_WIZARD_STEP_IDS, WORLD_WIZARD_STEPS } from "@/features/digitalTwin/editor/constants/worldWizard";
+import { getWizardStepIndex, WORLD_WIZARD_STEP_IDS, WORLD_WIZARD_STEPS } from "@/features/digitalTwin/editor/constants/worldWizard";
 import { EDITOR_MODES, WORLD_STRUCTURE_TEMPLATES } from "@/features/digitalTwin/editor/constants/worldStructureTemplates";
 import useDigitalTwinEditorState from "@/features/digitalTwin/editor/store/useDigitalTwinEditorState";
 import useEditorPreferences from "@/features/digitalTwin/editor/store/useEditorPreferences";
@@ -76,7 +76,7 @@ import {
 import { equipmentAssetRepository } from "@/features/digitalTwin/editor/api/equipmentAssetRepository";
 import { createLocalEquipmentAssetRecord } from "@/features/digitalTwin/editor/model/equipmentAssetFiles";
 import { ASSET_SOURCE_TYPES } from "@/features/digitalTwin/editor/model/equipmentDetailModel";
-import { getEquipmentSetupSaveSummary } from "@/features/digitalTwin/editor/model/equipmentSetup";
+import { getEquipmentSetupSaveSummary, updateEquipmentSetup } from "@/features/digitalTwin/editor/model/equipmentSetup";
 
 import styles from "./DigitalTwinEditorPage.module.css";
 
@@ -177,6 +177,8 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
   const [movementPlayback, setMovementPlayback] = useState({ status: MOVEMENT_PLAYBACK_STATES.STOPPED, currentTime: 0, revision: 0 });
   const [movementPlaybackError, setMovementPlaybackError] = useState("");
   const movementClockRef = useRef({ currentTime: 0, duration: 0, status: MOVEMENT_PLAYBACK_STATES.STOPPED, onUiTimeChange: null });
+  const equipmentCameraControllerRef = useRef(null);
+  const equipmentWorkspaceViewRef = useRef(null);
   const buildingSaveRequestRef = useRef(0);
   const buildingReplacementPendingRef = useRef(false);
   const siteWorldCameraStateRef = useRef(null);
@@ -209,7 +211,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     createRoom, changeRoom, changeSharedWall, createDoor, changeDoor, deleteDoor,
     selectFloorEquipmentTemplate, addFloorEquipment, updateFloorEquipment, selectFloorEquipment,
     removeSelectedFloorEquipment, duplicateSelectedFloorEquipment,
-    addObservationPoint, updateObservationPoint, selectObservationPoint,
+    addObservationPoint, updateObservationPoint, removeObservationPoint, selectObservationPoint,
     addAssetBinding, updateAssetBinding, selectAssetBinding,
     addMonitoringDevice, updateMonitoringDevice, selectMonitoringDevice,
     addMonitoringBinding, updateMonitoringBinding, selectMonitoringBinding,
@@ -279,7 +281,6 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     const verticalStructures = editor.verticalStructuresByBuildingId[focusedBuilding?.id] ?? [];
     return [...floorStructures, ...verticalStructures];
   }, [buildingFloors, editor.floorPlansById, editor.verticalStructuresByBuildingId, focusedBuilding?.id]);
-  const environmentSiteObjects = useMemo(() => editor.siteObjects.filter((item) => ENVIRONMENT_TEMPLATE_IDS.includes(item.type)), [editor.siteObjects]);
   const hasSiteSelection = Boolean(editor.selectedBuilding || editor.selectedSiteObject);
   const activeWorkspaceSelection = workspaceMode === WORKSPACE_MODES.PLAN ? editor.selectedFloorPlanStructure : editor.selectedFloorEquipment;
   const hasTransformSelection = isCompositionStep
@@ -711,6 +712,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
       equipmentIds: [...new Set([...(editor.observationWorkflow.viewerSettings?.equipmentIds ?? []), equipmentId])],
       activeEquipmentId: equipmentId,
     });
+    setActiveFloatingPanelId(WORLD_PANEL_IDS.DETAILS);
     setMonitoringEquipmentNotice("관측 설비를 등록했습니다.");
     setMonitoringEquipmentPickerOpen(false);
     return equipmentId;
@@ -763,8 +765,11 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     selectMonitoringDevice(null);
     selectMonitoringBinding(null);
     updateObservationViewerSettings({ activeEquipmentId: equipmentId });
+    const item = editor.allMonitoringEquipment.find((entry) => entry.id === equipmentId);
+    if (item) updateMonitoringEquipment(equipmentId, { metadata: { detailSetup: updateEquipmentSetup(item, "BASIC") } });
+    setActiveFloatingPanelId(WORLD_PANEL_IDS.DETAILS);
     setMonitoringEquipmentPickerOpen(false);
-  }, [selectAssetBinding, selectMonitoringBinding, selectMonitoringDevice, selectObservationPoint, updateObservationViewerSettings]);
+  }, [editor.allMonitoringEquipment, updateMonitoringEquipment, selectAssetBinding, selectMonitoringBinding, selectMonitoringDevice, selectObservationPoint, updateObservationViewerSettings]);
   const handleMonitoringEquipmentChange = useCallback((changes) => {
     if (monitoringEquipmentId) updateMonitoringEquipment(monitoringEquipmentId, changes);
   }, [monitoringEquipmentId, updateMonitoringEquipment]);
@@ -1001,11 +1006,6 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
 
   const hasNextWizardStep = wizardStepIndex < activeWizardSteps.length - 1;
   const primaryDisabled = pendingAssetUploads > 0 || (hasNextWizardStep && isFloorWorkspaceStep && !selectedFloor && !editor.allMonitoringEquipment.length);
-  const stageContext = isCompositionStep
-    ? `${editor.siteEnvironment.width.toFixed(0)} × ${editor.siteEnvironment.depth.toFixed(0)} m · 건축물 ${userBuildings.length} · 환경 ${environmentSiteObjects.length}`
-    : isMonitoringStep
-      ? `관측 설비 ${editor.allMonitoringEquipment.length}개 · ${monitoringEquipment?.name ?? "설비 등록 필요"}`
-    : `${focusedBuilding?.name ?? "건축물 미선택"} · ${selectedFloor?.name ?? "층 미선택"}`;
   const panelTitle = isCompositionStep
     ? activeFloatingPanelId === WORLD_PANEL_IDS.OBJECTS ? "오브젝트 배치" : activeFloatingPanelId === WORLD_PANEL_IDS.OBJECT_LIST ? "오브젝트 목록" : [WORLD_PANEL_IDS.TERRAIN, WORLD_PANEL_IDS.SETTINGS].includes(activeFloatingPanelId) ? "지형·부지 관리" : "오브젝트 설정"
     : isFloorWorkspaceStep
@@ -1135,12 +1135,32 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
 
   return (
     <main className={styles.editor}>
-      <header className={styles.header}>
+      <header className={`${styles.header} ${styles.compactHeader}`}>
         <div className={styles.brandIdentity} aria-label="Check Guard Digital Twin Spatial Editor">
           <div className={styles.brandMark} aria-hidden="true"><WorldIcon size={24} /></div>
-          <div className={styles.brandCopy}><strong>Digital Twin</strong><span>Spatial Editor</span></div>
+          <div className={styles.brandCopy}><strong>Digital Twin</strong></div>
         </div>
-        <div className={styles.headerMeta}><span>{stageContext}</span></div>
+        <div className={styles.workspaceNavigation}><WorldWorkspaceNavigation activeViewId={wizardStepId} onViewChange={requestStepChange} steps={activeWizardSteps} /></div>
+          <div className={styles.workflowControls}>
+            {isMonitoringStep ? (
+              <label>
+                <span>관측 설비</span>
+                <select
+                  value={monitoringEquipmentId ?? ""}
+                  disabled={editor.allMonitoringEquipment.length === 0}
+                  onChange={(event) => {
+                    handleMonitoringEquipmentSelect(event.target.value || null);
+                  }}
+                >
+                  <option value="">설비를 선택하세요</option>
+                  {editor.allMonitoringEquipment.map((equipment) => <option key={equipment.id} value={equipment.id}>{equipment.name} · {equipment.locationLabel}</option>)}
+                </select>
+              </label>
+            ) : null}
+            {isMonitoringStep ? <button type="button" onClick={() => setMonitoringEquipmentPickerOpen(true)}>설비 추가</button> : null}
+            <button type="button" className={styles.expandScopeButton} onClick={() => setShowObservationScopeSelector(true)}>관측 범위 변경</button>
+          </div>
+          <section className={styles.stageGuide} aria-label="현재 화면 작업"><button type="button" disabled={primaryDisabled} title={pendingAssetUploads > 0 ? "3D 파일 저장 중입니다" : primaryDisabled ? "건축물과 층을 먼저 선택하세요" : wizardStep.primaryLabel} onClick={handlePrimaryAction}>{hasNextWizardStep ? <ArrowRightIcon size={16} /> : <SaveIcon size={16} />}<span>{pendingAssetUploads > 0 ? "파일 저장 중…" : hasNextWizardStep ? "다음" : "저장"}</span></button></section>
         <button
           type="button"
           className={styles.themeToggle}
@@ -1163,29 +1183,6 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
             : "0px",
         }}
       >
-        <div className={styles.topNavigationRow} data-camera-safe-ui>
-          <div className={styles.workspaceNavigation}><WorldWorkspaceNavigation activeViewId={wizardStepId} onViewChange={requestStepChange} steps={activeWizardSteps} /></div>
-          <div className={styles.workflowControls}>
-            {isMonitoringStep ? (
-              <label>
-                <span>관측 설비</span>
-                <select
-                  value={monitoringEquipmentId ?? ""}
-                  disabled={editor.allMonitoringEquipment.length === 0}
-                  onChange={(event) => {
-                    handleMonitoringEquipmentSelect(event.target.value || null);
-                  }}
-                >
-                  <option value="">설비를 선택하세요</option>
-                  {editor.allMonitoringEquipment.map((equipment) => <option key={equipment.id} value={equipment.id}>{equipment.name} · {equipment.locationLabel}</option>)}
-                </select>
-              </label>
-            ) : null}
-            {isMonitoringStep ? <button type="button" onClick={() => setMonitoringEquipmentPickerOpen(true)}>설비 추가</button> : null}
-            <button type="button" className={styles.expandScopeButton} onClick={() => setShowObservationScopeSelector(true)}>관측 범위 변경</button>
-          </div>
-          <section className={styles.stageGuide} aria-label="현재 화면 작업"><button type="button" disabled={primaryDisabled} title={pendingAssetUploads > 0 ? "3D 파일 저장 중입니다" : primaryDisabled ? "건축물과 층을 먼저 선택하세요" : wizardStep.primaryLabel} onClick={handlePrimaryAction}>{hasNextWizardStep ? <ArrowRightIcon size={16} /> : <SaveIcon size={16} />}<span>{pendingAssetUploads > 0 ? "파일 저장 중…" : hasNextWizardStep ? "다음" : "저장"}</span></button></section>
-        </div>
 
         <div className={styles.sceneArea} data-scene-area>
           {isFloorWorkspaceStep ? (
@@ -1282,6 +1279,9 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
               />
             ) : isMonitoringStep ? (
               <EquipmentDetailWorkspace
+                workspaceViewControllerRef={equipmentWorkspaceViewRef}
+                cameraController={equipmentCameraControllerRef}
+                singleEquipment={editor.observationWorkflow.scopeType === OBSERVATION_SCOPE_TYPES.SINGLE_EQUIPMENT}
                 equipment={monitoringEquipment}
                 listOpen={activeFloatingPanelId === WORLD_PANEL_IDS.OBJECT_LIST}
                 onCloseList={handleFloatingPanelClose}
@@ -1312,7 +1312,8 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                   onUploadAsset={handleMonitoringNewAssetFiles}
                 /> : null}
                 onAlignmentChange={(changes, bindingId) => bindingId && updateAssetBinding(bindingId, { alignmentTransform: changes })}
-                worldView={monitoringEquipment ? <MonitoringRoiWorkspace key={monitoringEquipment.id}
+                pointOptions={{ selectedId: editor.selectedObservationPoint?.id, onSelect: selectObservationPoint, onChange: updateObservationPoint, onAdd: addObservationPoint }}
+                worldView={monitoringEquipment ? <MonitoringRoiWorkspace key={monitoringEquipment.id} editorMode
                   equipment={monitoringEquipment}
                   assetBindings={editor.equipmentAssetBindings}
                   viewerPreset={editor.viewerPreset}
@@ -1380,6 +1381,11 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
           ) : null}
 
           <EditorToolbar
+            onEquipmentEnvironmentOpen={isMonitoringStep && monitoringEquipment ? () => {
+              handleMonitoringEquipmentChange({ metadata: { detailSetup: updateEquipmentSetup(monitoringEquipment, "ASSET") } });
+              setActiveFloatingPanelId(WORLD_PANEL_IDS.DETAILS);
+              requestAnimationFrame(() => document.getElementById("equipment-environment-settings")?.scrollIntoView({ block: "nearest" }));
+            } : undefined}
             focusedScope hierarchyScopeLabel={wizardStep.contextLabel}
             panelMode={isCompositionStep ? "SPACE" : isFloorWorkspaceStep ? "FLOOR" : "MONITORING"}
             activePanelId={activeFloatingPanelId} onPanelChange={handleFloatingPanelChange}
@@ -1395,9 +1401,6 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
             buildingIsolationEnabled={showOnlySelectedBuilding}
             buildingIsolationAvailable={Boolean(editor.selectedBuilding)}
             showShadowToggle={isFloorWorkspaceStep || isMonitoringStep}
-            showGroundViewControl={isMonitoringStep}
-            groundViewMode={groundViewMode}
-            onGroundViewModeChange={setGroundViewMode}
             shadowEnabled={editorPreferences.shadowEnabled}
             onShadowEnabledChange={setShadowEnabled}
             onBuildingIsolationChange={(enabled) => {
@@ -1507,6 +1510,8 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
               <EquipmentProperties equipment={editor.selectedFloorEquipment} detailAsset={null} hasCollision={false} snapCandidate={null} placementOnly floors={buildingFloors} spaces={currentFloorSpaces} onChange={handleFloorEquipmentChange} />
             ) : (
               <MonitoringSettingsPanel
+                workspaceViewControllerRef={equipmentWorkspaceViewRef}
+                cameraController={equipmentCameraControllerRef}
                 key={monitoringEquipmentId}
                 equipment={editor.allMonitoringEquipment} selectedEquipmentId={monitoringEquipmentId}
                 viewerPreset={editor.viewerPreset} onViewerPresetChange={updateViewerPreset} onEquipmentRepresentationChange={updateEquipmentRepresentationOverride}
@@ -1514,7 +1519,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                 assetBindings={editor.equipmentAssetBindings} sensorBindings={editor.sensorBindings} observationPoints={editor.observationPoints} serverBindings={editor.serverBindings}
                 selectedAsset={editor.selectedAssetBinding} selectedPoint={editor.selectedObservationPoint} selectedSensor={editor.selectedSensorBinding} selectedServer={editor.selectedServerBinding}
                 onAddAsset={addAssetBinding} onSelectAsset={selectAssetBinding} onUpdateAsset={updateAssetBinding}
-                onAddPoint={addObservationPoint} onSelectPoint={selectObservationPoint} onUpdatePoint={updateObservationPoint}
+                onRemovePoint={removeObservationPoint} onSelectPoint={selectObservationPoint} onUpdatePoint={updateObservationPoint}
                 onAddSensor={addMonitoringDevice} onSelectSensor={selectMonitoringDevice} onUpdateSensor={updateMonitoringDevice}
                 onAddServer={addMonitoringBinding} onSelectServer={selectMonitoringBinding} onUpdateServer={updateMonitoringBinding}
                 onUpdateEquipment={handleMonitoringEquipmentChange}

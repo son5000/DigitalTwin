@@ -1,9 +1,10 @@
+import { getSensorMountPose } from "./equipmentEnclosure.js";
 export const EQUIPMENT_SETUP_STEPS = Object.freeze([
-  { id: "BASIC", label: "기본 정보", description: "설비명, 모델 정보와 대표 사진을 등록합니다." },
-  { id: "ASSET", label: "3D 모델·표현", description: "스캔 모델과 텍스처를 연결하고 크기·표현 방식을 맞춥니다." },
-  { id: "SENSOR", label: "센서 위치", description: "관측 이미지와 모델을 비교해 센서 위치·방향을 보정합니다." },
-  { id: "POINT", label: "측정값·임계치", description: "센서별 관측 항목, 표시 이름, 단위와 경보 기준을 설정합니다." },
-  { id: "REVIEW", label: "연결·검토", description: "데이터 연결 정보와 앞 단계 설정을 확인합니다." },
+  { id: "BASIC", label: "기본 정보", description: "설비 정보와 모델·재질·텍스처 파일을 등록합니다." },
+  { id: "ASSET", label: "모델·관제 화면", description: "설비의 크기와 방향, 관제 시작 화면을 설정하세요." },
+  { id: "SENSOR", label: "센서 배치·연결", description: "센서 기능과 연결 정보를 등록하고, 위치·촬영 방향을 맞추세요." },
+  { id: "POINT", label: "관측 영역·임계치", description: "살펴볼 위치를 구체로 지정하세요. 영역마다 측정 항목과 경보 기준을 여러 개 설정할 수 있습니다." },
+  { id: "REVIEW", label: "최종 확인", description: "모델, 센서 연결, 관측 영역을 확인하고 프로젝트를 저장하세요." },
 ]);
 
 export function getEquipmentSetup(equipment) {
@@ -42,6 +43,11 @@ export function getEquipmentSetupSaveSummary(equipment = []) {
 export function getSensorReadingState(point, value) {
   if (value === null || value === undefined || value === "" || !Number.isFinite(Number(value))) return { label: "데이터 없음", icon: "—", level: "EMPTY" };
   const number = Number(value);
+  if (point?.rules?.length) {
+    const matched = point.rules.filter((rule) => Number.isFinite(Number(rule.threshold)) && (rule.operator === "lt" ? number < Number(rule.threshold) : rule.operator === "lte" ? number <= Number(rule.threshold) : rule.operator === "gt" ? number > Number(rule.threshold) : number >= Number(rule.threshold)));
+    const level = matched.some((rule) => rule.severity === "DANGER") ? "DANGER" : matched.length ? "WARNING" : "NORMAL";
+    return { level, label: { DANGER: "위험", WARNING: "주의", NORMAL: "정상" }[level], icon: level === "NORMAL" ? "●" : "!" };
+  }
   const danger = Number(point?.dangerRange?.min);
   const warning = Number(point?.warningRange?.min);
   const level = Number.isFinite(danger) && number >= danger ? "DANGER" : Number.isFinite(warning) && number >= warning ? "WARNING" : "NORMAL";
@@ -51,12 +57,16 @@ export function getSensorReadingState(point, value) {
 
 export function getSetupStepIssue(step, { equipment, assets = [], sensors = [], points = [] }) {
   if (step === "BASIC" && !equipment?.name?.trim()) return "설비명을 입력하세요.";
-  if (step === "ASSET" && !assets.some((asset) => ["OBJ", "PLY"].includes(asset.assetType))) return "스캔 모델을 등록하거나 이 단계를 건너뛰세요.";
+  if (step === "ASSET" && !equipment?.shapeTemplateId && !equipment?.enclosure?.enabled && !assets.some((asset) => ["OBJ", "PLY"].includes(asset.assetType))) return "스캔 모델을 등록하거나 이 단계를 건너뛰세요.";
   if (step === "SENSOR" && !sensors.length) return "센서를 등록하거나 이 단계를 건너뛰세요.";
+  if (["SENSOR", "REVIEW"].includes(step) && sensors.some((sensor) => sensor.surfaceMount && (!getSensorMountPose(sensor, equipment) || getSensorMountPose(sensor, equipment).adjusted))) return "센서의 부착면과 위치를 다시 확인하세요.";
   if (step === "POINT") {
-    if (!points.length) return "관측 항목을 추가하거나 이 단계를 건너뛰세요.";
-    if (points.some((point) => !point.sensorIds?.some((id) => sensors.some((sensor) => sensor.id === id)))) return "각 관측 항목에 센서를 연결하세요.";
+    if (!points.length) return "관측 영역을 추가하거나 이 단계를 건너뛰세요.";
+    if (points.some((point) => point.measurements && !point.measurements.length)) return "각 관측 영역에 측정 항목을 하나 이상 추가하세요.";
+    if (points.some((point) => point.measurements?.length ? point.measurements.some((item) => !sensors.some((sensor) => sensor.id === item.sensorId)) : !point.sensorIds?.some((id) => sensors.some((sensor) => sensor.id === id)))) return "각 관측 항목에 측정 센서를 선택하세요.";
+    if (points.some((point) => point.measurements?.some((item) => item.rules?.some((rule) => rule.threshold === "" || !Number.isFinite(Number(rule.threshold)))))) return "경보 조건의 기준값을 입력하세요.";
     if (points.some((point) => {
+      if (point.measurements?.length) return false;
       const limits = [point.normalRange?.max, point.warningRange?.max, point.dangerRange?.max];
       return limits.some((value) => value === null || value === undefined || !Number.isFinite(Number(value))) || Number(limits[0]) >= Number(limits[1]) || Number(limits[1]) >= Number(limits[2]);
     })) return "임계치를 정상 < 주의 < 위험 순서로 입력하세요.";

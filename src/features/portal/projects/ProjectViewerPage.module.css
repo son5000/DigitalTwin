@@ -34,16 +34,17 @@
 .buildingControls button { border: 1px solid var(--portal-border); border-radius: 6px; background: var(--portal-surface); padding: 7px; font-size: 10px; cursor: pointer; }
 .buildingControls button:disabled { opacity: 0.5; cursor: default; }
 .equipmentNames { margin: 10px 0; padding-left: 22px; color: var(--portal-muted); font-size: 11px; line-height: 1.8; }
-.roiSummary { flex-shrink: 0; max-height: 240px; overflow: auto; padding: 12px; color: var(--portal-text); font-size: 12px; border-top: 1px solid var(--portal-border); }
-.roiSummary p { color: var(--portal-muted); font-size: 12px; }
-.roiSummary button { width: 100%; display: flex; justify-content: space-between; gap: 8px; text-align: left; min-height: 40px; margin-top: 6px; padding: 8px; border: 1px solid var(--portal-border); border-radius: 6px; background: var(--portal-surface); color: var(--portal-text); }
-.roiSummary button span { overflow-wrap: anywhere; }
-.roiSummary button small { flex-shrink: 0; }
-.roiSummary button[data-status="WARNING"] { border-left: 3px solid #bd7418; }
-.roiSummary button[data-status="DANGER"] { border-left: 3px solid #d64747; }
 .linkTools { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px; font-size: 12px; }
 .linkTools button, .linkTools input { border: 1px solid var(--portal-border); border-radius: 6px; padding: 8px; background: var(--portal-surface); color: var(--portal-text); min-width: 0; max-width: 100%; }
 .linkTools p { width: 100%; margin: 0; }
 .linkTools input { width: 100%; }
 @media (max-width: 800px) { .world { height: 100%; } .toolbar { top: 108px; padding-inline: 12px; gap: 8px; } .worldFooter { padding-inline: 12px; } }
 @media (max-width: 460px) { .toolbar button { padding-inline: 8px; font-size: 10px; } .worldFooter span:last-child { display: none; } }
+
+.scanLoading { position: absolute; z-index: 30; top: 50%; left: 50%; transform: translate(-50%, -50%); max-width: calc(100% - 32px); padding: 16px 20px; border: 1px solid var(--portal-border); border-radius: 10px; background: var(--portal-panel); color: var(--portal-text); box-shadow: 0 8px 28px rgb(0 0 0 / 18%); font-size: 13px; pointer-events: none; }
+.loadingDots { display: inline-flex; width: 18px; margin-left: 4px; }
+.loadingDots i { font-style: normal; animation: loadingDot 1.2s infinite; }
+.loadingDots i:nth-child(2) { animation-delay: .2s; }
+.loadingDots i:nth-child(3) { animation-delay: .4s; }
+@keyframes loadingDot { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .loadingDots i { animation: none; } }

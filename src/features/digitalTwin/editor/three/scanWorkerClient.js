@@ -7,29 +7,29 @@ const abortError = () => new DOMException("Cancelled", "AbortError");
 export function parseScanInWorker(source, type, signal) {
   const job = queue.then(async () => {
     if (signal?.aborted) throw abortError();
-    const response = await fetch(source, { signal });
-    if (!response.ok) throw new Error("MODEL_DOWNLOAD_FAILED");
-    if (Number(response.headers.get("content-length")) > 256 * 1024 * 1024) throw new Error("MODEL_FILE_LIMIT");
-    const buffer = await response.arrayBuffer();
-    if (buffer.byteLength > 256 * 1024 * 1024) throw new Error("MODEL_FILE_LIMIT");
-    if (signal?.aborted) throw abortError();
     return new Promise((resolve, reject) => {
       const worker = new Worker(new URL("./scanParser.worker.js", import.meta.url), { type: "module" });
       const finish = (error, data) => {
-        clearTimeout(timeout);
         signal?.removeEventListener("abort", cancel);
         worker.terminate();
         if (error) reject(error); else resolve(data);
       };
       const cancel = () => finish(abortError());
-      const timeout = setTimeout(() => finish(new Error("MODEL_TIMEOUT")), 60000);
+      // Large scans may take longer than a minute. Stop on explicit cancellation
+      // or a worker error instead of rejecting a valid scan by elapsed time.
       signal?.addEventListener("abort", cancel, { once: true });
       worker.onerror = () => finish(new Error("MODEL_WORKER_FAILED"));
       worker.onmessage = ({ data }) => finish(data.error ? new Error(data.error) : null, data.geometries);
-      worker.postMessage({ type, buffer }, [buffer]);
+      // Structured-clone the Blob without expanding it into a UI-thread buffer.
+      // Remote relative URLs must resolve against the page, not the worker file.
+      try {
+        worker.postMessage(source instanceof Blob ? { type, blob: source }
+          : { type, source: new URL(source, window.location.href).href });
+      } catch (error) { finish(error); }
     });
   });
-  queue = job.catch(() => {});
+  // Keep sequencing only, never retain the last scan's large typed buffers.
+  queue = job.then(() => undefined, () => undefined);
   return job;
 }
 

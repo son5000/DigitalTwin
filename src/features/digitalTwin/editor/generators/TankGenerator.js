@@ -21,6 +21,6 @@ export function generateTank({ type, dimensions, appearance, edgeColor, sceneThe
     addGeometry(group, new THREE.CylinderGeometry(width / 2, depth / 2, height, 28), { ...options, position: [0, height / 2, 0] });
   }
 
-  addEquipmentLabel(group, label, height + 0.2, width, edgeColor, sceneTheme);
+  addEquipmentLabel(group, label, height + 0.2, edgeColor, sceneTheme);
   return group;
 }

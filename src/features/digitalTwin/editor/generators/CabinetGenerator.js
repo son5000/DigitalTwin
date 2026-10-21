@@ -100,7 +100,7 @@ export function generateCabinet({
   plate.position.set(0, headerBottom + headerHeight / 2, frontZ + 0.014);
   group.add(plate);
 
-  addEquipmentLabel(group, label, height, width, edgeColor, sceneTheme);
+  addEquipmentLabel(group, label, height, edgeColor, sceneTheme);
 
   return group;
 }

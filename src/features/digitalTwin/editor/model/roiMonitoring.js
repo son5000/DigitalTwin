@@ -31,6 +31,11 @@ export function validateRoi(roi) {
     || surface.triangles.some((index) => !Number.isInteger(index) || !surface.vertices[index])) {
     throw new Error("유효한 설비 표면 위에 ROI를 다시 그려주세요.");
   }
+  if (surface.sampleMask !== undefined && (!Array.isArray(surface.sampleMask)
+    || surface.sampleMask.length !== surface.vertices.length || surface.sampleMask.some((value) => typeof value !== "boolean")
+    || surface.triangles.some((index) => !surface.sampleMask[index]) || surface.missingSurfacePolicy !== "EXCLUDE")) {
+    throw new Error("ROI의 빈 공간 제외 정보를 확인하세요.");
+  }
   const metricIds = ROI_METRICS.map((metric) => metric.id);
   if (!Array.isArray(roi.displayMetrics) || !roi.displayMetrics.length || roi.displayMetrics.some((id) => !metricIds.includes(id))) {
     throw new Error("표시할 측정값을 하나 이상 선택하세요.");

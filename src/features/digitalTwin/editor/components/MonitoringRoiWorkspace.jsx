@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import EquipmentObservationScene from "../three/EquipmentObservationScene";
+import useSensorProjectionFrames from "../store/useSensorProjectionFrames";
 import useRoiMonitoring from "../store/useRoiMonitoring";
 import { createSurfaceRoi, getRoiReading, ROI_METRICS, ROI_STATUSES } from "../model/roiMonitoring.js";
 import { readProjects } from "@/features/portal/projects/projectRepository";
@@ -8,6 +9,7 @@ import MonitoringDataPanel from "./MonitoringDataPanel";
 import useEquipmentTelemetry from "../store/useEquipmentTelemetry";
 import { demoFrame, demoReading } from "../model/monitoringDemo";
 import { modelReference } from "../model/monitoringContract";
+import ObservationReadout from "./ObservationReadout";
 
 function RoiFields({ draft, setDraft }) {
   function updateRule(index, changes) { setDraft((current) => ({ ...current, rules: current.rules.map((rule, i) => i === index ? { ...rule, ...changes } : rule) })); }
@@ -33,7 +35,7 @@ function RoiFields({ draft, setDraft }) {
   </>;
 }
 
-export default function MonitoringRoiWorkspace({ projectId: providedId, onRoiPanelOpen, initialRoi = null, ...sceneProps }) {
+export default function MonitoringRoiWorkspace({ projectId: providedId, activePanel, onPanelChange, sharedPanelLayout = false, editorMode = false, initialRoi = null, ...sceneProps }) {
   const [projectId] = useState(() => providedId || readProjects().activeId);
   const monitoring = useRoiMonitoring(projectId);
   const { preview: queryPreview, shared } = monitoring;
@@ -42,7 +44,17 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, onRoiPan
   const model = useMemo(() => modelReference(equipment, sceneProps.assetBindings), [equipment, sceneProps.assetBindings]);
   const compatibleRois = useMemo(() => monitoring.rois.filter((roi) => roi.equipmentId !== equipmentId || !roi.surface?.model?.version || roi.surface.model.version === model.version), [monitoring.rois, equipmentId, model.version]);
   const telemetry = useEquipmentTelemetry(projectId, equipmentId, compatibleRois);
-  const [dataOpen, setDataOpen] = useState(false);
+  const projectionFrames = useSensorProjectionFrames(sceneProps.sensors);
+  const [localPanel, setLocalPanel] = useState(initialRoi ? "ROI" : null);
+  const [selectedObservationId, setSelectedObservationId] = useState(null);
+  const observationAreas = (sceneProps.observationPoints ?? []).filter((point) => point.equipmentId === equipmentId);
+  const selectedObservation = observationAreas.find((point) => point.id === selectedObservationId);
+  const panel = activePanel === undefined ? localPanel : activePanel;
+  const open = panel === "ROI", dataOpen = panel === "DATA";
+  function selectPanel(next) {
+    if (onPanelChange) onPanelChange(next); else setLocalPanel(next);
+    setDrawingFor(null); setPickingFor(null);
+  }
   const [mode, setMode] = useState("MODEL");
   const [opacity, setOpacity] = useState(.7);
   const [pointSelection, setPointSelection] = useState(null);
@@ -50,8 +62,7 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, onRoiPan
   const [fps, setFps] = useState(null);
   const [layerError, setLayerError] = useState("");
   const point = pointSelection?.equipmentId === equipmentId && pointSelection.modelVersion === model.version ? pointSelection : null;
-  const picking = pickingFor === equipmentId && Boolean(equipmentId) && !sceneProps.sensorViewId;
-  const [open, setOpen] = useState(Boolean(initialRoi));
+  const picking = dataOpen && pickingFor === equipmentId && Boolean(equipmentId) && !sceneProps.sensorViewId;
   const [draft, setDraft] = useState(initialRoi);
   const [drawingFor, setDrawingFor] = useState(null);
   const [notice, setNotice] = useState("");
@@ -60,7 +71,7 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, onRoiPan
   const [preview, setPreview] = useState(null);
   const [focusVersion, setFocusVersion] = useState(initialRoi ? 1 : 0);
   const currentDraft = draft?.equipmentId === equipmentId ? draft : null;
-  const drawing = Boolean(equipmentId && drawingFor === equipmentId);
+  const drawing = Boolean(open && equipmentId && drawingFor === equipmentId);
   const scoped = monitoring.rois.filter((roi) => roi.equipmentId === equipmentId);
   const saved = currentDraft ? monitoring.rois.find((roi) => roi.id === currentDraft.id) : null;
   const dirty = currentDraft && JSON.stringify(currentDraft) !== JSON.stringify(saved);
@@ -115,17 +126,26 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, onRoiPan
     finally { setBusy(false); }
   }
   return <section className={styles.workspace} aria-label="설비 ROI 관측">
-    <EquipmentObservationScene {...sceneProps} monitoringOptions={{ equipmentId, model, mode, opacity, point, ...layerData, demo: telemetry.demo, now: telemetry.now, onFps: setFps, onLayerError: setLayerError }} roiOptions={{ equipmentId, rois, statuses, selectedId: currentDraft?.id, drawing, pointPicking: picking, focusVersion,
+    <EquipmentObservationScene {...sceneProps} pointOptions={sceneProps.pointOptions ?? {
+      selectedId: selectedObservation?.id,
+      onSelect: (id) => { setSelectedObservationId(id); selectPanel("ROI"); },
+    }} monitoringOptions={{ equipmentId, model, mode, opacity, point, ...layerData, readings, textures: [...layerData.textures, ...projectionFrames], demo: telemetry.demo, now: telemetry.now, onFps: setFps, onLayerError: setLayerError }} roiOptions={{ equipmentId, rois, statuses, selectedId: currentDraft?.id, drawing, pointPicking: picking, focusVersion,
       onPoint: (selection) => { setPointSelection({ ...selection, equipmentId, modelVersion: model.version }); setPickingFor(null); },
-      onCreate: (surface) => { setDraft(createSurfaceRoi(equipmentId, { ...surface, model })); setDrawingFor(null); setPreview(null); setError(""); setNotice("임시 ROI입니다. 저장하지 않으면 화면을 나갈 때 사라집니다."); },
+      onCreate: (surface) => { setDraft(createSurfaceRoi(equipmentId, { ...surface, model })); setDrawingFor(null); setPreview(null); setError(""); setNotice(surface.sampleMask?.includes(false) ? "임시 ROI입니다. 빈 공간은 선택 범위에 포함되지만 측정 표면에서는 제외됩니다. 유지하려면 저장하세요." : "임시 ROI입니다. 저장하지 않으면 화면을 나갈 때 사라집니다."); },
       onError: setError, onCancel: () => { setDrawingFor(null); setPickingFor(null); },
     }} />
-    <button type="button" className={styles.dataToggle} aria-expanded={dataOpen} onClick={() => { setDataOpen(!dataOpen); setOpen(false); setDrawingFor(null); setPickingFor(null); if (!dataOpen) onRoiPanelOpen?.(); }}>관측 데이터{telemetry.demo ? " · 예시" : ""}</button>
-    {activeAlarms.length > 0 && <button type="button" className={styles.alarmBadge} role="status" onClick={() => { setDataOpen(true); setOpen(false); }}>경고 {activeAlarms.length}건{telemetry.demo ? " · 예시" : ""}</button>}
-    {dataOpen && <aside className={`${styles.panel} ${styles.dataPanel} ${picking ? styles.pickingPanel : ""}`} aria-label="관측 데이터 및 음원" data-camera-safe-ui="left"><MonitoringDataPanel key={equipmentId ?? "none"} projectId={projectId} equipmentId={equipmentId} telemetry={telemetry} mode={mode} setMode={setMode} opacity={opacity} setOpacity={setOpacity} point={point} picking={picking} setPicking={(active) => { setPickingFor(active ? equipmentId : null); setDrawingFor(null); }} fps={fps} layerError={layerError || (picking ? error : "")} model={model} sensorView={Boolean(sceneProps.sensorViewId)} /></aside>}
-    <button type="button" className={styles.toggle} aria-expanded={open} onClick={() => { setOpen(!open); setDataOpen(false); setPickingFor(null); if (!open) onRoiPanelOpen?.(); else setDrawingFor(null); }}>ROI {open ? "접기" : "조회·설정"}</button>
-    {open && <aside className={`${styles.panel} ${drawing ? styles.drawingPanel : ""}`} aria-label="ROI 조회 및 설정" data-camera-safe-ui="right">
-      <header><strong>표면 ROI</strong><span>{telemetry.demo ? "예시 측정값 · 실측 아님" : monitoring.shared ? "공동 설정" : "브라우저 저장"}</span></header>
+    {!editorMode && <div className={styles.panelTools} role="group" aria-label="관측 패널 선택">
+      <button type="button" className={styles.toggle} aria-expanded={open} onClick={() => selectPanel(open ? null : "ROI")}>ROI 조회·설정</button>
+      <button type="button" className={styles.dataToggle} aria-expanded={dataOpen} onClick={() => selectPanel(dataOpen ? null : "DATA")}>관측 데이터{telemetry.demo ? " · 예시" : ""}</button>
+      {activeAlarms.length > 0 && <button type="button" className={styles.alarmBadge} onClick={() => selectPanel("DATA")}>경고 {activeAlarms.length}건{telemetry.demo ? " · 예시" : ""}</button>}
+    </div>}
+    {dataOpen && <aside className={`${styles.panel} ${styles.dataPanel} ${sharedPanelLayout ? styles.viewerPanel : ""}`} aria-label="관측 데이터 및 음원" data-camera-safe-ui="right"><button type="button" onClick={() => selectPanel(null)}>관측 데이터 닫기</button><MonitoringDataPanel key={equipmentId ?? "none"} projectId={projectId} equipmentId={equipmentId} telemetry={telemetry} mode={mode} setMode={setMode} opacity={opacity} setOpacity={setOpacity} point={point} picking={picking} setPicking={(active) => { setPickingFor(active ? equipmentId : null); setDrawingFor(null); }} fps={fps} layerError={layerError || (picking ? error : "")} model={model} sensorView={Boolean(sceneProps.sensorViewId)} /></aside>}
+    {open && <aside className={`${styles.panel} ${sharedPanelLayout ? styles.viewerPanel : ""}`} aria-label="ROI 조회 및 설정" data-camera-safe-ui="right">
+      <header><strong>관측 영역</strong><button type="button" onClick={() => selectPanel(null)}>닫기</button><span>{telemetry.demo ? "예시 측정값 · 실측 아님" : monitoring.shared ? "공동 설정" : "브라우저 저장"}</span></header>
+      {observationAreas.length > 0 && <section aria-label="구형 관측 영역">
+        <div className={styles.list}>{observationAreas.map((area, index) => <button key={area.id} type="button" aria-pressed={area.id === selectedObservationId} onClick={() => setSelectedObservationId(area.id)}>{index + 1}. {area.name}</button>)}</div>
+        {selectedObservation && <ObservationReadout point={selectedObservation} sensors={sceneProps.sensors} readings={readings} now={telemetry.now} />}
+      </section>}
       <p className={styles.hint}>{monitoring.shared ? "저장한 ROI와 임계치는 같은 프로젝트에서 함께 사용합니다." : "서버 연결 전입니다. 실측값·공동 저장·상시 알림은 제공되지 않습니다."}</p>
       {!equipmentId && <p>설비를 선택하면 ROI를 만들 수 있습니다.</p>}
       <button type="button" disabled={!equipmentId || busy || Boolean(sceneProps.sensorViewId)} aria-pressed={drawing} onClick={() => {

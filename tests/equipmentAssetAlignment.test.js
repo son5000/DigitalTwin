@@ -25,6 +25,35 @@ function fixture() {
   return { actualObject, aligned };
 }
 const equipment = { dimensions: { width: 2, height: 4, depth: 1 } };
+
+test("업로드 메시 치수는 기준 도형과 독립적으로 적용되고 추가 배율 및 저장 복원을 유지한다", () => {
+  const runtime = fixture();
+  const binding = { equipmentId: "EQ", alignmentTransform: createAlignmentTransform({ fitDimension: "EXACT", targetDimensions: { width: 6, height: 3, depth: 2 } }) };
+  applyAssetAlignment(runtime, binding, equipment);
+  const measure = () => new THREE.Box3().setFromObject(runtime.aligned).getSize(new THREE.Vector3()).toArray();
+  almostEqual(measure(), [6, 3, 2]);
+  binding.alignmentTransform.targetDimensions.width = 12;
+  applyAssetAlignment(runtime, binding, equipment);
+  almostEqual(measure(), [12, 3, 2]);
+  binding.alignmentTransform.scale = { x: 2, y: 2, z: 2 };
+  applyAssetAlignment(runtime, binding, equipment);
+  almostEqual(measure(), [24, 6, 4]);
+  const restored = fixture();
+  applyAssetAlignment(restored, normalizeAssetBinding(JSON.parse(JSON.stringify(binding))), equipment);
+  almostEqual(new THREE.Box3().setFromObject(restored.aligned).getSize(new THREE.Vector3()).toArray(), [24, 6, 4]);
+  assert.deepEqual(equipment.dimensions, { width: 2, height: 4, depth: 1 });
+});
+
+test("회전된 스캔도 선택한 실측 축 길이에 비율을 유지하며 맞춘다", () => {
+  const runtime = fixture();
+  const binding = { alignmentTransform: createAlignmentTransform({ rotation: { x: Math.PI / 2, y: 0, z: 0 }, fitDimension: "HEIGHT" }) };
+  applyAssetAlignment(runtime, binding, equipment);
+  const size = new THREE.Box3().setFromObject(runtime.aligned).getSize(new THREE.Vector3());
+  assert.ok(Math.abs(size.y - 4) < 1e-8);
+  assert.ok(Math.abs(size.x - 8) < 1e-8);
+  const restored = normalizeAssetBinding({ ...binding, equipmentId: "EQ" });
+  assert.equal(restored.alignmentTransform.fitDimension, "HEIGHT");
+});
 function matrix(object) { object.updateWorldMatrix(true, true); return object.matrixWorld.elements.slice(); }
 function almostEqual(actual, expected) { actual.forEach((value, index) => assert.ok(Math.abs(value - expected[index]) < 1e-8, `${index}: ${value} != ${expected[index]}`)); }
 

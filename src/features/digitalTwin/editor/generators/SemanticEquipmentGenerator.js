@@ -112,6 +112,6 @@ export function generateSemanticEquipment({ type, dimensions, appearance, appear
     : category === "SAFETY"
       ? buildSafety(type, dimensions, body, hardware)
       : buildUtility(type, dimensions, body, detail);
-  addEquipmentLabel(group, label, dimensions.height, dimensions.width, edgeColor, sceneTheme);
+  addEquipmentLabel(group, label, dimensions.height, edgeColor, sceneTheme);
   return group;
 }

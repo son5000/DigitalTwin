@@ -50,7 +50,7 @@ test("카메라가 아직 준비되지 않은 프레임은 건너뛰고 렌더 �
   assert.doesNotThrow(() => updateDetailedModelVisibility(entry, {}, {}));
 });
 
-test("건물 진입과 카메라 이동 중에는 스캔 요청을 시작하지 않는다", () => {
+test("선택 설비가 없거나 요청이 비활성인 경우 스캔을 시작하지 않는다", () => {
   const detail = { equipmentId: "EQ", fallback: [], attempted: false };
   const entry = { detailedModels: [detail] };
   loadSelectedDetail(entry, null, true);
@@ -76,5 +76,26 @@ test("선택 해제는 진행 중 파싱을 취소하고 GPU 메시와 원본 UR
   assert.equal(geometryDisposed, true);
   assert.equal(revoked, true);
   assert.equal(parent.children.length, 0);
+  assert.equal(fallback.visible, true);
+});
+
+
+test("스캔 요청 시 임시 도형을 숨기고 선택 취소 시 복원한다", () => {
+  const fallback = new THREE.Group();
+  const detail = { equipmentId: "EQ", fallback: [fallback], attempted: false };
+  const entry = { detailedModels: [detail] };
+  loadSelectedDetail(entry, "EQ", true);
+  assert.equal(detail.attempted, true);
+  assert.equal(fallback.visible, false);
+  loadSelectedDetail(entry, null, true);
+  assert.equal(fallback.visible, true);
+});
+
+test("함께 표시 설정이면 스캔과 외형 도형을 모두 유지한다", () => {
+  const object = new THREE.Group(), aligned = new THREE.Group(), fallback = new THREE.Group();
+  object.add(aligned, fallback);
+  const entry = { data: {}, detailedModels: [{ object, equipmentId: "EQ", fallback: [fallback], aligned, binding: { includeProxy: true } }] };
+  updateDetailedModelVisibility(entry, { equipmentId: "EQ" }, { activeCamera: new THREE.PerspectiveCamera() });
+  assert.equal(aligned.visible, true);
   assert.equal(fallback.visible, true);
 });

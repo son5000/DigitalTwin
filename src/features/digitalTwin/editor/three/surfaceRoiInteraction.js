@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { buildRoiSurfaceSamples } from "./roiSurfaceSamples.js";
 import { isVisibleSurfaceIntersection } from "./objectRaycast.js";
 import { ROI_STATUSES } from "../model/roiMonitoring.js";
 import { disposeObject3D } from "./disposeObject3D.js";
@@ -21,7 +22,8 @@ export function bindSurfaceRoiInteraction({ renderer, camera, controls, rendered
     const bounds = canvas.getBoundingClientRect();
     raycaster.setFromCamera(new THREE.Vector2((x - bounds.left) / bounds.width * 2 - 1, -(y - bounds.top) / bounds.height * 2 + 1), camera);
     entry.object.updateWorldMatrix(true, true);
-    return raycaster.intersectObject(visibleModel(entry), true).find((hit) => hit.object.isMesh && hit.face && isVisibleSurfaceIntersection(hit, entry.object));
+    const pick = (object) => object && raycaster.intersectObject(object, true).find((hit) => hit.object.isMesh && hit.face && isVisibleSurfaceIntersection(hit, entry.object));
+    return pick(visibleModel(entry)) ?? (entry.actual?.visible && entry.proxy?.visible ? pick(entry.proxy) : undefined);
   }
   function showRectangle(a, b) {
     const bounds = canvas.getBoundingClientRect();
@@ -33,28 +35,31 @@ export function bindSurfaceRoiInteraction({ renderer, camera, controls, rendered
     const entry = entryFor(options);
     if (!entry) return;
     if (Math.abs(a.x - b.x) < 8 || Math.abs(a.y - b.y) < 8) { options.onError?.("ROI의 너비와 높이를 조금 더 크게 지정하세요."); return; }
-    const vertices = [], triangles = [], outline = [], segments = 8;
+    const samples = [], segments = 8;
     const left = Math.min(a.x, b.x), top = Math.min(a.y, b.y);
     const width = Math.abs(a.x - b.x), height = Math.abs(a.y - b.y);
-    for (let row = 0; row <= segments; row++) {
-      for (let col = 0; col <= segments; col++) {
-        const hit = hitAt(left + width * col / segments, top + height * row / segments, entry);
-        if (!hit) { options.onError?.("사각형 전체가 같은 설비의 표면에 놓이도록 다시 지정하세요."); return; }
-        const normal = hit.face.normal.clone().applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld));
-        const local = entry.object.worldToLocal(hit.point.clone().addScaledVector(normal, 0.002));
-        vertices.push(local.toArray());
-        if (row < segments && col < segments) {
-          const index = row * (segments + 1) + col;
-          triangles.push(index, index + 1, index + segments + 1, index + 1, index + segments + 2, index + segments + 1);
-        }
-      }
+    let anchor = null;
+    for (let row = 0; row <= segments; row++) for (let col = 0; col <= segments; col++) {
+      const hit = hitAt(left + width * col / segments, top + height * row / segments, entry);
+      if (!hit) { samples.push(null); continue; }
+      anchor ??= hit.point.clone();
+      const normal = hit.face.normal.clone().applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld));
+      samples.push(entry.object.worldToLocal(hit.point.clone().addScaledVector(normal, 0.002)).toArray());
     }
-    for (let col = 0; col <= segments; col++) outline.push(col);
-    for (let row = 1; row <= segments; row++) outline.push(row * (segments + 1) + segments);
-    for (let col = segments - 1; col >= 0; col--) outline.push(segments * (segments + 1) + col);
-    for (let row = segments - 1; row > 0; row--) outline.push(row * (segments + 1));
-    options.onCreate?.({ coordinateSpace: "EQUIPMENT_LOCAL", representation: entry.actual?.visible ? "ACTUAL" : "PROXY", vertices, triangles, outline });
+    if (!anchor) { options.onError?.("선택 영역에 설비 표면이 없습니다. 표면이 포함되도록 지정하세요."); return; }
+    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()), anchor);
+    const bounds = canvas.getBoundingClientRect();
+    const surface = buildRoiSurfaceSamples(samples, segments, (index) => {
+      const x = left + width * (index % (segments + 1)) / segments;
+      const y = top + height * Math.floor(index / (segments + 1)) / segments;
+      raycaster.setFromCamera(new THREE.Vector2((x - bounds.left) / bounds.width * 2 - 1, -(y - bounds.top) / bounds.height * 2 + 1), camera);
+      const projected = raycaster.ray.intersectPlane(plane, new THREE.Vector3()) ?? anchor.clone();
+      return entry.object.worldToLocal(projected).toArray();
+    });
+    if (!surface) { options.onError?.("표면이 너무 적습니다. 관측할 부분을 확대해서 다시 지정하세요."); return; }
+    options.onCreate?.({ coordinateSpace: "EQUIPMENT_LOCAL", representation: entry.actual?.visible ? "ACTUAL" : "PROXY", ...surface });
   }
+
   function down(event) {
     if (!(getOptions().drawing || getOptions().pointPicking) || event.button !== 0) return;
     event.stopImmediatePropagation(); event.preventDefault();

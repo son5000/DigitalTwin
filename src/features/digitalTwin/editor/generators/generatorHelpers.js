@@ -41,13 +41,14 @@ export function addGeometry(group, geometry, options) {
   return mesh;
 }
 
-export function addEquipmentLabel(group, label, height, width, edgeColor, sceneTheme) {
+export function addEquipmentLabel(group, label, height, edgeColor, sceneTheme) {
   if (!label) return null;
   const namePlate = createTextSprite(label, {
     background: sceneTheme.labelBackground,
     border: colorToCss(edgeColor),
     color: sceneTheme.labelText,
-    scale: { x: Math.max(1.2, Math.min(width * 1.6, 2.6)), y: 0.38 },
+    // Keep the nameplate independent of equipment dimensions.
+    scale: { x: 1.6, y: 0.4 },
   });
   namePlate.position.set(0, height + 0.26, 0);
   group.add(namePlate);

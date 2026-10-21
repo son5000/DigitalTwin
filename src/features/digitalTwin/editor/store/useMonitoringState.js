@@ -1,3 +1,4 @@
+import { getEnclosureSurfaces } from "../model/equipmentEnclosure";
 import { useCallback, useMemo, useState } from "react";
 
 import {
@@ -17,11 +18,12 @@ export default function useMonitoringState({ equipment }) {
   const [selectedServerBindingId, setSelectedServerBindingId] = useState(null);
   const [selectedAssetBindingId, setSelectedAssetBindingId] = useState(null);
 
-  const equipmentIds = useMemo(() => new Set(equipment.map((item) => item.id)), [equipment]);
-  const activeObservationPoints = observationPoints.filter((item) => equipmentIds.has(item.equipmentId));
-  const activeSensorBindings = sensorBindings.filter((item) => item.equipmentIds.some((id) => equipmentIds.has(id)));
-  const activeServerBindings = serverBindings.filter((item) => equipmentIds.has(item.equipmentId));
-  const activeAssetBindings = equipmentAssetBindings.filter((item) => equipmentIds.has(item.equipmentId));
+  const equipmentIdKey = JSON.stringify(equipment.map((item) => item.id).sort());
+  const equipmentIds = useMemo(() => new Set(JSON.parse(equipmentIdKey)), [equipmentIdKey]);
+  const activeObservationPoints = useMemo(() => observationPoints.filter((item) => equipmentIds.has(item.equipmentId)), [observationPoints, equipmentIds]);
+  const activeSensorBindings = useMemo(() => sensorBindings.filter((item) => item.equipmentIds.some((id) => equipmentIds.has(id))), [sensorBindings, equipmentIds]);
+  const activeServerBindings = useMemo(() => serverBindings.filter((item) => equipmentIds.has(item.equipmentId)), [serverBindings, equipmentIds]);
+  const activeAssetBindings = useMemo(() => equipmentAssetBindings.filter((item) => equipmentIds.has(item.equipmentId)), [equipmentAssetBindings, equipmentIds]);
   const selectedObservationPoint = activeObservationPoints.find((item) => item.id === selectedObservationPointId) ?? null;
   const selectedSensorBinding = activeSensorBindings.find((item) => item.id === selectedSensorBindingId) ?? null;
   const selectedServerBinding = activeServerBindings.find((item) => item.id === selectedServerBindingId) ?? null;
@@ -67,7 +69,7 @@ export default function useMonitoringState({ equipment }) {
     if (!equipmentId) return null;
     const id = createId("OBSERVATION_POINT");
     setObservationPoints((items) => [...items, normalizeObservationPoint({
-      id, equipmentId, targetPartId: null, name: `관측 포인트 ${items.filter((item) => item.equipmentId === equipmentId).length + 1}`,
+      id, equipmentId, targetPartId: null, name: `관측 영역 ${items.filter((item) => item.equipmentId === equipmentId).length + 1}`,
       description: "", localPosition, targetNormal: { x: 0, y: 0, z: 1 }, sensorIds: [], metric: "TEMPERATURE", unit: "°C",
       normalRange: { min: 0, max: 60 }, warningRange: { min: 60, max: 80 }, dangerRange: { min: 80, max: 120 },
     })]);
@@ -76,7 +78,7 @@ export default function useMonitoringState({ equipment }) {
   }, []);
 
   const updateObservationPoint = useCallback((id, changes) => setObservationPoints((items) => items.map((item) => item.id === id ? normalizeObservationPoint({
-    ...item, ...changes,
+    ...item, ...changes, revision: (item.revision ?? 0) + 1,
     localPosition: changes.localPosition ? { ...item.localPosition, ...changes.localPosition } : item.localPosition,
     targetNormal: changes.targetNormal ? { ...item.targetNormal, ...changes.targetNormal } : item.targetNormal,
     normalRange: changes.normalRange ? { ...item.normalRange, ...changes.normalRange } : item.normalRange,
@@ -84,23 +86,33 @@ export default function useMonitoringState({ equipment }) {
     dangerRange: changes.dangerRange ? { ...item.dangerRange, ...changes.dangerRange } : item.dangerRange,
   }) : item)), []);
 
-  const addMonitoringDevice = useCallback((equipmentId, sourceType = "SENSOR") => {
-    if (!equipmentId) return null;
-    const id = createId("SENSOR_BINDING");
-    const sensor = normalizeSensorBinding({
-      id, equipmentIds: [equipmentId], sensorType: sourceType, sourceType,
-      name: sourceType === "CAMERA" ? "비전 카메라" : "센서", serverKey: "", mountMode: "WORLD",
-      position: { x: 2, y: 2, z: 2 }, rotation: { x: 0, y: -0.7, z: 0 }, fieldOfView: 50, aspectRatio: 16 / 9, near: 0.1, far: 10,
-    });
-    setSensorBindings((items) => [...items, sensor]);
-    setSelectedSensorBindingId(id);
-    return id;
+  const removeObservationPoint = useCallback((id) => {
+    setObservationPoints((items) => items.filter((item) => item.id !== id));
+    setServerBindings((items) => items.map((item) => item.observationPointId === id ? { ...item, observationPointId: null } : item));
+    setSensorBindings((items) => items.map((item) => ({ ...item, observationPointIds: item.observationPointIds?.filter((value) => value !== id) })));
+    setSelectedObservationPointId((current) => current === id ? null : current);
   }, []);
+
+  const addMonitoringDevice = useCallback((equipmentId, sourceType = "SENSOR", requestedCount = 1) => {
+    if (!equipmentId) return null;
+    const count = Math.max(1, Math.min(50, Math.floor(Number(requestedCount) || 1)));
+    const host = equipment.find((item) => item.id === equipmentId);
+    const surface = getEnclosureSurfaces(host)[0];
+    const additions = Array.from({ length: count }, (_, index) => normalizeSensorBinding({
+      id: createId("SENSOR_BINDING"), equipmentIds: [equipmentId], sensorType: sourceType, sourceType,
+      name: sourceType === "CAMERA" ? "비전 카메라" : "센서", serverKey: "", mountMode: "EQUIPMENT",
+      surfaceMount: surface ? { equipmentId, surfaceId: surface.id, u: surface.width * (index + 1) / (count + 1), v: surface.height / 2, offset: .025 } : null,
+      position: { x: 0, y: (host?.dimensions?.height ?? 2) / 2, z: (host?.dimensions?.depth ?? 1) / 2 + .025 }, rotation: { x: 0, y: 0, z: 0 }, fieldOfView: 50, aspectRatio: 16 / 9, near: 0.1, far: 10,
+    }));
+    setSensorBindings((items) => [...items, ...additions.map((sensor, index) => ({ ...sensor, name: `${sensor.name} ${items.filter((item) => item.equipmentIds.includes(equipmentId)).length + index + 1}` }))]);
+    setSelectedSensorBindingId(additions[0].id);
+    return additions[0].id;
+  }, [equipment]);
 
   const updateMonitoringDevice = useCallback((id, changes) => setSensorBindings((items) => items.map((item) => item.id === id ? normalizeSensorBinding({
     ...item, ...changes,
     sensorType: changes.sourceType ?? changes.sensorType ?? item.sensorType,
-    calibrationConfirmed: ["position", "rotation", "mountMode", "fieldOfView", "aspectRatio", "near", "far"].some((key) => key in changes) ? false : changes.calibrationConfirmed ?? item.calibrationConfirmed,
+    calibrationConfirmed: ["surfaceMount", "position", "rotation", "mountMode", "fieldOfView", "aspectRatio", "near", "far", "capabilities"].some((key) => key in changes) ? false : changes.calibrationConfirmed ?? item.calibrationConfirmed,
     position: changes.position ? { ...item.position, ...changes.position } : item.position,
     rotation: changes.rotation ? { ...item.rotation, ...changes.rotation } : item.rotation,
   }) : item)), []);
@@ -163,7 +175,7 @@ export default function useMonitoringState({ equipment }) {
     actions: {
       ensureEquipmentDetail,
       addAssetBinding, updateAssetBinding, selectAssetBinding: setSelectedAssetBindingId,
-      addObservationPoint, updateObservationPoint, selectObservationPoint: setSelectedObservationPointId,
+      addObservationPoint, updateObservationPoint, removeObservationPoint, selectObservationPoint: setSelectedObservationPointId,
       addMonitoringDevice, updateMonitoringDevice, selectMonitoringDevice: setSelectedSensorBindingId,
       addMonitoringBinding, updateMonitoringBinding, selectMonitoringBinding: setSelectedServerBindingId,
       hydrateMonitoringState, resetMonitoringState, removeEquipmentMonitoringData,

@@ -175,7 +175,7 @@ export default function ViewerOperationsPage({ active, initialRecord = null, onC
         {settings.onViewModeChange && <Choices label="기본 월드 표시" name="viewMode" value={settings.viewMode} items={[{ id: "3D", name: "3D 월드" }, { id: "2D", name: "2D 도면" }]} required />}
         {settings.onMovementToggle && <label className={styles.check}><input type="checkbox" name="movementEnabled" defaultChecked={settings.movementEnabled} /> 차량·사람 이동 애니메이션</label>}
         <button className={styles.primary} type="submit">설정 저장 및 적용</button>
-      </form></section>}
+      </form>{settings.viewerLinks && <section aria-label="뷰어 링크 공유"><h2>뷰어 링크 공유</h2>{settings.viewerLinks}</section>}</section>}
     </div>
   </main>;
 }

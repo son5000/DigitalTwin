@@ -34,6 +34,6 @@ export function generateBasicShape({ type, dimensions, appearance, edgeColor, sc
     scale,
     showEdges,
   });
-  addEquipmentLabel(group, label, height, width, edgeColor, sceneTheme);
+  addEquipmentLabel(group, label, height, edgeColor, sceneTheme);
   return group;
 }

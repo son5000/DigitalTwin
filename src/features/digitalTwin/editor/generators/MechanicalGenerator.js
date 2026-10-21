@@ -53,6 +53,6 @@ export function generateMechanical({ type, dimensions, appearance, appearanceSlo
       position: [width * 0.3, height * 0.48, 0],
     });
   }
-  addEquipmentLabel(group, label, height, width, edgeColor, sceneTheme);
+  addEquipmentLabel(group, label, height, edgeColor, sceneTheme);
   return group;
 }

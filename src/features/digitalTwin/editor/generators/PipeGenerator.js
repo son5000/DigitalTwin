@@ -57,6 +57,6 @@ export function generatePipe({ type, dimensions, parameters, appearance, edgeCol
     }
   }
 
-  addEquipmentLabel(group, label, Math.max(height, radius * 4), width, edgeColor, sceneTheme);
+  addEquipmentLabel(group, label, Math.max(height, radius * 4), edgeColor, sceneTheme);
   return group;
 }

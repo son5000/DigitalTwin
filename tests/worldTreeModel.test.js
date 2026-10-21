@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createWorldTree, getTreeAncestors, getViewerEquipmentContext, toggleTreeNode, worldNodeKey } from "../src/features/portal/viewer/worldTreeModel.js";
+import { createEquipmentRoiTree, createWorldTree, getTreeAncestors, getViewerEquipmentContext, toggleTreeNode, worldNodeKey } from "../src/features/portal/viewer/worldTreeModel.js";
 
 test("저장된 층·방 소유권은 기존 건물 직속 설비의 부모를 갱신하고 중복 없이 유지한다", () => {
   const layout = {
@@ -73,4 +73,20 @@ test("소속 없는 설비는 미분류로 유지하고 구성요소 key와 단�
     assert.ok(scoped.root);
     assert.ok(scoped.nodes.has(worldNodeKey("EQUIPMENT", "loose")));
   }
+});
+
+
+test("단일 설비의 표시 트리는 저장된 ROI만 자식으로 연결하고 원래 부품을 보존한다", () => {
+  const tree = createWorldTree({ observationWorkflow: { scopeType: "SINGLE_EQUIPMENT" }, equipment: [{ id: "E1", name: "분전반", parts: [{ id: "P1", name: "부품" }] }] });
+  const rois = [{ id: "R1", equipmentId: "E1", name: "입력 단자" }, { id: "R2", equipmentId: "E2", name: "다른 설비" }, { id: "R3", equipmentId: "E1", name: "차단기" }];
+  const projected = createEquipmentRoiTree(tree, "E1", rois);
+  assert.equal(projected.root.label, "분전반");
+  assert.deepEqual(projected.root.children.map((node) => node.label), ["입력 단자", "차단기"]);
+  assert.ok(projected.root.children.every((node) => node.type === "ROI"));
+  assert.deepEqual(getTreeAncestors(projected, worldNodeKey("ROI", "R1", "E1")), [projected.root.key]);
+  assert.equal(tree.root.children[0].type, "PART");
+  const renamed = createEquipmentRoiTree(tree, "E1", [{ ...rois[0], name: "변경한 이름" }]);
+  assert.equal(renamed.root.children[0].label, "변경한 이름");
+  assert.equal(renamed.root.children.length, 1);
+  assert.equal(createEquipmentRoiTree(tree, "E1", []).root.children.length, 0);
 });

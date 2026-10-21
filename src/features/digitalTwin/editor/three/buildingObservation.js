@@ -14,6 +14,7 @@ import { disposeObject3D } from "./disposeObject3D";
 import { focusEquipmentInWorld } from "./viewerEquipmentFocus";
 import { resolveEquipmentRepresentation } from "../model/viewerPreset";
 import { setScanLoadState } from "./scanLoadState";
+import { applyModelLayerAppearance } from "./modelLayerAppearance";
 
 const smooth = (value) => value * value * (3 - 2 * value);
 const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
@@ -22,15 +23,21 @@ const FLOOR_HIGHLIGHT = new THREE.Color("#ff7900");
 export function updateDetailedModelVisibility(entry, settings, runtime) {
   const camera = runtime.activeCamera ?? runtime.camera;
   if (!camera) return;
-  entry.detailedModels.forEach(({ object, equipmentId, fallback, aligned }) => {
-    if (!aligned) return;
+  entry.detailedModels.forEach((detail) => {
+    const { object, equipmentId, fallback, aligned, binding } = detail;
+    const layers = settings.modelLayers?.[equipmentId];
     const detailed = settings.equipmentId === equipmentId && resolveEquipmentRepresentation({
       preset: entry.data.viewerPreset, equipmentId, hasDetailedModel: true,
       selected: settings.equipmentId === equipmentId,
       distance: camera.position.distanceTo(object.getWorldPosition(new THREE.Vector3())),
     }) === "DETAILED";
-    aligned.visible = detailed;
-    fallback.forEach((child) => { child.visible = !detailed; });
+    if (aligned) aligned.visible = layers?.ACTUAL?.visible ?? detailed;
+    fallback.forEach((child) => { child.visible = layers?.PROXY?.visible ?? (aligned ? !detailed || Boolean(binding?.includeProxy) : child.visible); });
+    if (detail.layerSource !== layers || detail.layerAligned !== aligned) {
+      detail.layerSource = layers; detail.layerAligned = aligned;
+      applyModelLayerAppearance(aligned, layers?.ACTUAL, detailed);
+      fallback.forEach((child) => applyModelLayerAppearance(child, layers?.PROXY, child.visible));
+    }
   });
 }
 
@@ -56,9 +63,10 @@ export function loadSelectedDetail(entry, equipmentId, ready) {
     }
     if (!ready || detail.attempted) return;
     detail.attempted = true;
+    detail.fallback.forEach((child) => { child.visible = false; });
     const controller = new AbortController();
     detail.controller = controller;
-    setScanLoadState(equipmentId, "스캔 모델 불러오는 중… 기존 설비를 계속 표시합니다.");
+    setScanLoadState(equipmentId, "모델을 불러오는 중입니다…");
     void import("./EquipmentAssetViewer").then(async ({ loadBindingObject, applyAssetAlignment }) => {
       if (controller.signal.aborted) return;
       const loaded = await loadBindingObject(detail.binding, { signal: controller.signal });
@@ -73,6 +81,7 @@ export function loadSelectedDetail(entry, equipmentId, ready) {
       detail.aligned = aligned;
       setScanLoadState(equipmentId, "스캔 모델 준비 완료");
     }).catch((error) => {
+      if (!controller.signal.aborted) detail.fallback.forEach((child) => { child.visible = true; });
       if (!controller.signal.aborted) setScanLoadState(equipmentId,
         error.message.includes("LIMIT") ? "모델이 표시 용량 제한을 초과했습니다. 기존 설비를 표시합니다." : "스캔 모델을 불러오지 못했습니다. 다시 선택하여 재시도하세요.");
     });
@@ -133,6 +142,7 @@ function createInterior(data, theme, labelRoot, labelClass, onSelectFloor) {
     }, baseY: 0 }));
     createEquipmentRenderObjects(entries.filter(({ equipment: item }) => !bindings.has(item.id)), renderOptions).forEach((object) => parent.add(object));
     entries.filter(({ equipment: item }) => bindings.has(item.id)).forEach((record) => {
+      if (bindings.get(record.equipment.id)?.includeProxy && !record.equipment.enclosure?.enabled) record.equipment.appearance.opacity = 0.28;
       const [object] = createEquipmentRenderObjects([record], renderOptions);
       parent.add(object);
       const fallback = [...object.children];
@@ -461,18 +471,22 @@ export function createBuildingObservation(runtime, { labelRoot, labelClass, onSe
       }
     }
     loadSelectedDetail(entry, active.phase === "closing" ? null : settings.equipmentId,
-      active.phase === "open" && active.equipmentFocusKey === focusKey && !runtime.cameraFocus);
+      active.phase !== "closing");
     entry.materials.forEach((record) => {
       const floorSurface = record.mesh.userData.floorSurface === true;
       const boundary = record.mesh.userData.floorBoundary === true;
       const selected = settings.floorId === record.floorId && active.phase !== "closing";
       const opacity = !floorSurface && !boundary && settings.floorId && !selected && active.phase !== "closing" ? 0.28 : 1;
       record.opacity = opacity === 1 ? 1 : THREE.MathUtils.lerp(record.opacity, opacity, 1 - Math.exp(-12 * delta));
+      let modelOpacity;
+      for (let object = record.mesh; object; object = object.parent) {
+        if (Number.isFinite(object.userData.modelLayerOpacity)) { modelOpacity = object.userData.modelLayerOpacity; break; }
+      }
       record.copies.forEach((material, index) => {
         const base = (Array.isArray(record.original) ? record.original : [record.original])[index];
-        material.opacity = base.opacity * record.opacity;
-        material.transparent = base.transparent || record.opacity < 0.999;
-        material.depthWrite = record.opacity > 0.99 && base.depthWrite;
+        material.opacity = (modelOpacity ?? base.opacity) * record.opacity;
+        material.transparent = base.transparent || material.opacity < 0.999;
+        material.depthWrite = material.opacity > 0.99 && base.depthWrite;
         material.toneMapped = boundary && selected ? false : base.toneMapped;
         if (material.emissive) {
           material.emissive.copy(base.emissive);

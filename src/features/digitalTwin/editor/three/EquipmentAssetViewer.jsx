@@ -1,10 +1,16 @@
+import EnclosureDoorControls from "../components/EnclosureDoorControls";
+import ModelLayerControls from "../components/ModelLayerControls";
+import { applyModelLayerAppearance } from "./modelLayerAppearance";
+import { enclosureDoorOverride, withDoorOverrides } from "../model/equipmentEnclosure";
+import { applyEquipmentEnvironment } from "./equipmentEnvironment";
+import { normalizeScanLighting } from "../model/viewerPreset";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
 import { equipmentAssetRepository } from "@/features/digitalTwin/editor/api/equipmentAssetRepository";
 import { ASSET_TYPES, EQUIPMENT_DISPLAY_MODES, unitScale } from "@/features/digitalTwin/editor/model/equipmentDetailModel";
-import { getGroundViewPresentation, GROUND_VIEW_MODES } from "@/features/digitalTwin/editor/model/undergroundModel";
+import { GROUND_VIEW_MODES } from "@/features/digitalTwin/editor/model/undergroundModel";
 import { createEquipmentObject } from "@/features/digitalTwin/editor/objects/EquipmentFactory";
 import {
   attachDualTransformControls,
@@ -17,25 +23,26 @@ import { disposeObject3D } from "@/features/digitalTwin/editor/three/disposeObje
 
 import styles from "./EquipmentAssetViewer.module.css";
 import { parseScanInWorker, restoreScanGeometry } from "./scanWorkerClient";
-import { captureViewerCamera, rememberViewerCamera, restoreViewerCamera } from "./viewerCameraMemory";
+import { restoreEquipmentCamera, captureViewerCamera, rememberViewerCamera, restoreViewerCamera } from "./viewerCameraMemory";
 
 function createProxy(equipment, translucent = false, theme = "dark") {
   return createEquipmentObject({
     ...equipment,
     position: { x: 0, y: 0, z: 0 },
+    rotation: { x: 0, y: 0, z: 0 },
     visible: true,
     appearance: { ...equipment.appearance, opacity: translucent ? 0.28 : 1 },
   }, { theme, viewerTranslucent: translucent, enableLod: false });
 }
 
 async function resolveBindingSources(binding) {
-  if (binding.objectUrl) return { source: binding.objectUrl, relatedSource: binding.relatedSourceKey, textureSource: binding.textureSourceKey, revoke: () => {} };
-  if (binding.sourceType !== "UPLOAD") return { source: binding.sourceKey, relatedSource: binding.relatedSourceKey, textureSource: binding.textureSourceKey, revoke: () => {} };
+  if (binding.sourceType !== "UPLOAD") return { source: binding.objectUrl || binding.sourceKey, relatedSource: binding.relatedSourceKey, textureSource: binding.textureSourceKey, revoke: () => {} };
   const asset = await equipmentAssetRepository.get(binding.assetId);
   if (!asset?.files?.length) throw new Error("MISSING_LOCAL_FILE");
   const objectUrls = asset.files.map((file) => ({
     name: file.name,
     path: (file.path || file.name).replace(/\\/g, "/"),
+    blob: file.blob,
     url: URL.createObjectURL(file.blob),
   }));
   const findObjectUrl = (reference = "") => {
@@ -47,8 +54,11 @@ async function resolveBindingSources(binding) {
   };
   const manager = new THREE.LoadingManager();
   manager.setURLModifier((url) => findObjectUrl(url) ?? url);
+  const primaryUrl = findObjectUrl(asset.primaryFilePath ?? asset.primaryFileName) ?? findObjectUrl(binding.sourceKey);
   return {
-    source: findObjectUrl(asset.primaryFilePath ?? asset.primaryFileName) ?? findObjectUrl(binding.sourceKey),
+    // Pass the stored Blob directly: parsing must not depend on a temporary URL
+    // surviving a scene change, reload, or the worker's fetch context.
+    source: objectUrls.find((entry) => entry.url === primaryUrl)?.blob,
     relatedSource: findObjectUrl(binding.relatedSourceKey),
     textureSource: findObjectUrl(binding.textureSourceKey),
     manager,
@@ -62,7 +72,8 @@ export function loadBindingObject(binding, options = {}) {
     if (options.signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     return loadBindingObjectNow(binding, options);
   });
-  assetLoadQueue = job.catch(() => {});
+  // A settled queue must not keep the previous model alive after disposal.
+  assetLoadQueue = job.then(() => undefined, () => undefined);
   return job;
 }
 
@@ -133,11 +144,11 @@ async function loadBindingObjectNow(binding, { signal } = {}) {
         }
       }
       if (hasFaces) {
-        const material = new THREE.MeshStandardMaterial({ map: texture, color: texture ? 0xffffff : 0x8fb3c2, roughness: 0.62, vertexColors: hasVertexColors, side: THREE.DoubleSide });
+        const material = new THREE.MeshStandardMaterial({ map: texture, color: texture || hasVertexColors ? 0xffffff : 0x8fb3c2, roughness: 0.62, vertexColors: hasVertexColors, side: THREE.DoubleSide });
         return { object: new THREE.Mesh(geometry, material), revoke, fallbackMaterial };
       }
       const pointSize = Math.max((geometry.boundingSphere?.radius ?? 1) / 220, 0.008);
-      return { object: new THREE.Points(geometry, new THREE.PointsMaterial({ size: pointSize, vertexColors: hasVertexColors, color: 0xaad8e8, sizeAttenuation: true })), revoke, fallbackMaterial };
+      return { object: new THREE.Points(geometry, new THREE.PointsMaterial({ size: pointSize, vertexColors: hasVertexColors, color: hasVertexColors ? 0xffffff : 0xaad8e8, sizeAttenuation: true })), revoke, fallbackMaterial };
     }
     throw new Error("UNSUPPORTED");
   } catch (error) {
@@ -196,8 +207,11 @@ export function applyAssetAlignment(runtime, binding, equipment) {
     object.position.z -= center.z;
     object.position.y -= alignment.floorAligned ? bounds.min.y : center.y;
   }
-  const proxyDimensions = equipment?.dimensions ?? { width: 1, height: 2, depth: 0.8 };
-  const fitScale = alignment.fitToProxy
+  const proxyDimensions = { ...(equipment?.dimensions ?? { width: 1, height: 2, depth: 0.8 }), ...alignment.targetDimensions };
+  const rotatedSize = new THREE.Box3(new THREE.Vector3(), size.clone()).applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(alignment.rotation.x, alignment.rotation.y, alignment.rotation.z))).getSize(new THREE.Vector3());
+  const axis = { WIDTH: "x", HEIGHT: "y", DEPTH: "z" }[alignment.fitDimension];
+  const targetSize = { x: proxyDimensions.width, y: proxyDimensions.height, z: proxyDimensions.depth };
+  const fitScale = alignment.fitToProxy && axis ? targetSize[axis] / Math.max(rotatedSize[axis], 0.000001) : alignment.fitToProxy
     ? Math.min(
       proxyDimensions.width / Math.max(size.x, 0.001),
       proxyDimensions.height / Math.max(size.y, 0.001),
@@ -207,6 +221,14 @@ export function applyAssetAlignment(runtime, binding, equipment) {
   runtime.aligned.position.set(alignment.position.x, alignment.position.y, alignment.position.z);
   runtime.aligned.rotation.set(alignment.rotation.x, alignment.rotation.y, alignment.rotation.z);
   runtime.aligned.scale.set(alignment.scale.x * fitScale, alignment.scale.y * fitScale, alignment.scale.z * fitScale);
+  if (alignment.fitToProxy && alignment.fitDimension === "EXACT") {
+    // Mesh-local dimensions: rotation changes orientation, never the requested size.
+    runtime.aligned.scale.set(
+      alignment.scale.x * proxyDimensions.width / Math.max(size.x, 0.000001),
+      alignment.scale.y * proxyDimensions.height / Math.max(size.y, 0.000001),
+      alignment.scale.z * proxyDimensions.depth / Math.max(size.z, 0.000001),
+    );
+  }
   runtime.aligned.updateMatrixWorld(true);
   return true;
 }
@@ -214,19 +236,27 @@ export function applyAssetAlignment(runtime, binding, equipment) {
 function updateDisplayMode(runtime, mode, transformTools) {
   if (!runtime || runtime.disposed) return;
   const showActual = Boolean(runtime.aligned && mode !== EQUIPMENT_DISPLAY_MODES.PROXY);
-  if (runtime.proxy) runtime.proxy.visible = mode === EQUIPMENT_DISPLAY_MODES.PROXY || mode === EQUIPMENT_DISPLAY_MODES.COMPARE;
-  if (runtime.aligned) runtime.aligned.visible = showActual;
-  const target = showActual ? runtime.aligned : runtime.proxy;
+  applyModelLayerAppearance(runtime.proxy, runtime.modelLayers?.PROXY, mode === EQUIPMENT_DISPLAY_MODES.PROXY || mode === EQUIPMENT_DISPLAY_MODES.COMPARE);
+  applyModelLayerAppearance(runtime.aligned, runtime.modelLayers?.ACTUAL, showActual);
+  const target = runtime.aligned?.visible ? runtime.aligned : runtime.proxy?.visible ? runtime.proxy : null;
   runtime.transformTarget = target;
   if (target) attachDualTransformControls(runtime.transformControls, target, transformTools, { camera: runtime.camera });
   else configureDualTransformControls(runtime.transformControls, transformTools, { camera: runtime.camera });
 }
 
-export default function EquipmentAssetViewer({ equipment, binding, forcedDisplayMode, focusDetail = false, groundViewMode = GROUND_VIEW_MODES.VISIBLE, transformTools, theme = "dark", onAlignmentChange, cameraMemory: sharedCameraMemory, cameraResetVersion = 0 }) {
+export default function EquipmentAssetViewer({ environment, cameraController, initialView, equipment, binding, lighting, forcedDisplayMode, focusDetail = false, groundViewMode = GROUND_VIEW_MODES.VISIBLE, transformTools, theme = "dark", onAlignmentChange, cameraMemory: sharedCameraMemory, cameraResetVersion = 0 }) {
+  const [doorOverride, setDoorOverride] = useState(null);
+  const [modelLayers, setModelLayers] = useState({});
+  const layerSettings = modelLayers[equipment?.id];
+  const displayedEquipment = withDoorOverrides(equipment, doorOverride);
   const mountRef = useRef(null);
   const localCameraMemoryRef = useRef(new Map());
   const cameraKey = JSON.stringify(["ASSET", equipment?.id, cameraResetVersion]);
   const callbackRef = useRef(onAlignmentChange);
+  const lightingRef = useRef(normalizeScanLighting(lighting));
+  useEffect(() => { lightingRef.current = normalizeScanLighting(lighting); }, [lighting]);
+  const initialViewRef = useRef(initialView);
+  useEffect(() => { initialViewRef.current = initialView; }, [initialView]);
   const runtimeRef = useRef(null);
   const equipmentRef = useRef(equipment);
   const bindingRef = useRef(binding);
@@ -235,7 +265,7 @@ export default function EquipmentAssetViewer({ equipment, binding, forcedDisplay
   const focusSnapshotRef = useRef(null);
   const [loadState, setLoadState] = useState("PROXY");
   const [loadMessage, setLoadMessage] = useState("");
-  equipmentRef.current = equipment;
+  equipmentRef.current = displayedEquipment;
   bindingRef.current = binding;
   transformToolsRef.current = transformTools;
   themeRef.current = theme;
@@ -257,15 +287,19 @@ export default function EquipmentAssetViewer({ equipment, binding, forcedDisplay
     equipment.showNameLabel === true,
     equipmentDimensionsKey,
     JSON.stringify(equipment.parameters),
+    JSON.stringify(displayedEquipment.enclosure),
     JSON.stringify(equipment.appearance),
     JSON.stringify(equipment.appearanceSlots),
     JSON.stringify(equipment.userTexture),
   ].join("|") : "";
   const alignmentKey = binding?.alignmentTransform ? JSON.stringify(binding.alignmentTransform) : "";
-  const displayMode = forcedDisplayMode ?? (binding && [ASSET_TYPES.OBJ, ASSET_TYPES.PLY].includes(binding.assetType)
+  const requestedDisplayMode = forcedDisplayMode ?? (binding && [ASSET_TYPES.OBJ, ASSET_TYPES.PLY].includes(binding.assetType)
     ? binding.displayMode ?? EQUIPMENT_DISPLAY_MODES.ACTUAL
     : EQUIPMENT_DISPLAY_MODES.PROXY);
-  const shouldLoadDetailed = displayMode !== EQUIPMENT_DISPLAY_MODES.PROXY;
+  const displayMode = requestedDisplayMode === EQUIPMENT_DISPLAY_MODES.ACTUAL && binding?.includeProxy ? EQUIPMENT_DISPLAY_MODES.COMPARE : requestedDisplayMode;
+  const displayModeRef = useRef(displayMode);
+  displayModeRef.current = displayMode;
+  const shouldLoadDetailed = displayMode !== EQUIPMENT_DISPLAY_MODES.PROXY || layerSettings?.ACTUAL?.visible === true;
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -287,7 +321,9 @@ export default function EquipmentAssetViewer({ equipment, binding, forcedDisplay
     renderer.domElement.setAttribute("aria-label", "설비 실제 자산 정합 3D 뷰어"); mount.appendChild(renderer.domElement);
     const camera = new THREE.PerspectiveCamera(45, 1, 0.001, 1000); camera.position.set(3, 2.4, 3.4);
     const controls = new OrbitControls(camera, renderer.domElement); controls.enableDamping = true;
-    scene.add(new THREE.HemisphereLight(0xdaf5ff, 0x17232b, 2.1));
+    const ambientLight = new THREE.HemisphereLight(0xdaf5ff, 0x17232b, 2.1);
+    const fillLight = new THREE.AmbientLight(0xffffff, 0.7);
+    scene.add(ambientLight, fillLight);
     const light = new THREE.DirectionalLight(0xffffff, 2.4); light.position.set(4, 7, 5); scene.add(light);
     const planeSize = Math.max(equipmentRef.current.dimensions?.width ?? 1, equipmentRef.current.dimensions?.depth ?? 1, 1) * 8;
     const ground = new THREE.Mesh(
@@ -339,7 +375,7 @@ export default function EquipmentAssetViewer({ equipment, binding, forcedDisplay
     function resize() { const rect = mount.getBoundingClientRect(); if (!rect.width || !rect.height) return; renderer.setSize(rect.width, rect.height, false); camera.aspect = rect.width / rect.height; camera.updateProjectionMatrix(); }
     const observer = new ResizeObserver(resize); observer.observe(mount); resize();
 
-    function render() { controls.update(); renderer.render(scene, camera); frameId = requestAnimationFrame(render); }
+    function render() { ambientLight.intensity = lightingRef.current.ambient; light.intensity = lightingRef.current.key; fillLight.intensity = lightingRef.current.fill; controls.update(); renderer.render(scene, camera); frameId = requestAnimationFrame(render); }
     render();
     return () => {
       if (runtime.cameraKey) rememberViewerCamera(cameraMemory, runtime.cameraKey, camera, controls, {
@@ -373,32 +409,14 @@ export default function EquipmentAssetViewer({ equipment, binding, forcedDisplay
 
   useEffect(() => {
     const runtime = runtimeRef.current;
-    if (runtime) runtime.scene.background.set(theme === "light" ? 0xe8eef1 : 0x0b1217);
-  }, [theme]);
-
-  useEffect(() => {
-    const runtime = runtimeRef.current;
-    if (!runtime) return;
-    const presentation = getGroundViewPresentation(groundViewMode);
-    const clippingPlanes = presentation.sectioned
-      ? [new THREE.Plane(new THREE.Vector3(0, 0, -1), 0)]
-      : [];
-    runtime.renderer.localClippingEnabled = presentation.sectioned;
-    runtime.ground.visible = presentation.visible;
-    runtime.grid.visible = presentation.gridVisible;
-    runtime.ground.material.transparent = presentation.transparent;
-    runtime.ground.material.opacity = presentation.opacity;
-    runtime.ground.material.depthWrite = presentation.depthWrite;
-    runtime.ground.material.clippingPlanes = clippingPlanes;
-    runtime.ground.material.clipShadows = presentation.sectioned;
-    runtime.ground.material.needsUpdate = true;
-  }, [groundViewMode]);
+    if (runtime) applyEquipmentEnvironment(runtime, environment, groundViewMode, theme);
+  }, [environment, groundViewMode, theme, sharedCameraMemory]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
     if (!runtime || !equipmentRef.current) return;
     const previousProxy = runtime.proxy;
-    const proxy = createProxy(equipmentRef.current, displayMode === EQUIPMENT_DISPLAY_MODES.COMPARE, theme);
+    const proxy = createProxy(equipmentRef.current, displayMode === EQUIPMENT_DISPLAY_MODES.COMPARE && !equipmentRef.current.enclosure?.enabled, theme);
     runtime.proxy = proxy;
     runtime.content.add(proxy);
     if (previousProxy) {
@@ -412,7 +430,7 @@ export default function EquipmentAssetViewer({ equipment, binding, forcedDisplay
       });
       const saved = runtime.cameraMemory.get(cameraKey);
       runtime.cameraKey = cameraKey;
-      runtime.autoFrameDetailed = !restoreViewerCamera(runtime.camera, runtime.controls, saved);
+      runtime.autoFrameDetailed = !(restoreViewerCamera(runtime.camera, runtime.controls, saved) || restoreEquipmentCamera(runtime.camera, runtime.controls, initialViewRef.current));
       runtime.detailFocusActive = saved?.detailFocusActive ?? false;
       focusSnapshotRef.current = saved?.focusSnapshot ?? null;
       if (runtime.autoFrameDetailed) fitCamera(runtime.camera, runtime.controls, proxy);
@@ -445,9 +463,9 @@ export default function EquipmentAssetViewer({ equipment, binding, forcedDisplay
         runtime.aligned = aligned;
         runtime.content.add(aligned);
         if (!applyAssetAlignment(runtime, bindingRef.current, equipmentRef.current)) throw new Error("EMPTY_MODEL");
-        updateDisplayMode(runtime, bindingRef.current?.displayMode ?? EQUIPMENT_DISPLAY_MODES.ACTUAL, transformToolsRef.current);
+        updateDisplayMode(runtime, displayModeRef.current, transformToolsRef.current);
         if (runtime.autoFrameDetailed) {
-          if (!fitCamera(runtime.camera, runtime.controls, aligned)) throw new Error("EMPTY_MODEL");
+          if (!fitCamera(runtime.camera, runtime.controls, runtime.proxy?.visible ? runtime.content : aligned)) throw new Error("EMPTY_MODEL");
           runtime.autoFrameDetailed = false;
         }
         setLoadState(loaded.fallbackMaterial ? "READY_FALLBACK" : "READY");
@@ -483,14 +501,50 @@ export default function EquipmentAssetViewer({ equipment, binding, forcedDisplay
   }, [assetLoadKey, shouldLoadDetailed]);
 
   useEffect(() => {
+    if (!cameraController) return;
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
+    const { camera, controls } = runtime;
+    const currentObject = () => runtime.proxy?.visible && runtime.aligned?.visible ? runtime.content : runtime.aligned?.visible ? runtime.aligned : runtime.proxy;
+    const stopFit = () => { runtime.autoFrameDetailed = false; };
+    const api = {
+      equipmentId: equipment?.id,
+      ready: () => Boolean(runtime.proxy?.visible || (runtime.actualObject && runtime.aligned?.visible)),
+      capture: () => captureViewerCamera(camera, controls),
+      preview: (view) => { stopFit(); restoreEquipmentCamera(camera, controls, view); },
+      fit: () => { stopFit(); camera.zoom = 1; fitCamera(camera, controls, currentObject()); },
+      zoom: (factor) => { stopFit(); camera.zoom = Math.max(0.1, Math.min(20, camera.zoom * factor)); camera.updateProjectionMatrix(); },
+      zoomLevel: (value) => { stopFit(); camera.zoom = Math.max(0.1, Math.min(20, value)); camera.updateProjectionMatrix(); },
+      fov: (value) => { stopFit(); camera.fov = value; camera.updateProjectionMatrix(); },
+      direction: (direction) => {
+        stopFit(); camera.zoom = 1; fitCamera(camera, controls, currentObject());
+        const distance = camera.position.distanceTo(controls.target);
+        const axes = { front: [0, 0, 1], back: [0, 0, -1], left: [-1, 0, 0], right: [1, 0, 0], top: [0, 1, 0] };
+        const snapshot = captureViewerCamera(camera, controls);
+        snapshot.position = controls.target.clone().addScaledVector(new THREE.Vector3(...axes[direction]), distance).toArray();
+        snapshot.up = direction === "top" ? [0, 0, -1] : [0, 1, 0];
+        restoreViewerCamera(camera, controls, snapshot);
+      },
+      floor: () => {
+        if (!runtime.aligned) return;
+        const bounds = new THREE.Box3().setFromObject(runtime.aligned);
+        if (!bounds.isEmpty()) callbackRef.current?.({ position: { ...bindingRef.current.alignmentTransform.position, y: runtime.aligned.position.y - bounds.min.y } }, bindingRef.current.id);
+      },
+    };
+    cameraController.current = api;
+    return () => { if (cameraController.current === api) cameraController.current = null; };
+  }, [cameraController, equipment?.id]);
+
+  useEffect(() => {
     const runtime = runtimeRef.current;
     if (!runtime?.aligned) return;
     applyAssetAlignment(runtime, bindingRef.current, equipmentRef.current);
   }, [alignmentKey, equipmentDimensionsKey]);
 
   useEffect(() => {
+    if (runtimeRef.current) runtimeRef.current.modelLayers = layerSettings;
     updateDisplayMode(runtimeRef.current, displayMode, transformTools);
-  }, [displayMode, transformTools]);
+  }, [displayMode, transformTools, layerSettings]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -514,6 +568,6 @@ export default function EquipmentAssetViewer({ equipment, binding, forcedDisplay
     focusSnapshotRef.current = null;
   }, [focusDetail, loadState, cameraKey, shouldLoadDetailed]);
 
-  const messages = { PROXY: "Proxy Model 표시 중", LOADING: "대용량 스캔 자산을 불러오는 중…", READY: "실제 자산 정합 모드", READY_FALLBACK: "모델 표시 중 · 텍스처 대신 기본 재질 적용", NO_3D: "이미지·텍스처는 하단 카메라 화면에서 확인합니다.", MISSING: "업로드 원본 파일을 다시 연결해 주세요.", UNSUPPORTED: "지원하지 않는 파일 형식입니다.", EMPTY: "파일에 표시할 3D 형상이 없습니다.", WEBGL_ERROR: "WebGL 뷰어를 초기화하지 못했습니다.", ERROR: "자산을 불러오지 못했습니다." };
-  return <section className={styles.viewer} aria-label="설비 실제 자산 뷰어"><div ref={mountRef} className={styles.canvas} /><div className={styles.status} data-state={loadState}>{loadMessage || messages[loadState]}</div></section>;
+  const messages = { PROXY: "외관 도형 표시 중", LOADING: "대용량 스캔 자산을 불러오는 중…", READY: "실제 자산 정합 모드", READY_FALLBACK: "모델 표시 중 · 텍스처 대신 기본 재질 적용", NO_3D: "이미지·텍스처는 하단 카메라 화면에서 확인합니다.", MISSING: "업로드 원본 파일을 다시 연결해 주세요.", UNSUPPORTED: "지원하지 않는 파일 형식입니다.", EMPTY: "파일에 표시할 3D 형상이 없습니다.", WEBGL_ERROR: "WebGL 뷰어를 초기화하지 못했습니다.", ERROR: "자산을 불러오지 못했습니다." };
+  return <section className={styles.viewer} aria-label="설비 실제 자산 뷰어"><div ref={mountRef} className={styles.canvas} /><ModelLayerControls value={layerSettings} hasScan={Boolean(binding && [ASSET_TYPES.OBJ, ASSET_TYPES.PLY].includes(binding.assetType))} scanDefault={displayMode !== EQUIPMENT_DISPLAY_MODES.PROXY} shapeDefault={displayMode === EQUIPMENT_DISPLAY_MODES.PROXY || displayMode === EQUIPMENT_DISPLAY_MODES.COMPARE} shapeOpacity={equipment.enclosure?.opacity ?? equipment.appearance?.opacity ?? 1} onChange={(value) => setModelLayers((current) => ({ ...current, [equipment.id]: value }))} />{displayMode !== EQUIPMENT_DISPLAY_MODES.ACTUAL && <EnclosureDoorControls equipment={displayedEquipment} onToggle={(index, open, side) => setDoorOverride(enclosureDoorOverride(equipment, displayedEquipment, index, open, side))} />}<div className={styles.status} data-state={loadState}>{loadMessage || messages[loadState]}</div></section>;
 }

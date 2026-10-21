@@ -628,6 +628,7 @@ export default function SiteOverviewScene({
   worldEquipment = EMPTY_VIEWER_EQUIPMENT,
   equipmentAssetBindings = EMPTY_VIEWER_EQUIPMENT,
   viewerPreset,
+  modelLayers,
   enableObjectLod = true,
   snapshotRequest,
   onSnapshot,
@@ -1577,8 +1578,8 @@ export default function SiteOverviewScene({
       if (runtime.viewerScanEntry) {
         const equipmentId = !runtime.buildingObservation.isActive() ? request?.item.id : null;
         loadSelectedDetail(runtime.viewerScanEntry, equipmentId,
-          Boolean(request && runtime.focusedEquipmentRequest === request && !runtime.cameraFocus));
-        updateDetailedModelVisibility(runtime.viewerScanEntry, { equipmentId }, runtime);
+          Boolean(request));
+        updateDetailedModelVisibility(runtime.viewerScanEntry, { equipmentId, modelLayers: runtime.modelLayers }, runtime);
       }
       orbitControls.update();
       if (!runtime.buildingObservation.isActive()) clampCameraTargetToSite(runtime);
@@ -2108,11 +2109,12 @@ export default function SiteOverviewScene({
 
   useEffect(() => {
     const runtime = runtimeRef.current;
+    if (runtime) runtime.modelLayers = modelLayers;
     runtime?.buildingObservation.sync(buildingObservation?.data ?? null, {
       ...buildingObservation,
       focusAfterClose: runtime.siteEnvironmentObjects.get(selectedSiteObjectId),
     });
-  }, [buildingObservation, buildings, floors, selectedSiteObjectId, siteEnvironment, siteObjects, theme]);
+  }, [buildingObservation, buildings, floors, selectedSiteObjectId, siteEnvironment, siteObjects, theme, modelLayers]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -2122,18 +2124,21 @@ export default function SiteOverviewScene({
       ...item, position: { x: 0, y: 0, z: 0, ...item.position }, rotation: { x: 0, y: 0, z: 0, ...item.rotation },
       dimensions: { width: 1, height: 1, depth: 1, ...item.dimensions }, appearance: { color: "#6f8f9d", opacity: 1, ...item.appearance },
     }, baseY: 0 }));
-    const boundIds = new Set(equipmentAssetBindings.map((binding) => binding.equipmentId));
+    const modelBindings = new Map(equipmentAssetBindings.filter((binding) => ["OBJ", "PLY"].includes(binding.assetType)).map((binding) => [binding.equipmentId, binding]));
+    const boundIds = new Set(modelBindings.keys());
     const detailedModels = [];
     createEquipmentRenderObjects(entries.filter(({ equipment }) => !boundIds.has(equipment.id)), { theme, enableLod: false }).forEach((object) => root.add(object));
     entries.filter(({ equipment }) => boundIds.has(equipment.id)).forEach((record) => {
+      const binding = modelBindings.get(record.equipment.id);
+      if (binding.includeProxy) record.equipment.appearance.opacity = 0.28;
       const [object] = createEquipmentRenderObjects([record], { theme, enableLod: false });
       root.add(object);
       detailedModels.push({ object, equipmentId: record.equipment.id, equipment: record.equipment,
-        binding: equipmentAssetBindings.find((binding) => binding.equipmentId === record.equipment.id),
+        binding,
         fallback: [...object.children], aligned: null, attempted: false });
     });
     // Outdoor equipment already lives in the site's own object root.
-    equipmentAssetBindings.forEach((binding) => {
+    modelBindings.forEach((binding) => {
       const object = runtime.siteEnvironmentObjects.get(binding.equipmentId);
       const item = siteObjects.find((candidate) => candidate.id === binding.equipmentId);
       if (!object || !item || detailedModels.some((detail) => detail.equipmentId === item.id)) return;

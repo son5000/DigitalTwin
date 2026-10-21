@@ -1,3 +1,4 @@
+import { getSensorMountPose } from "../model/equipmentEnclosure";
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -636,15 +637,17 @@ export default function FloorPlan3DScene({
       items.forEach((item) => equipmentMap.set(item.id, { equipment: item, floorId, baseY: viewScope === "BUILDING" ? floor?.elevation ?? 0 : 0 }));
     });
     const sensorWorldPosition = (device) => {
-      const mounted = device.mountMode === "EQUIPMENT" ? equipmentMap.get(device.equipmentIds?.[0]) : null;
-      return {
-        floorId: mounted?.floorId ?? device.floorId ?? device.parentFloorId ?? currentFloor.id,
-        position: new THREE.Vector3(
-          (mounted?.equipment.position.x ?? 0) + device.position.x,
-          (mounted ? mounted.baseY + mounted.equipment.position.y : 0) + device.position.y,
-          (mounted?.equipment.position.z ?? 0) + device.position.z,
-        ),
-      };
+      const mounted = device.mountMode === "EQUIPMENT" ? equipmentMap.get(device.surfaceMount?.equipmentId ?? device.equipmentIds?.[0]) : null;
+      const pose = mounted ? getSensorMountPose(device, mounted.equipment) : null;
+      if (device.surfaceMount && !pose) return null;
+      const position = pose?.position.clone() ?? new THREE.Vector3(device.position.x, device.position.y, device.position.z);
+      const quaternion = new THREE.Quaternion().setFromEuler(pose?.rotation ?? new THREE.Euler(device.rotation.x, device.rotation.y, device.rotation.z));
+      if (mounted) {
+        const rotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(mounted.equipment.rotation.x, mounted.equipment.rotation.y, mounted.equipment.rotation.z));
+        position.applyQuaternion(rotation).add(new THREE.Vector3(mounted.equipment.position.x, mounted.baseY + mounted.equipment.position.y, mounted.equipment.position.z));
+        quaternion.premultiply(rotation);
+      }
+      return { floorId: mounted?.floorId ?? device.floorId ?? device.parentFloorId ?? currentFloor.id, position, quaternion };
     };
     observationPoints.forEach((point) => {
       const target = equipmentMap.get(point.equipmentId);
@@ -658,10 +661,11 @@ export default function FloorPlan3DScene({
     });
     monitoringDevices.forEach((device) => {
       const sensorLocation = sensorWorldPosition(device);
+      if (!sensorLocation) return;
       const geometry = device.sourceType === "CAMERA" ? new THREE.ConeGeometry(0.28, 0.7, 12) : new THREE.SphereGeometry(0.22, 12, 8);
       const marker = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: device.sourceType === "CAMERA" ? 0x4da8ff : 0x4de0a8, wireframe: device.sourceType === "CAMERA" }));
       marker.position.copy(sensorLocation.position);
-      marker.rotation.set(device.rotation.x, device.rotation.y, device.rotation.z);
+      marker.quaternion.copy(sensorLocation.quaternion);
       markRenderFloor(marker, sensorLocation.floorId);
       (runtime.floorLayers.get(sensorLocation.floorId)?.sensors ?? runtime.helperRoot).add(marker);
       if (device.sourceType === "CAMERA") {
@@ -676,6 +680,7 @@ export default function FloorPlan3DScene({
       const target = point ? equipmentMap.get(point.equipmentId) : null;
       if (!device || !point || !target) return;
       const source = sensorWorldPosition(device);
+      if (!source) return;
       const targetPosition = new THREE.Vector3(target.equipment.position.x + point.localPosition.x, target.baseY + target.equipment.position.y + point.localPosition.y, target.equipment.position.z + point.localPosition.z);
       const geometry = new THREE.BufferGeometry().setFromPoints([source.position, targetPosition]);
       const line = new THREE.Line(geometry, new THREE.LineDashedMaterial({ color: 0x68d4ff, dashSize: 0.3, gapSize: 0.18 }));

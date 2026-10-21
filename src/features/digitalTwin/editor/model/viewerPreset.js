@@ -1,5 +1,38 @@
 export const VIEWER_PRESET_VERSION = 1;
 
+export const DEFAULT_SCAN_LIGHTING = Object.freeze({ ambient: 2.1, key: 2.4, fill: 0.7 });
+
+export function normalizeEquipmentEnvironment(source = {}) {
+  const color = (value, fallback) => /^#[0-9a-f]{6}$/i.test(value ?? "") ? value : fallback;
+  const number = (value, fallback, min, max) => Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback;
+  return {
+    backgroundColor: color(source.backgroundColor, "#0b1217"),
+    groundColor: color(source.groundColor, "#17242b"),
+    gridColor: color(source.gridColor, "#456577"),
+    groundMode: ["VISIBLE", "TRANSLUCENT", "SECTION", "HIDDEN"].includes(source.groundMode) ? source.groundMode : "VISIBLE",
+    groundOpacity: number(source.groundOpacity, 0.28, 0, 1),
+    groundSize: number(source.groundSize, 20, 0.1, 10000),
+    groundHeight: number(source.groundHeight, 0, -1000, 1000),
+    gridVisible: source.gridVisible !== false,
+    gridSpacing: number(source.gridSpacing, 1, 0.01, 1000),
+  };
+}
+
+export function normalizeEquipmentView(view) {
+  if (!view || ![view.position, view.target, view.up].every((vector) => Array.isArray(vector) && vector.length === 3 && vector.every(Number.isFinite))) return null;
+  if (Math.hypot(...view.up) < 0.001 || Math.hypot(...view.position.map((value, index) => value - view.target[index])) < 0.001) return null;
+  return { position: [...view.position], target: [...view.target], up: [...view.up],
+    zoom: Number.isFinite(view.zoom) ? Math.max(0.01, Math.min(100, view.zoom)) : 1,
+    fov: Number.isFinite(view.fov) ? Math.max(10, Math.min(100, view.fov)) : 46,
+    near: Number.isFinite(view.near) ? Math.max(0.0001, view.near) : 0.01,
+    far: Number.isFinite(view.far) ? Math.max((view.near || 0.01) + 1, view.far) : 500 };
+}
+
+export function normalizeScanLighting(source = {}) {
+  return Object.fromEntries(Object.entries(DEFAULT_SCAN_LIGHTING).map(([key, fallback]) => [key,
+    typeof source?.[key] === "number" && Number.isFinite(source[key]) ? Math.min(6, Math.max(0, source[key])) : fallback]));
+}
+
 export const EQUIPMENT_GLOBAL_DISPLAY_MODES = Object.freeze({
   SIMPLIFIED: "SIMPLIFIED",
   REALISTIC: "REALISTIC",
@@ -29,6 +62,9 @@ export function createViewerPreset(source = {}) {
   return {
     version: VIEWER_PRESET_VERSION,
     camera: source.camera ?? null,
+    lighting: normalizeScanLighting(source.lighting),
+    equipmentEnvironments: Object.fromEntries(Object.entries(source.equipmentEnvironments ?? {}).filter(([, value]) => value && typeof value === "object").map(([id, value]) => [id, normalizeEquipmentEnvironment(value)])),
+    equipmentViews: Object.fromEntries(Object.entries(source.equipmentViews ?? {}).map(([id, view]) => [id, normalizeEquipmentView(view)]).filter(([, view]) => view)),
     visibility: { ...(source.visibility ?? {}) },
     filters: { ...(source.filters ?? {}) },
     floorSettings: { ...(source.floorSettings ?? {}) },
