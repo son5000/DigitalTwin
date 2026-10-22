@@ -1,7 +1,7 @@
 import { getSensorMountPose } from "./equipmentEnclosure.js";
 import { getSensorCapabilities } from "./equipmentDetailModel.js";
 
-export const MONITORING_MODES = { MODEL: "모델", VISION: "비전", THERMAL: "열화상", ULTRASOUND: "초음파" };
+export const MONITORING_MODES = { MODEL: "모델", VISION: "비전", THERMAL: "열화상" };
 
 export function mediaUrl(value, demo = false) {
   if (typeof value !== "string") return "";

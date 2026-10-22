@@ -59,6 +59,20 @@ export function openProject(id, storage = window.localStorage) {
   activateProject(id, project.layout, storage);
 }
 
+export function updateProjectObservationPoints(projectId, update, storage = window.localStorage) {
+  const registry = readProjects(storage);
+  const project = registry.projects.find((item) => item.id === projectId);
+  if (!project) throw new Error("프로젝트를 저장한 뒤 관측 영역을 저장하세요.");
+  const points = update(project.layout.observationConfig?.observationPoints ?? project.layout.observationPoints ?? []);
+  const layout = { ...project.layout, savedAt: new Date().toISOString(), observationPoints: points,
+    observationConfig: { ...(project.layout.observationConfig ?? {
+      equipmentAssetBindings: project.layout.equipmentAssetBindings ?? [], sensorBindings: project.layout.sensorBindings ?? [], serverBindings: project.layout.serverBindings ?? [],
+    }), observationPoints: points } };
+  if (registry.activeId === projectId) storage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(layout));
+  else storage.setItem(PROJECT_STORAGE_KEY, JSON.stringify({ ...registry, projects: registry.projects.map((item) => item.id === projectId ? { ...item, layout } : item) }));
+  return layout;
+}
+
 export function getProjectDetails(project) {
   const { layout } = project;
   const nodes = layout.hierarchy?.nodes ?? [];

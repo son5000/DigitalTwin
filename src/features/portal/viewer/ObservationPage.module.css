@@ -30,8 +30,8 @@
   --portal-surface: #f1f5fa;
   --portal-border: #dce6f0;
   --portal-text: #173452;
-  --portal-muted: #7188a2;
-  --portal-faint: #8ca0b5;
+  --portal-muted: #526b85;
+  --portal-faint: #5f738a;
   color-scheme: light;
 }
 
@@ -116,7 +116,7 @@
 .workspace > span { display: block; color: var(--portal-faint); font-size: 11px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
 .workspace strong { display: block; margin-top: 7px; padding-right: 20px; overflow: hidden; color: var(--portal-text); font-size: 15px; font-weight: 750; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
 .workspace small { display: block; margin-top: 4px; color: var(--portal-muted); font-size: 12px; line-height: 1.4; white-space: nowrap; }
-.collapseButton { position: absolute; top: 3px; right: 0; width: 28px; height: 28px; display: grid; place-items: center; border: 0; border-radius: 6px; background: transparent; color: var(--portal-muted); cursor: pointer; transform: rotate(180deg); }
+.collapseButton { position: absolute; top: 3px; right: 0; width: 36px; height: 36px; display: grid; place-items: center; border: 0; border-radius: 6px; background: transparent; color: var(--portal-muted); cursor: pointer; transform: rotate(180deg); }
 .collapseButton:hover { background: rgb(104 157 224 / 12%); color: var(--portal-text); }
 
 .search { height: 40px; flex: 0 0 40px; display: flex; align-items: center; gap: 9px; margin: 0 3px 12px; padding: 0 11px; border: 1px solid var(--portal-border); border-radius: 7px; background: rgb(150 190 234 / 7%); color: var(--portal-muted); }
@@ -187,20 +187,12 @@
 .mobileScrim { display: none; }
 
 .worldMenu { position: absolute; z-index: 30; top: max(12px, env(safe-area-inset-top)); left: max(12px, env(safe-area-inset-left)); width: 56px; display: flex; flex-direction: column; gap: 8px; max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
-.worldMenuItems { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 6px 4px 10px; min-height: 0; overflow: visible; }
-.worldMenuGroup { position: relative; display: grid; place-items: center; }
-.worldSubmenu { position: absolute; z-index: 2; top: 50%; left: 50%; width: 0; height: 0; overflow: visible; pointer-events: none; }
-.worldSubmenu .appIcon { position: absolute; top: calc(var(--menu-y) - 24px); left: calc(var(--menu-x) - 24px); margin: 0; pointer-events: auto; opacity: 0; animation: worldMenuPetal .42s cubic-bezier(.2, .82, .24, 1.18) var(--menu-delay) forwards; }
-.worldSubmenu .appIcon:nth-child(1) { --menu-x: 50px; --menu-y: -82px; --menu-start-x: -50px; --menu-start-y: 82px; --menu-delay: 0ms; }
-.worldSubmenu .appIcon:nth-child(2) { --menu-x: 91px; --menu-y: -30px; --menu-start-x: -91px; --menu-start-y: 30px; --menu-delay: 45ms; }
-.worldSubmenu .appIcon:nth-child(3) { --menu-x: 91px; --menu-y: 30px; --menu-start-x: -91px; --menu-start-y: -30px; --menu-delay: 90ms; }
-.worldSubmenu .appIcon:nth-child(4) { --menu-x: 50px; --menu-y: 82px; --menu-start-x: -50px; --menu-start-y: -82px; --menu-delay: 135ms; }
+.worldMenuItems { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 6px 4px 10px; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.worldMenuItems > * { flex-shrink: 0; }
+.worldMenuGroup { position: relative; display: grid; place-items: center; gap: 8px; }
+.worldSubmenu { display: grid; gap: 8px; padding-block: 8px; border-block: 1px solid var(--menu-border); }
+.worldSubmenu .appIcon { width: 44px; height: 44px; border-radius: 8px; }
 .operationsButton > svg { width: 26px; height: 26px; flex-basis: 26px; }
-@keyframes worldMenuPetal {
-  0% { opacity: 0; transform: translate(var(--menu-start-x), var(--menu-start-y)) scale(.18) rotate(-46deg); }
-  72% { opacity: 1; transform: translate(0, 0) scale(1.09) rotate(5deg); }
-  100% { opacity: 1; transform: none; }
-}
 .worldMenu {
   --menu-surface: #172333;
   --menu-ink: #c4cedb;
@@ -287,5 +279,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .sidebar, .detailPanel, .appIcon { transition: none; }
-  .worldSubmenu .appIcon { opacity: 1; animation: none; }
+}
+
+@media (pointer: coarse) {
+  .iconButton, .collapseButton { min-width: 44px; min-height: 44px; }
 }

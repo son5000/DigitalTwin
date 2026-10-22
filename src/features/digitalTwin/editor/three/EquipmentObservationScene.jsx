@@ -27,6 +27,7 @@ import { focusEquipmentInWorld, updateViewerCameraRange } from "./viewerEquipmen
 import { bindCameraFocusCancellation, updateCameraFocus } from "./cameraFocus";
 import { setScanLoadState } from "./scanLoadState";
 import { bindSurfaceRoiInteraction } from "./surfaceRoiInteraction";
+import InteractionGuide from "../components/InteractionGuide";
 import { captureViewerCamera, restoreEquipmentCamera, rememberViewerCamera, restoreViewerCamera } from "./viewerCameraMemory";
 import { applySensorView } from "./sensorCamera";
 import { bindMonitoringLayers } from "./monitoringLayers";
@@ -550,6 +551,7 @@ export default function EquipmentObservationScene({
     const focusRuntime = { activeCamera: camera, orbitControls: controls, container: mount };
     const roiInteraction = bindSurfaceRoiInteraction({ renderer, camera, controls, renderedEquipment,
       getOptions: () => roiOptionsRef.current ?? {},
+      getPointMarker: (id) => sensorLayer.pointMarkers.get(id),
       focus: (object) => {
         const request = JSON.stringify([roiOptionsRef.current?.selectedId, roiOptionsRef.current?.focusVersion]);
         if (roiFocusRequestRef.current === request) return;
@@ -748,7 +750,8 @@ export default function EquipmentObservationScene({
       {sensors.find((sensor) => sensor.id === selectedSensorId)?.textureProjection?.enabled && <button type="button" aria-pressed={projectionPicking === selectedSensorId} onClick={() => { setProjectionPicking(projectionPicking === selectedSensorId ? null : selectedSensorId); setPlacingSensorId(null); setPlacementNotice(""); }}>{projectionPicking === selectedSensorId ? "적용면 선택 취소" : "영상 적용면 선택"}</button>}
       {(placingSensorId === selectedSensorId || projectionPicking === selectedSensorId) && <span role="status">{placementNotice || (projectionPicking ? "영상이 표시될 부분을 클릭하세요." : "벽이나 문의 부착 위치를 클릭하세요.")}</span>}
     </div>}
-    {pointOptions?.placing && <div className={styles.surfacePlacement} data-camera-safe-ui><span>관측할 위치를 모델에서 클릭하세요.</span><button type="button" onClick={pointOptions.onPlaced}>취소</button></div>}
+    {pointOptions?.placing && <><InteractionGuide message="모델 표면을 클릭해 관측 영역을 놓으세요." /><div className={styles.surfacePlacement} data-camera-safe-ui><button type="button" onClick={pointOptions.onPlaced}>영역 지정 취소</button></div></>}
+    {(placingSensorId === selectedSensorId || projectionPicking === selectedSensorId) && selectedSensorId && <InteractionGuide key={projectionPicking ? "projection" : "sensor"} message={projectionPicking ? "영상이 표시될 모델 표면을 클릭하세요." : "센서를 부착할 모델 표면을 클릭하세요."} />}
     {projectionNotice && <div className={styles.projectionNotice} role="status" data-camera-safe-ui>{projectionNotice}</div>}
     {hasVisibleEnclosure && <EnclosureDoorControls equipment={displayedDoorEquipment} onToggle={(index, open, side) => setDoorOverrides((current) => ({ ...current, [doorEquipment.id]: enclosureDoorOverride(doorEquipment, displayedDoorEquipment, index, open, side) }))} />}
   </section>;

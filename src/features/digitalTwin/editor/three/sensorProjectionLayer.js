@@ -153,7 +153,7 @@ export function bindSensorProjectionLayer({ renderer, renderedEquipment, markers
             new THREE.TextureLoader().load(url, accept, undefined, () => { if (!disposed && generation === state.generation) state.error = "영상을 불러오지 못했습니다. 이미지 주소와 접근 권한을 확인하세요."; });
           }
         }
-        const show = Boolean(frame && state.ready && isFreshMeasurement(state.displayedFrame, options.now) && (options.mode === "MODEL" || !options.mode || options.mode === p.kind));
+        const show = Boolean(frame && state.ready && isFreshMeasurement(state.displayedFrame, options.now) && (!options.mode || options.mode === p.kind));
         if (state.error) errors.push(`${sensor.name}: ${state.error}`);
         else if (!frame) errors.push(`${sensor.name}: 최신 ${p.kind === "THERMAL" ? "온도 분포·열화상" : "영상"} 수신 대기`);
         else if (!state.targets.length) errors.push(`${sensor.name}: 적용할 모델이나 면을 다시 선택하세요.`);
@@ -171,7 +171,7 @@ export function bindSensorProjectionLayer({ renderer, renderedEquipment, markers
           }
           depthPass(state); state.depthKey = depthKey;
         }
-        const uniformKey = `${depthKey}:${JSON.stringify(p)}:${JSON.stringify(entry.layerSource)}:${show}:${state.texture?.uuid}`;
+        const uniformKey = `${depthKey}:${JSON.stringify(p)}:${JSON.stringify(entry.layerSource)}:${show}:${state.texture?.uuid}:${options.opacity}`;
         if (uniformKey === state.uniformKey) continue;
         state.uniformKey = uniformKey;
         for (const { overlay, object, kind } of state.targets) {
@@ -183,7 +183,7 @@ export function bindSensorProjectionLayer({ renderer, renderedEquipment, markers
           if (surfaceNormal) u.faceNormal.value.copy(surfaceNormal);
           u.imageScale.value.set(p.scaleX, p.scaleY); u.imageOffset.value.set(p.offsetX, p.offsetY);
           u.crop.value.set(p.cropX, p.cropY, Math.min(p.cropWidth, 1 - p.cropX), Math.min(p.cropHeight, 1 - p.cropY));
-          u.imageRotation.value = THREE.MathUtils.degToRad(p.rotation); u.opacity.value = p.opacity * (entry.layerSource?.[kind]?.opacity ?? (kind === "PROXY" ? entry.item.enclosure?.opacity ?? entry.item.appearance?.opacity ?? 1 : 1));
+          u.imageRotation.value = THREE.MathUtils.degToRad(p.rotation); u.opacity.value = p.opacity * (options.opacity ?? 1) * (entry.layerSource?.[kind]?.opacity ?? (kind === "PROXY" ? entry.item.enclosure?.opacity ?? entry.item.appearance?.opacity ?? 1 : 1));
         }
       }
       const error = [...new Set(errors)].join(" · ");

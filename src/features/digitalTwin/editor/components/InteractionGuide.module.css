@@ -1,0 +1,1 @@
+.guide { position: fixed; z-index: 1500; top: 30vh; left: 50%; transform: translateX(-50%); width: max-content; max-width: min(360px, calc(100vw - 40px)); box-sizing: border-box; padding: 11px 16px; border: 1px solid #c7d0d7; border-radius: 7px; background: #f7f9fb; color: #263542; font: 13px/1.6 system-ui, sans-serif; text-align: center; pointer-events: none; }

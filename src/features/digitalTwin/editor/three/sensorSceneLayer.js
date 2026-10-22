@@ -51,6 +51,8 @@ export function createSensorSceneLayer({ root, renderedEquipment, origin, addCam
       marker.position.copy(position);
       marker.userData.sensorEquipmentId = point.equipmentId;
       marker.userData.observationPointId = point.id;
+      marker.userData.equipmentId = point.equipmentId;
+      marker.userData.representation = point.representation ?? "BOTH";
       const index = pointIndices.get(point.equipmentId) ?? 0; pointIndices.set(point.equipmentId, index + 1);
       const badge = createObservationBadge(marker, point, index, observationStatus(observationReadings(point, sensors, readings, now, previewReadings)));
       if (badge) pointBadges.set(point.id, badge);
@@ -80,6 +82,7 @@ export function createSensorSceneLayer({ root, renderedEquipment, origin, addCam
     for (const object of objects) {
       const entry = renderedEquipment.get(object.userData.sensorEquipmentId);
       object.visible = Boolean(entry && !entry.loading)
+        && (!object.userData.observationPointId || !object.userData.representation || object.userData.representation === "BOTH" || object.userData.representation === (entry.actual?.visible ? "ACTUAL" : "PROXY"))
         && !(hiddenSensorId && object.userData.sensorId === hiddenSensorId);
     }
   }

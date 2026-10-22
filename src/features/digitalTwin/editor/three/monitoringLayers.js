@@ -18,7 +18,7 @@ export function bindMonitoringLayers({ renderedEquipment, getOptions }) {
       if (options === previousOptions && model === previousModel && second === previousSecond) return;
       previousOptions = options; previousModel = model; previousSecond = second;
       const representation = entry?.actual?.visible ? "ACTUAL" : "PROXY";
-      const records = options.mode === "ULTRASOUND" ? options.hotspots : (options.textures ?? []).filter((record) => record.kind === options.mode && record.mapping === "UV");
+      const records = (options.textures ?? []).filter((record) => record.kind === options.mode && record.mapping === "UV");
       const valid = (records ?? []).filter((record) => record.equipmentId === options.equipmentId && isFreshMeasurement(record, options.now)
         && record.modelVersion === options.model?.version && record.representation === representation);
       const mismatched = !valid.length && (records ?? []).some((record) => record.equipmentId === options.equipmentId && isFreshMeasurement(record, options.now) && (record.modelVersion !== options.model?.version || record.representation !== representation));
@@ -35,7 +35,6 @@ export function bindMonitoringLayers({ renderedEquipment, getOptions }) {
         object.renderOrder = 5; entry.object.add(object); overlays.push(object);
       };
       if (options.point?.representation === representation) sphere(options.point.position, 0x4da8ff, .045);
-      if (options.mode === "ULTRASOUND") valid.forEach((point) => sphere(point.position, Number(point.db) >= 80 ? 0xff6155 : 0xffc84a, Math.max(.035, Math.min(.25, Number(point.radius) || .08))));
       if (!["VISION", "THERMAL"].includes(options.mode)) return;
       const version = generation;
       valid.filter((record) => record.kind === options.mode).slice(0, 8).forEach((record) => {

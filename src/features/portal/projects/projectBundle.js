@@ -3,7 +3,7 @@ import { textureAssetRepository } from "../../digitalTwin/editor/api/textureAsse
 import { createRoiRepository, roiStorageKey } from "../../digitalTwin/editor/api/roiRepository";
 import { customAssetRepository } from "../../customAssets/storage/customAssetRepository";
 import { getCustomAssetIdFromTemplate } from "../../customAssets/core/customAssetTypes";
-import { validateRoi } from "../../digitalTwin/editor/model/roiMonitoring";
+import { isSphereRoi, roiToObservationPoint, validateRoi } from "../../digitalTwin/editor/model/roiMonitoring";
 import { PROJECT_STORAGE_KEY, readProjects } from "./projectRepository";
 
 const MAX_BUNDLE_BYTES = 150 * 1024 * 1024;
@@ -122,7 +122,13 @@ export async function importProjectBundle(file, storage = window.localStorage) {
         written.push({ kind, repository, id: asset.id });
       }
     }
-    storage.setItem(roiStorageKey(projectId), JSON.stringify(bundle.rois));
+    const spheres = bundle.rois.filter(isSphereRoi).map(roiToObservationPoint);
+    const layout = bundle.project.layout;
+    const existingPoints = layout.observationConfig?.observationPoints ?? layout.observationPoints ?? [];
+    const points = [...existingPoints.filter((point) => !spheres.some((sphere) => sphere.id === point.id)), ...spheres];
+    layout.observationPoints = points;
+    if (layout.observationConfig) layout.observationConfig.observationPoints = points;
+    storage.setItem(roiStorageKey(projectId), JSON.stringify(bundle.rois.filter((roi) => !isSphereRoi(roi))));
     // The existing active editor document is left intact. Publish last, only
     // after all dependencies have been imported successfully.
     storage.setItem(PROJECT_STORAGE_KEY, JSON.stringify({ ...registry, projects: [...registry.projects, { ...bundle.project, id: projectId }] }));

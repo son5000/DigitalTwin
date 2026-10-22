@@ -1,5 +1,7 @@
 import { useMemo, useSyncExternalStore } from "react";
 import { createRoiRepository, roiStorageKey } from "../api/roiRepository.js";
+import { LAYOUT_STORAGE_KEY } from "../model/layoutInitialization.js";
+import { PROJECT_STORAGE_KEY } from "../../../portal/projects/projectRepository.js";
 
 const stores = new Map();
 function createStore(projectId) {
@@ -22,7 +24,8 @@ function createStore(projectId) {
       if (version === generation) emit({ error: error.name === "AbortError" ? "서버 응답이 지연되고 있습니다. 다시 연결합니다." : error.message, readings: [], loading: false, now: Date.now() });
     } finally { clearTimeout(timeout); if (version === generation) refreshing = false; }
   }
-  const sync = (event) => { if (event.key === null || event.key === roiStorageKey(projectId)) void refresh(); };
+  const sync = (event) => { if (event.key === null || [roiStorageKey(projectId), LAYOUT_STORAGE_KEY, PROJECT_STORAGE_KEY].includes(event.key)
+    || event.type === "digital-twin-layout-saved" || event.detail?.projectId === projectId) void refresh(); };
   return {
     snapshot: () => state,
     subscribe(listener) {
@@ -30,11 +33,13 @@ function createStore(projectId) {
       if (listeners.size === 1) {
         void refresh();
         window.addEventListener("storage", sync);
+        window.addEventListener("digital-twin-layout-saved", sync);
+        window.addEventListener("digital-twin-roi-change", sync);
         timer = setInterval(() => { emit({ now: Date.now() }); if (repository.shared && !refreshing) void refresh(); }, 3000);
       }
       return () => {
         listeners.delete(listener);
-        if (!listeners.size) { clearInterval(timer); generation++; controller?.abort(); window.removeEventListener("storage", sync); }
+        if (!listeners.size) { clearInterval(timer); generation++; controller?.abort(); window.removeEventListener("storage", sync); window.removeEventListener("digital-twin-layout-saved", sync); window.removeEventListener("digital-twin-roi-change", sync); }
       };
     },
     refresh,

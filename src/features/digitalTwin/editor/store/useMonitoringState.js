@@ -1,5 +1,7 @@
 import { getEnclosureSurfaces } from "../model/equipmentEnclosure";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { readProjects } from "../../../portal/projects/projectRepository.js";
+import { LAYOUT_STORAGE_KEY } from "../model/layoutInitialization.js";
 
 import {
   ASSET_SOURCE_TYPES, ASSET_TYPES, ASSET_USAGE_TYPES,
@@ -10,6 +12,36 @@ import {
 
 export default function useMonitoringState({ equipment }) {
   const [observationPoints, setObservationPoints] = useState([]);
+  const [projectId] = useState(() => readProjects().activeId);
+  useEffect(() => {
+    function sync(event) {
+      if (event.type === "digital-twin-roi-change") {
+        if (event.detail.projectId !== projectId) return;
+        const { point, removedId } = event.detail;
+        setObservationPoints((points) => point ? [...points.filter((item) => item.id !== point.id), normalizeObservationPoint(point)] : points.filter((item) => item.id !== removedId));
+        return;
+      }
+      if (event.key !== LAYOUT_STORAGE_KEY || readProjects().activeId !== projectId || !event.newValue) return;
+      try {
+        const before = JSON.parse(event.oldValue || "{}"), after = JSON.parse(event.newValue);
+        const oldPoints = before.observationConfig?.observationPoints ?? before.observationPoints ?? [];
+        const newPoints = after.observationConfig?.observationPoints ?? after.observationPoints ?? [];
+        const changed = newPoints.filter((point) => JSON.stringify(point) !== JSON.stringify(oldPoints.find((item) => item.id === point.id)));
+        const removed = oldPoints.filter((point) => !newPoints.some((item) => item.id === point.id));
+        setObservationPoints((points) => {
+          const next = points.filter((point) => !removed.some((item) => item.id === point.id && (item.revision ?? 0) >= point.revision));
+          for (const point of changed) {
+            const index = next.findIndex((item) => item.id === point.id);
+            if (index < 0) next.push(normalizeObservationPoint(point));
+            else if ((point.revision ?? 0) > next[index].revision) next[index] = normalizeObservationPoint(point);
+          }
+          return next;
+        });
+      } catch { /* Keep the current editor document if another tab writes invalid data. */ }
+    }
+    window.addEventListener("digital-twin-roi-change", sync); window.addEventListener("storage", sync);
+    return () => { window.removeEventListener("digital-twin-roi-change", sync); window.removeEventListener("storage", sync); };
+  }, [projectId]);
   const [sensorBindings, setSensorBindings] = useState([]);
   const [serverBindings, setServerBindings] = useState([]);
   const [equipmentAssetBindings, setEquipmentAssetBindings] = useState([]);

@@ -1,11 +1,54 @@
-.world { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--portal-bg); }
+.layout { --overlay-top: max(12px, env(safe-area-inset-top)); --overlay-bottom: max(12px, env(safe-area-inset-bottom)); --overlay-left: max(80px, calc(env(safe-area-inset-left) + 68px)); --overlay-right: max(12px, env(safe-area-inset-right)); --controls-offset: 62px; --tools-offset: 48px; position: absolute; inset: 0; }
+.world { position: absolute; inset: 0; min-width: 0; min-height: 0; background: var(--portal-bg); }
+.layout > aside { position: absolute; top: var(--overlay-top); bottom: calc(var(--overlay-bottom) + var(--controls-offset)); left: var(--overlay-left); width: min(260px, calc(100% - var(--overlay-left) - var(--overlay-right))); min-height: 0; border-radius: 8px; box-shadow: 0 4px 16px rgb(0 0 0 / 16%); }
+.panelHost { position: absolute; z-index: 25; display: none; top: calc(var(--overlay-top) + var(--tools-offset)); right: var(--overlay-right); bottom: calc(var(--overlay-bottom) + var(--controls-offset)); width: min(320px, calc(100% - var(--overlay-left) - var(--overlay-right))); min-width: 0; min-height: 0; }
+.layout[data-panel="true"] > .panelHost { display: flex; }
+.panelHost { pointer-events: none; }
+.panelHost > aside { pointer-events: auto; }
+.sceneTools:empty { display: none; }
+.sceneTools { position: absolute; z-index: 26; top: var(--overlay-top); left: var(--overlay-left); right: var(--overlay-right); pointer-events: none; }
+.layout[data-sidebar="true"] .sceneTools { left: calc(var(--overlay-left) + 272px); }
+.sceneTools > div { position: static; max-width: none; gap: 8px; justify-content: flex-end; font-size: 12px; }
+.sceneTools button { min-height: 40px; pointer-events: auto; }
+.controlDock { --color-heading: var(--portal-text); --color-input: var(--portal-surface); --color-border: var(--portal-border); --color-border-strong: var(--portal-border); --color-surface-overlay: var(--portal-panel); --color-accent: var(--portal-blue); --state-selected: var(--portal-surface); position: absolute; z-index: 26; left: var(--overlay-left); right: var(--overlay-right); bottom: var(--overlay-bottom); display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; min-width: 0; pointer-events: none; }
+.controlItems { display: contents; }
+.controlDock [data-viewer-control] { position: relative; inset: auto; min-width: 0; max-width: 100%; margin: 0; border-radius: 6px; font-size: 12px; pointer-events: auto; }
+.controlDock [data-viewer-control="layers"] { order: 0; flex: 0 0 auto; padding: 4px 10px; }
+.controlDock summary { min-height: 40px; gap: 8px; }
+.controlDock summary::after { content: ""; width: 6px; height: 6px; margin-left: 8px; border-top: 1px solid currentColor; border-right: 1px solid currentColor; transform: rotate(-45deg); }
+.controlDock details[open] summary::after { transform: rotate(135deg); }
+.controlDock [data-viewer-control="layers"] > div { width: min(240px, calc(100vw - 126px)); max-height: min(180px, 25dvh); overflow: auto; padding-bottom: 8px; }
+.controlDock [data-viewer-control="doors"] { order: 1; flex: 0 1 auto; gap: 8px; scroll-padding: 4px; scrollbar-width: thin; }
+.controlDock [data-viewer-control="doors"] button { min-height: 40px; flex: 0 0 auto; }
+.controlDock > div:last-child { position: static; order: 2; margin-left: auto; flex-shrink: 0; border-radius: 6px; box-shadow: none; pointer-events: auto; }
+.panelHost h2 { overflow-wrap: anywhere; }
+
+@media (max-width: 1100px) {
+  .layout > aside { top: calc(var(--overlay-top) + var(--tools-offset)); }
+  .layout[data-sidebar="true"] .sceneTools { left: var(--overlay-left); }
+}
+
+@media (max-width: 760px) {
+  .layout { --overlay-left: max(72px, calc(env(safe-area-inset-left) + 64px)); --overlay-right: max(8px, env(safe-area-inset-right)); }
+  .layout > aside, .panelHost { max-height: 45dvh; width: calc(100% - var(--overlay-left) - var(--overlay-right)); }
+  .sceneTools button { flex: 1 1 auto; }
+  .controlDock [data-viewer-control="doors"] { flex: 1 1 160px; }
+}
+
+@media (pointer: coarse) {
+  .sceneTools button, .controlDock summary, .controlDock [data-viewer-control="doors"] button { min-height: 44px; }
+}
+
+@media (min-width: 600px) and (max-width: 760px) and (max-height: 500px) {
+  .layout > aside, .panelHost { width: 260px; max-height: none; }
+}
 .toolbar { position: absolute; z-index: 20; top: 82px; left: 80px; right: 12px; border-radius: 12px; flex-wrap: wrap; min-height: 58px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 18px; border-bottom: 1px solid var(--portal-border); background: var(--portal-header); }
 .toolbar button { min-height: 34px; padding: 0 12px; border: 1px solid var(--portal-border); border-radius: 7px; background: var(--portal-surface); color: var(--portal-muted); font-size: 11px; }
 .toolbar button:hover { color: var(--portal-text); border-color: var(--portal-blue); }
 .viewModes { display: flex; gap: 5px; }
 .viewModes strong { color: var(--portal-text); font-size: 12px; }
 .viewModes button[aria-pressed="true"] { color: var(--portal-text); border-color: var(--portal-blue); background: color-mix(in srgb, var(--portal-blue) 16%, var(--portal-panel)); }
-.scene { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+.scene { position: absolute; inset: 0; min-width: 0; min-height: 0; overflow: hidden; }
 .scene > section { width: 100%; height: 100%; }
 .worldFooter { position: absolute; z-index: 20; left: 80px; right: 12px; bottom: 78px; border-radius: 12px; min-height: 38px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 18px; border-top: 1px solid var(--portal-border); color: var(--portal-muted); background: var(--portal-header); font-size: 10px; }
 .worldFooter span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

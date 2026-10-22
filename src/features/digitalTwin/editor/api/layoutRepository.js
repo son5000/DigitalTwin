@@ -77,6 +77,7 @@ export function saveLayout(layout) {
   };
 
   localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  window.dispatchEvent(new Event("digital-twin-layout-saved"));
 
   return payload;
 }
