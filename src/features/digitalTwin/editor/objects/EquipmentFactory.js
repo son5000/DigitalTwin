@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { generateEnclosure } from "../generators/EnclosureGenerator";
+import { addEquipmentLabel } from "../generators/generatorHelpers";
 
 import { createCustomEquipmentGroup } from "@/features/customAssets/equipment/customEquipmentRenderer";
 import { getRuntimeCustomAsset } from "@/features/customAssets/core/customAssetRegistry";
@@ -87,7 +88,7 @@ export function createEquipmentObject(
     ? { ...sourceAppearance, opacity: Math.max(0.08, (sourceAppearance.opacity ?? 1) * 0.5) }
     : sourceAppearance;
   const customAsset = equipment.customAssetId ? getRuntimeCustomAsset(equipment.customAssetId) ?? equipment.customAssetSnapshot ?? template?.customAsset : null;
-  const visual = equipment.enclosure?.enabled ? generateEnclosure(equipment, { edgeColor, sceneTheme }) : customAsset ? createCustomEquipmentGroup(customAsset, {
+  const visual = equipment.enclosure?.enabled ? generateEnclosure({ ...equipment, showNameLabel: false }, { edgeColor, sceneTheme }) : customAsset ? createCustomEquipmentGroup(customAsset, {
     exposeParts,
     selectedPartId,
     equipmentId: equipment.id,
@@ -105,7 +106,7 @@ export function createEquipmentObject(
     parameters: equipment.parameters,
     appearance,
     appearanceSlots: equipment.appearanceSlots,
-    label: equipment.showNameLabel === true ? equipment.name : null,
+    label: null,
     edgeColor,
     sceneTheme,
     showEdges: appearance.showEdges || selected || colliding,
@@ -143,6 +144,7 @@ export function createEquipmentObject(
     equipmentGroup.add(visual);
   }
   equipmentGroup.position.set(equipment.position.x, equipment.position.y, equipment.position.z);
+  addEquipmentLabel(equipmentGroup, equipment.showNameLabel === true ? equipment.name : null, equipment.enclosure?.height ?? equipment.dimensions.height, edgeColor, sceneTheme);
   equipmentGroup.rotation.set(equipment.rotation.x, equipment.rotation.y, equipment.rotation.z);
   applyUserTextureToObject(equipmentGroup, equipment.userTexture);
   return equipmentGroup;

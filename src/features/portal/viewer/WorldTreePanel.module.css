@@ -15,3 +15,9 @@
 .empty { color: var(--portal-muted); font-size: 12px; line-height: 1.6; }
 
 .roiEmpty { text-align: right; }
+
+@media (max-width: 760px) {
+  .panel { min-height: 0; }
+  .snapshot { margin-bottom: 4px; }
+  .snapshot img { height: 88px; aspect-ratio: auto; }
+}

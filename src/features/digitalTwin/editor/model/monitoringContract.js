@@ -1,5 +1,6 @@
 import { getSensorMountPose } from "./equipmentEnclosure.js";
 import { getSensorCapabilities } from "./equipmentDetailModel.js";
+import { getEquipmentCoordinateFrame, sensorReferencePose, validateCoordinateFrame } from "./equipmentCoordinateFrame.js";
 
 export const MONITORING_MODES = { MODEL: "모델", VISION: "비전", THERMAL: "열화상" };
 
@@ -24,11 +25,14 @@ export function modelReference(equipment, assets = []) {
 export function calibrationPayload(projectId, equipment, sensor, assets = []) {
   const vector = (value) => ["x", "y", "z"].map((axis) => Number(value?.[axis] ?? 0));
   const mounted = getSensorMountPose(sensor, equipment);
+  const coordinateFrame = getEquipmentCoordinateFrame(equipment);
+  const referencePose = coordinateFrame ? sensorReferencePose(sensor, equipment, mounted) : { position: mounted?.position ?? sensor.position, rotation: mounted?.rotation ?? sensor.rotation };
   const mountingIssue = sensor.surfaceMount && (!mounted || mounted.adjusted) ? "부착면과 센서 위치를 다시 확인하세요." : "";
-  const payload = { schemaVersion: 1, projectId, equipmentId: equipment.id, sensorId: sensor.serverSensorId,
+  const payload = { schemaVersion: coordinateFrame ? 2 : 1, projectId, equipmentId: equipment.id, sensorId: sensor.serverSensorId,
+    ...(coordinateFrame ? { coordinateFrame } : {}),
     serialNumber: sensor.serialNumber, bindingId: sensor.id, capabilities: getSensorCapabilities(sensor), model: modelReference(equipment, assets),
     coordinateSystem: { unit: "m", handedness: "RIGHT", up: "+Y", rotationUnit: "rad", rotationOrder: "XYZ", sensorForward: "-Y", sensorUp: "-Z" },
-    pose: { space: sensor.mountMode === "EQUIPMENT" ? "EQUIPMENT_LOCAL" : "WORLD", position: vector(mounted?.position ?? sensor.position), rotation: vector(mounted?.rotation ?? sensor.rotation) },
+    pose: { space: coordinateFrame || sensor.mountMode === "EQUIPMENT" ? "EQUIPMENT_LOCAL" : "WORLD", position: vector(referencePose.position), rotation: vector(referencePose.rotation) },
     ...(sensor.surfaceMount ? { surfaceMount: sensor.surfaceMount, mountingIssue } : {}),
     ...(sensor.textureProjection ? { textureProjection: sensor.textureProjection } : {}),
     equipmentTransform: { position: vector(equipment.position), rotation: vector(equipment.rotation) },
@@ -39,6 +43,7 @@ export function calibrationPayload(projectId, equipment, sensor, assets = []) {
 }
 
 export function validateCalibration(payload) {
+  if (payload.coordinateFrame) validateCoordinateFrame(payload.coordinateFrame, payload.equipmentId);
   if (payload.mountingIssue) throw new Error(payload.mountingIssue);
   if (!payload.sensorId || !payload.serialNumber || !payload.equipmentId || !payload.projectId) throw new Error("먼저 시리얼 번호로 센서를 조회하세요.");
   if ([...payload.pose.position, ...payload.pose.rotation, ...payload.equipmentTransform.position, ...payload.equipmentTransform.rotation].some((value) => !Number.isFinite(value))) throw new Error("위치와 방향을 올바르게 입력하세요.");

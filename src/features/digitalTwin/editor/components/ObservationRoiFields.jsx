@@ -3,10 +3,13 @@ import { createId } from "../model/equipmentDetailModel";
 import NumericField from "./NumericField";
 import styles from "./MonitoringSettingsPanel.module.css";
 import { clampRoiRadius } from "../model/roiMonitoring.js";
+import { getEquipmentCoordinateFrame, modelToReference, referenceToModel } from "../model/equipmentCoordinateFrame.js";
 
 const METRICS = { TEMPERATURE: ["온도", "°C"], "temperature.max": ["최고 온도", "°C"], "temperature.min": ["최저 온도", "°C"], "temperature.avg": ["평균 온도", "°C"], "ultrasound.db": ["초음파", "dB"], "vision.changePercent": ["영상 변화율", "%"], PRESSURE: ["압력", "Pa"], VIBRATION: ["진동", "mm/s"], NOISE: ["소음", "dB"], POWER: ["전력", "W"], FLOW: ["유량", "L/min"], VIDEO: ["영상", ""] };
 
-export default function ObservationRoiFields({ points = [], selectedPoint, sensors = [], onSelect, onChange, onRemove, onPlace, compact = false }) {
+export default function ObservationRoiFields({ equipment, points = [], selectedPoint, sensors = [], onSelect, onChange, onRemove, onPlace, compact = false }) {
+  const frame = getEquipmentCoordinateFrame(equipment);
+  const position = selectedPoint ? modelToReference(selectedPoint.localPosition, frame) : null;
   function updateMeasurement(index, changes) {
     onChange(selectedPoint.id, { measurements: selectedPoint.measurements.map((item, i) => i === index ? { ...item, ...changes } : item) });
   }
@@ -16,7 +19,8 @@ export default function ObservationRoiFields({ points = [], selectedPoint, senso
     <div className={styles.itemList}>{points.map((point, index) => <button type="button" key={point.id} aria-pressed={selectedPoint?.id === point.id} onClick={() => onSelect(point.id)}><span>{index + 1}. {point.name}</span><small>표시 {point.measurements.filter((item) => item.visible).length} · 경보 {point.measurements.reduce((n, item) => n + item.rules.length, 0)}</small></button>)}</div>
     {selectedPoint && <>
       <label className={styles.field}><span>영역 이름</span><input value={selectedPoint.name} onChange={(event) => onChange(selectedPoint.id, { name: event.target.value })} /></label>
-      {!compact && <><div className={styles.rangeGrid}>{["x", "y", "z"].map((axis) => <NumericField key={axis} label={`영역 ${axis.toUpperCase()} 위치`} unit="m" step={.01} value={selectedPoint.localPosition[axis]} onChange={(value) => onChange(selectedPoint.id, { localPosition: { [axis]: value } })} />)}</div>
+      <p className={styles.help}>{frame ? `설비 기준좌표 v${frame.version} · 센서와 같은 기준` : "기존 모델 좌표 · 2단계에서 기준좌표를 설정하세요."}</p>
+      {!compact && <><div className={styles.rangeGrid}>{["x", "y", "z"].map((axis) => <NumericField key={axis} label={`영역 ${axis.toUpperCase()} 위치`} unit="m" step={.001} value={position[axis]} onChange={(value) => onChange(selectedPoint.id, { localPosition: referenceToModel({ ...position, [axis]: value }, frame) })} />)}</div>
       <div className={styles.actionRow}><button type="button" aria-label="ROI 반경 줄이기" disabled={selectedPoint.radius <= .01} onClick={() => onChange(selectedPoint.id, { radius: clampRoiRadius(selectedPoint.radius - .05) })}>−</button>
       <NumericField label="관측 반경" unit="m" min={.01} max={100} step={.01} value={selectedPoint.radius} onChange={(radius) => onChange(selectedPoint.id, { radius: clampRoiRadius(radius) })} />
       <button type="button" aria-label="ROI 반경 늘리기" disabled={selectedPoint.radius >= 100} onClick={() => onChange(selectedPoint.id, { radius: clampRoiRadius(selectedPoint.radius + .05) })}>+</button></div></>}

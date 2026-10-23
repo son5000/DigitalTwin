@@ -121,13 +121,13 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
     const controller = new AbortController();
     let timer;
     const query = async () => {
-      try { const result = await queryPreview(currentDraft, AbortSignal.any([controller.signal, AbortSignal.timeout(10000)])); if (!controller.signal.aborted) setPreview({ signature: JSON.stringify(currentDraft), reading: result }); }
+      try { const result = await queryPreview(currentDraft, AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]), equipment); if (!controller.signal.aborted) setPreview({ signature: JSON.stringify(currentDraft), reading: result }); }
       catch (issue) { if (!controller.signal.aborted) { setPreview(null); setError(issue.message); } }
       if (!controller.signal.aborted) timer = setTimeout(query, 3000);
     };
     void query();
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [currentDraft, dirty, shared, queryPreview, telemetry.demo, geometryChanged]);
+  }, [currentDraft, dirty, shared, queryPreview, telemetry.demo, geometryChanged, equipment]);
 
   // Apply external tree selection without remounting the Three.js scene.
   if (initialRoi !== previousInitialRoi) {
@@ -147,7 +147,7 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
     event.preventDefault(); setBusy(true); setError("");
     try {
       if (geometryChanged) throw new Error("모델이 변경되었습니다. 현재 표면에 ROI를 다시 지정하세요.");
-      const result = await monitoring.save(currentDraft);
+      const result = await monitoring.save(currentDraft, equipment);
       setDraft(result); setPreview(null);
       setNotice(monitoring.shared ? "공동 ROI 설정을 저장했습니다." : "이 브라우저에 저장했습니다. 공동 저장·상시 감시는 서버 연결 후 사용할 수 있습니다.");
     } catch (issue) { setError(issue.message); }
@@ -165,7 +165,7 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
       selectedId: dataOpen ? audioRoiId : currentDraft?.id,
       onSelect: (id) => { const selected = rois.find((roi) => roi.id === id); if (selected && replaceDraft(structuredClone(selected))) selectPanel("ROI"); },
     }}
-      monitoringOptions={{ equipmentId, model, mode: editorMode ? undefined : mode, opacity, point, ...layerData, readings, textures, demo: telemetry.demo, now: telemetry.now, onFps: setFps, onLayerError: setLayerError }} roiOptions={{ equipmentId, rois: editorMode ? [] : rois, statuses, selectedId: currentDraft?.id ?? audioRoiId, drawing, radius, pointPicking: picking, focusVersion,
+      monitoringOptions={{ equipmentId, equipment, model, mode: editorMode ? undefined : mode, opacity, point, ...layerData, readings, textures, demo: telemetry.demo, now: telemetry.now, onFps: setFps, onLayerError: setLayerError }} roiOptions={{ equipmentId, rois: editorMode ? [] : rois, statuses, selectedId: currentDraft?.id ?? audioRoiId, drawing, radius, pointPicking: picking, focusVersion,
       onPoint: (selection) => { setPointSelection({ ...selection, equipmentId, modelVersion: model.version }); setPickingFor(null); },
       onCreate: (surface) => { setDraft(createSurfaceRoi(equipmentId, { ...surface, model })); setDrawingFor(null); setPreview(null); setError(""); setNotice(surface.sampleMask?.includes(false) ? "임시 ROI입니다. 빈 공간은 선택 범위에 포함되지만 측정 표면에서는 제외됩니다. 유지하려면 저장하세요." : "임시 ROI입니다. 저장하지 않으면 화면을 나갈 때 사라집니다."); },
       onError: setError, onCancel: () => { setDrawingFor(null); setPickingFor(null); },
@@ -175,7 +175,7 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
       <button type="button" className={styles.dataToggle} aria-expanded={dataOpen} onClick={() => selectPanel(dataOpen ? null : "DATA")}>관측 데이터{telemetry.demo ? " · 예시" : ""}</button>
       {activeAlarms.length > 0 && <button type="button" className={styles.alarmBadge} onClick={() => selectPanel("DATA")}>경고 {activeAlarms.length}건{telemetry.demo ? " · 예시" : ""}</button>}
     </div></ViewerOverlaySlot>}
-    {dataOpen && <ViewerOverlaySlot name="panel"><aside className={`${styles.panel} ${styles.dataPanel} ${sharedPanelLayout ? styles.viewerPanel : ""}`} aria-label="관측 데이터 및 음원" data-camera-safe-ui="right"><MonitoringDataPanel key={equipmentId ?? "none"} projectId={projectId} equipmentId={equipmentId} telemetry={telemetry} mode={mode} setMode={setMode} opacity={opacity} setOpacity={setOpacity} point={point} picking={picking} setPicking={(active) => { setPickingFor(active ? equipmentId : null); setDrawingFor(null); setError(""); }} fps={fps} layerError={layerError || error} model={model} sensorView={Boolean(sceneProps.sensorViewId)} availability={availability} rois={compatibleRois.filter((roi) => roi.equipmentId === equipmentId)} onRoiSelect={setAudioRoiId} onClose={() => selectPanel(null)} /></aside></ViewerOverlaySlot>}
+    {dataOpen && <ViewerOverlaySlot name="panel"><aside className={`${styles.panel} ${styles.dataPanel} ${sharedPanelLayout ? styles.viewerPanel : ""}`} aria-label="관측 데이터 및 음원" data-camera-safe-ui="right"><MonitoringDataPanel equipment={equipment} key={equipmentId ?? "none"} projectId={projectId} equipmentId={equipmentId} telemetry={telemetry} mode={mode} setMode={setMode} opacity={opacity} setOpacity={setOpacity} point={point} picking={picking} setPicking={(active) => { setPickingFor(active ? equipmentId : null); setDrawingFor(null); setError(""); }} fps={fps} layerError={layerError || error} model={model} sensorView={Boolean(sceneProps.sensorViewId)} availability={availability} rois={compatibleRois.filter((roi) => roi.equipmentId === equipmentId)} onRoiSelect={setAudioRoiId} onClose={() => selectPanel(null)} /></aside></ViewerOverlaySlot>}
     {(drawing || picking) && <InteractionGuide key={drawing ? "roi" : "audio"} message={drawing ? "모델 표면을 클릭해 구형 ROI를 놓으세요. 크기는 +, −로 조절합니다." : "소리를 들을 모델 표면을 클릭하세요. Esc로 취소합니다."} />}
     {open && <ViewerOverlaySlot name="panel"><aside className={`${styles.panel} ${sharedPanelLayout ? styles.viewerPanel : ""}`} aria-label="ROI 조회 및 설정" data-camera-safe-ui="right">
       <header><strong>관측 영역</strong><button type="button" onClick={() => selectPanel(null)}>닫기</button><span>{telemetry.demo ? "예시 측정값 · 실측 아님" : monitoring.shared ? "공동 설정" : "브라우저 저장"}</span></header>
@@ -206,7 +206,7 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
         <div className={styles.draftHeading}><strong>{saved ? "저장된 ROI" : "임시 조회"}</strong><span data-status={statuses[currentDraft.id] ?? reading.status}>{spherePoint ? ROI_STATUSES[statuses[currentDraft.id] ?? "NO_DATA"].label : ROI_STATUSES[reading.status].label}</span></div>
         {spherePoint ? <>
           <ObservationReadout point={spherePoint} sensors={sceneProps.sensors} readings={dirty || geometryChanged ? [] : readings} now={telemetry.now} />
-          <fieldset disabled={busy} className={styles.fields}><ObservationRoiFields compact selectedPoint={spherePoint} sensors={(sceneProps.sensors ?? []).filter((sensor) => sensor.equipmentIds?.includes(equipmentId))} onChange={(_id, changes) => setDraft((current) => observationPointToRoi({ ...roiToObservationPoint(current), ...changes }))} /></fieldset>
+          <fieldset disabled={busy} className={styles.fields}><ObservationRoiFields equipment={equipment} compact selectedPoint={spherePoint} sensors={(sceneProps.sensors ?? []).filter((sensor) => sensor.equipmentIds?.includes(equipmentId))} onChange={(_id, changes) => setDraft((current) => observationPointToRoi({ ...roiToObservationPoint(current), ...changes }))} /></fieldset>
         </> : <>
         <dl className={styles.readings}>{ROI_METRICS.filter((metric) => currentDraft.displayMetrics.includes(metric.id)).map((metric) => <div key={metric.id}><dt>{metric.label}</dt><dd>{reading.values[metric.id] === null ? "—" : `${reading.values[metric.id].toFixed(1)} ${metric.unit}`}</dd></div>)}</dl>
         <small className={styles.hint}>{reading.measuredAt ? `측정 ${new Date(reading.measuredAt).toLocaleTimeString("ko-KR")}` : "이 영역에 대응하는 센서 데이터를 기다리고 있습니다."}</small>

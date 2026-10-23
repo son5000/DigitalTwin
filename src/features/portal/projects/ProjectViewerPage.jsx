@@ -20,6 +20,9 @@ import portalStyles from "../viewer/ObservationPage.module.css";
 import { navigateTo } from "@/features/customAssets/core/customAssetNavigation";
 import SiteOverviewScene from "@/features/digitalTwin/editor/three/SiteOverviewScene";
 import MonitoringRoiWorkspace from "@/features/digitalTwin/editor/components/MonitoringRoiWorkspace";
+import EquipmentObservationScene from "@/features/digitalTwin/editor/three/EquipmentObservationScene";
+import { withClosedEnclosureDoors } from "@/features/digitalTwin/editor/model/equipmentEnclosure";
+import { getFloorTerrainEnvironment } from "@/features/digitalTwin/editor/terrain/floorTerrain";
 import useRoiMonitoring from "@/features/digitalTwin/editor/store/useRoiMonitoring";
 import { viewerLink } from "@/features/digitalTwin/editor/model/roiMonitoring";
 import { loadMonitoringProject, monitoringApiBase } from "@/features/digitalTwin/editor/api/roiRepository";
@@ -93,14 +96,18 @@ function SavedWorldViewer({ project, requestedEquipmentId, operationsSection, op
   const [floorDisplayGap, setFloorDisplayGap] = useState(0);
   const [wallOpacity, setWallOpacity] = useState(0.1);
   const [worldModelLayers, setWorldModelLayers] = useState({});
-  const [equipmentId, setEquipmentId] = useState(linkedNode?.id ?? (tree.scope === "SINGLE_EQUIPMENT" ? tree.root?.id : layout.observationWorkflow?.viewerSettings?.activeEquipmentId ?? null));
+  const [equipmentId, setEquipmentId] = useState(linkedNode?.id ?? (tree.scope === "SINGLE_EQUIPMENT" ? tree.root?.id : tree.scope === "MULTI_EQUIPMENT" ? null : layout.observationWorkflow?.viewerSettings?.activeEquipmentId ?? null));
   const equipmentScope = tree.scope.includes("EQUIPMENT");
   const [showEquipment, setShowEquipment] = useState(equipmentScope);
   const [equipmentDetail, setEquipmentDetail] = useState(Boolean(linkedNode));
   // Single-equipment viewers already show the complete equipment scene.
   const isolatedEquipmentView = equipmentDetail && tree.scope !== "SINGLE_EQUIPMENT";
+  const equipmentOverview = tree.scope === "MULTI_EQUIPMENT" && !equipmentDetail;
   const [theme, setTheme] = useState(preferences.theme === "dark" ? "dark" : "light");
-  const snapshotRequest = useMemo(() => ({ scope: tree.scope, targetId: tree.root?.id, theme }), [tree, theme]);
+  const snapshotScope = isolatedEquipmentView ? "SINGLE_EQUIPMENT" : tree.scope;
+  const snapshotTargetId = isolatedEquipmentView ? equipmentId : tree.root?.id;
+  const snapshotRequest = useMemo(() => ({ scope: snapshotScope, targetId: snapshotTargetId, theme, layout }), [snapshotScope, snapshotTargetId, theme, layout]);
+  const [viewerCameraMemory] = useState(() => new Map());
   const [snapshot, setSnapshot] = useState(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.matchMedia("(max-width: 1100px)").matches);
   const [compactLayout, setCompactLayout] = useState(() => window.matchMedia("(max-width: 1100px)").matches);
@@ -160,6 +167,15 @@ function SavedWorldViewer({ project, requestedEquipmentId, operationsSection, op
       points: Array.isArray(layout.observationPoints) ? layout.observationPoints.filter(Boolean) : [],
     };
   }, [layout, tree]);
+  const overviewEquipment = useMemo(() => model.equipment.filter((item) => item.visible !== false).map(withClosedEnclosureDoors), [model.equipment]);
+  const terrainEnvironment = useMemo(() => {
+    const ancestors = tree.root ? [tree.root, ...getTreeAncestors(tree, tree.root.key).map((key) => tree.nodes.get(key))] : [];
+    const floorId = ancestors.find((node) => node.type === "FLOOR")?.id
+      ?? tree.hierarchy.find((node) => node.id === tree.root?.parentId && node.type === "FLOOR")?.id
+      ?? layout.hierarchy?.activeFloorId;
+    const plan = layout.floorPlansById?.[floorId];
+    return plan ? getFloorTerrainEnvironment(plan, model.siteEnvironment) : model.siteEnvironment;
+  }, [layout, tree, model.siteEnvironment]);
   const equipmentContext = useMemo(() => getViewerEquipmentContext(tree, tree.nodes.get(treeSelection.key)), [tree, treeSelection.key]);
   const selectedBuilding = !showEquipment ? model.buildings.find((building) => building.id === selectedBuildingId) : null;
   const observationData = useMemo(() => getBuildingObservationData(layout, selectedBuilding, tree.hierarchy), [layout, selectedBuilding, tree.hierarchy]);
@@ -173,6 +189,7 @@ function SavedWorldViewer({ project, requestedEquipmentId, operationsSection, op
   const activeEquipment = equipmentContext?.item ?? model.equipment.find((item) => item.id === equipmentId) ?? (equipmentScope ? model.equipment[0] : null);
   const sidebarEquipmentId = tree.scope === "SINGLE_EQUIPMENT" ? tree.root?.id : equipmentDetail ? activeEquipment?.id : null;
   const sidebarTree = useMemo(() => sidebarEquipmentId ? createEquipmentRoiTree(tree, sidebarEquipmentId, monitoring.rois) : tree, [tree, sidebarEquipmentId, monitoring.rois]);
+  const representativeImage = sidebarEquipmentId ? sidebarTree.root?.item?.metadata?.representativeImage : layout.representativeImage;
   const sidebarRoiKey = roiTarget && rightPanel === "ROI" ? worldNodeKey("ROI", roiTarget.id, roiTarget.equipmentId) : null;
   const sidebarSelectedKey = sidebarTree.nodes.has(sidebarRoiKey) ? sidebarRoiKey : treeSelection.key;
   const detailEquipment = useMemo(() => {
@@ -225,7 +242,8 @@ function SavedWorldViewer({ project, requestedEquipmentId, operationsSection, op
   const selectEquipment = useCallback((id, partId = null, type = "EQUIPMENT") => {
     const key = id ? worldNodeKey(partId ? "PART" : type, partId ?? id, partId ? id : undefined) : null;
     const context = getViewerEquipmentContext(tree, tree.nodes.get(key));
-    setEquipmentId(id); setSelectedPartId(partId); setSelectedSensorId(null); setEquipmentDetail(false);
+    setEquipmentId(id); setSelectedPartId(partId); setSelectedSensorId(null);
+    setEquipmentDetail((current) => Boolean(id) && (equipmentScope || current));
     setDetailOpen(Boolean(id)); setViewMode(VIEW_MODES.VIEW_3D); setShowEquipment(equipmentScope);
     if (!equipmentScope) {
       setObservedBuildingId(context?.building?.id ?? null);
@@ -248,6 +266,13 @@ function SavedWorldViewer({ project, requestedEquipmentId, operationsSection, op
     markSelected(id ? worldNodeKey("SITE_OBJECT", id) : null);
   }, [tree, selectEquipment, markSelected]);
   const selectSensor = useCallback((id) => { setSelectedSensorId(id); }, []);
+
+  function showParentSpace() {
+    setEquipmentDetail(false); setShowEquipment(equipmentScope);
+    setSelectedPartId(null); setSelectedSensorId(null); setRoiTarget(null); setRightPanel(null);
+    if (equipmentScope) { setEquipmentId(null); markSelected(tree.root?.key); }
+    else markSelected(equipmentContext?.node.key ?? tree.root?.key);
+  }
 
   function selectTreeNode(node) {
     if (node.type === "ROI") {
@@ -307,10 +332,13 @@ function SavedWorldViewer({ project, requestedEquipmentId, operationsSection, op
       <aside className={`${portalStyles.sidebar} ${sidebarVisible ? "" : portalStyles.sidebarCollapsed}`} data-camera-safe-ui={sidebarVisible ? "left" : undefined} aria-label="프로젝트 관측 메뉴" inert={!sidebarVisible}>
         <div className={portalStyles.workspace}>
           <button type="button" className={portalStyles.collapseButton} onClick={toggleSidebar} aria-label={sidebarVisible ? "메뉴 접기" : "메뉴 펼치기"} aria-expanded={sidebarVisible}><ChevronRightIcon size={16} /></button>
-          <span>워크스페이스</span><strong>{details.name}</strong><small>{tree.config.label}</small>
+          <span>워크스페이스</span><strong>{details.name}</strong><small>{sidebarTree.config.label}</small>
         </div>
+        {(isolatedEquipmentView || (!equipmentScope && equipmentContext)) && <nav className={viewerStyles.parentNavigation} aria-label="설비 관측 탐색">
+          <button type="button" data-parent={isolatedEquipmentView} onClick={isolatedEquipmentView ? showParentSpace : () => setEquipmentDetail(true)}><ChevronRightIcon size={14} />{isolatedEquipmentView ? tree.scope === "MULTI_EQUIPMENT" ? "전체 설비 보기" : "상위 공간 보기" : "설비 상세 보기"}</button>
+        </nav>}
         {(showEquipment || equipmentDetail) && !detailEquipment.length && <p className={viewerStyles.empty} role="status">등록된 설비가 없습니다. 프로젝트 목록에서 편집하기로 설비를 추가하세요.</p>}
-        <WorldTreePanel tree={sidebarTree} snapshot={snapshot?.request === snapshotRequest ? snapshot : null} representativeImage={layout.representativeImage} selectedKey={sidebarSelectedKey} selectionVersion={treeSelection.version} onSelect={selectTreeNode} />
+        <WorldTreePanel tree={sidebarTree} snapshot={snapshot?.request === snapshotRequest ? snapshot : null} representativeImage={representativeImage} selectedKey={sidebarSelectedKey} selectionVersion={treeSelection.version} onSelect={selectTreeNode} />
 
         <div className={portalStyles.sidebarFooter}><button type="button" onClick={goHome}>프로젝트 목록으로</button></div>
       </aside>
@@ -318,9 +346,12 @@ function SavedWorldViewer({ project, requestedEquipmentId, operationsSection, op
         <div ref={setToolsHost} className={viewerStyles.sceneTools} />
         <div className={viewerStyles.scene}>
           <ScanLoadStatus equipmentId={equipmentId} popup />
-          {showEquipment || equipmentDetail ? detailEquipment.length ? <MonitoringRoiWorkspace key={equipmentId ?? "world"} projectId={project.id} initialRoi={roiTarget?.equipmentId === equipmentId ? roiTarget : null} activePanel={rightPanel} sharedPanelLayout onPanelChange={setRightPanel} equipmentList={detailEquipment} focusEquipmentId={equipmentId} selectedPartId={selectedPartId} onEquipmentSelect={isolatedEquipmentView ? undefined : selectEquipment}
-            animateEquipmentFocus preserveWorldOnSelection={!isolatedEquipmentView} focusSelectionVersion={treeSelection.version}
-            snapshotRequest={equipmentScope && !isolatedEquipmentView ? snapshotRequest : null} onSnapshot={setSnapshot}
+          {equipmentOverview ? <EquipmentObservationScene key="equipment-overview" overview equipmentList={overviewEquipment} terrainEnvironment={terrainEnvironment} gridSettings={layout.gridSettings ?? DEFAULT_GRID_SETTINGS}
+            onEquipmentSelect={selectEquipment} snapshotRequest={snapshotRequest} onSnapshot={setSnapshot} cameraMemory={viewerCameraMemory}
+            theme={theme} onCameraControlsChange={setCameraControls} onZoomChange={setZoom} />
+            : showEquipment || equipmentDetail ? detailEquipment.length ? <MonitoringRoiWorkspace key={equipmentId ?? "world"} projectId={project.id} initialRoi={roiTarget?.equipmentId === equipmentId ? roiTarget : null} activePanel={rightPanel} sharedPanelLayout onPanelChange={setRightPanel} equipmentList={detailEquipment} focusEquipmentId={equipmentId} selectedPartId={selectedPartId} onEquipmentSelect={isolatedEquipmentView ? undefined : selectEquipment}
+            animateEquipmentFocus preserveWorldOnSelection={!selectedPartId} focusSelectionVersion={treeSelection.version} cameraMemory={viewerCameraMemory}
+            snapshotRequest={snapshotRequest} onSnapshot={setSnapshot}
             sensors={model.sensors} observationPoints={model.points} assetBindings={layout.equipmentAssetBindings ?? EMPTY_ITEMS}
             viewerPreset={layout.viewerPreset} selectedSensorId={selectedSensorId} onSensorSelect={selectSensor} transformTools={DISABLED_TRANSFORM_TOOLS} theme={theme} onCameraControlsChange={setCameraControls} onZoomChange={setZoom} /> : null
             : <SiteOverviewScene {...model} enableObjectLod={false} movementPlayback={movementEnabled ? VIEWER_MOVEMENT_PLAYBACK : VIEWER_MOVEMENT_PAUSED} showSceneControls={false} onCameraControlsChange={setCameraControls} onZoomChange={setZoom} selectedBuildingId={selectedBuildingId} selectedSiteObjectId={selectedSiteObjectId} selectedFloorId={selectedFloorId}
@@ -342,12 +373,6 @@ function SavedWorldViewer({ project, requestedEquipmentId, operationsSection, op
           <div><span>{buildingDetails ? "건축물 상세 관측" : equipmentContext || showEquipment ? "선택 설비" : "월드 관측"}</span><h2>{buildingDetails?.building.name || selectedItem?.name || details.name}</h2><p>{buildingDetails ? "저장된 도면과 층별 설비" : equipmentContext || showEquipment ? "설비별 센서 및 관측 항목" : "프로젝트 전체 관측 현황"}</p><ScanLoadStatus equipmentId={equipmentId} /></div>
           <button type="button" className={portalStyles.iconButton} onClick={() => setDetailOpen(false)} aria-label="상세 패널 닫기"><CloseIcon size={18} /></button>
         </div>
-        {equipmentContext && <section className={`${portalStyles.detailSection} ${viewerStyles.buildingControls}`}>
-          <header><span>설비 관측</span><small>{equipmentContext.floor?.label ?? "현재 월드"}</small></header>
-          {equipmentDetail ? <button type="button" onClick={() => {
-            setEquipmentDetail(false); markSelected(treeSelection.key);
-          }}>원래 월드로 돌아가기</button> : <button type="button" onClick={() => setEquipmentDetail(true)}>상세 조회</button>}
-        </section>}
         {buildingDetails ? <>
           <section className={portalStyles.detailSection}>
             <header><span>건축물 기본 정보</span><small>저장 기준</small></header>

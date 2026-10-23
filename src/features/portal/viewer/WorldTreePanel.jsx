@@ -37,7 +37,7 @@ export default function WorldTreePanel({ tree, snapshot, representativeImage, se
     </li>;
   }
   return <section className={styles.panel} aria-label="월드 계층">
-    <Snapshot key={representativeImage ?? snapshot?.url ?? tree.scope} tree={tree} snapshot={snapshot} representativeImage={representativeImage} />
+    <Snapshot key={`${tree.root?.key}:${representativeImage ?? snapshot?.url ?? tree.scope}`} tree={tree} snapshot={snapshot} representativeImage={representativeImage} />
     <div ref={containerRef} className={styles.scroll}>
       {tree.roots.length ? <ul className={styles.tree} aria-label={`${tree.config.label} 계층`}>{tree.roots.map(renderNode)}</ul> : <p className={styles.empty}>등록된 월드 객체가 없습니다.</p>}
       {tree.roiTree && !tree.root.children.length && <p className={`${styles.empty} ${styles.roiEmpty}`}>지정된 ROI가 없습니다.</p>}

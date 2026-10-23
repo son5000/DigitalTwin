@@ -57,7 +57,7 @@ export default function EquipmentAssetFilesPanel({ binding, onUpdateAsset, onUpl
         originalName: file.name, type: file.type, size: file.size, blob: file };
       await commit(record.files.map((item) => item === target ? replacement : item), model ? {
         name: file.name, sourceKey: file.name, assetType: ext, usageType: ext === "PLY" ? "POINT_CLOUD" : "MODEL",
-        displayMode: ext === "PLY" ? "POINT_CLOUD" : "ACTUAL",
+        displayMode: binding.displayMode === "PROXY" ? "PROXY" : binding.includeProxy || binding.displayMode === "COMPARE" ? "COMPARE" : ext === "PLY" ? "POINT_CLOUD" : "ACTUAL",
       } : {}, model ? { primaryFileName: file.name, primaryFilePath: file.name } : {});
     } catch (issue) { setError(issue.message); }
     finally { setBusy(false); }

@@ -53,6 +53,11 @@
 .worldFooter { position: absolute; z-index: 20; left: 80px; right: 12px; bottom: 78px; border-radius: 12px; min-height: 38px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 18px; border-top: 1px solid var(--portal-border); color: var(--portal-muted); background: var(--portal-header); font-size: 10px; }
 .worldFooter span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .inventory { flex-shrink: 0; margin-bottom: 16px; }
+.parentNavigation { display: grid; flex-shrink: 0; gap: 8px; padding: 0 12px 12px; border-bottom: 1px solid var(--portal-border); }
+.parentNavigation button { display: flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 8px; border: 1px solid var(--portal-border); border-radius: 6px; background: var(--portal-surface); color: var(--portal-text); font-size: 12px; cursor: pointer; }
+.parentNavigation button[data-parent="true"] svg { transform: rotate(180deg); }
+.parentNavigation button:hover, .parentNavigation button:focus-visible { border-color: var(--portal-blue); color: var(--portal-blue); }
+@media (pointer: coarse) { .parentNavigation button { min-height: 44px; } }
 .summaryGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }
 .summaryGrid > div { padding: 10px; border-radius: 7px; background: var(--portal-surface); }
 .summaryGrid dt { color: var(--portal-muted); font-size: 10px; }

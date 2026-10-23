@@ -5,6 +5,7 @@ import { lookupSensor, monitoringApiBase, saveSensorCalibration } from "../api/m
 import { calibrationPayload, downloadMonitoringJson, validateCalibration } from "../model/monitoringContract";
 import { demoSensor } from "../model/monitoringDemo";
 import styles from "./MonitoringSettingsPanel.module.css";
+import { referenceFrameKey } from "../model/equipmentCoordinateFrame.js";
 
 export default function SensorConnectionFields({ sensor, equipment, sensors, assets, onChange }) {
   const [busy, setBusy] = useState(false);
@@ -14,7 +15,8 @@ export default function SensorConnectionFields({ sensor, equipment, sensors, ass
   const projectId = readProjects().activeId;
   const payload = calibrationPayload(projectId, equipment, sensor, assets);
   const configured = sensor.calibration?.signature === JSON.stringify(payload);
-  const confirmed = sensor.calibrationConfirmed === true && (!sensor.surfaceMount || sensor.calibrationConfirmationModel === payload.model.version);
+  const frameKey = referenceFrameKey(payload.coordinateFrame);
+  const confirmed = sensor.calibrationConfirmed === true && (!payload.coordinateFrame || sensor.calibrationConfirmationFrame === frameKey) && (!sensor.surfaceMount || sensor.calibrationConfirmationModel === payload.model.version);
   async function connect(demo = false) {
     const serialNumber = sensor.serialNumber?.trim();
     if (!serialNumber) { setMessage("시리얼 번호를 입력하세요."); return; }
@@ -57,7 +59,7 @@ export default function SensorConnectionFields({ sensor, equipment, sensors, ass
     <button type="button" disabled={busy || !sensor.serialNumber} onClick={() => connect()}>{busy ? "처리 중…" : "시리얼 번호로 센서 조회"}</button>
     {!monitoringApiBase && <button type="button" disabled={busy || !sensor.serialNumber} onClick={() => connect(true)}>입력한 번호로 예시 센서 연결</button>}
     <p className={styles.help}>{sensor.serverSensorId ? `${sensor.dataSource === "DEMO" ? "예시 연결" : "조회된 센서"} · ${sensor.serverSensorId}` : "센서 조회 대기"}</p>
-    <label className={styles.check}><input type="checkbox" checked={confirmed} onChange={(event) => onChange(sensor.id, { calibrationConfirmed: event.target.checked, calibrationConfirmationModel: payload.model.version })} />위치·화각 수동 보정 확인</label>
+    <label className={styles.check}><input type="checkbox" checked={confirmed} onChange={(event) => onChange(sensor.id, { calibrationConfirmed: event.target.checked, calibrationConfirmationModel: payload.model.version, calibrationConfirmationFrame: frameKey })} />위치·화각 수동 보정 확인</label>
     <button type="button" disabled={busy || !sensor.serverSensorId} onClick={save}>보정값 저장{monitoringApiBase && sensor.dataSource !== "DEMO" ? "·서버 전송" : "·로컬"}</button>
     <button type="button" onClick={() => { try { downloadMonitoringJson("sensor-calibration.json", validateCalibration(payload)); setMessage("현재 보정 좌표를 내보냈습니다."); } catch (error) { setMessage(error.message); } }}>보정 좌표 내보내기</button>
     <p className={styles.help}>{configured ? `보정 저장됨 · ${sensor.calibration.storage === "SERVER" ? "서버" : "브라우저"}` : "위치와 방향을 확인한 뒤 다시 저장하세요."}</p>

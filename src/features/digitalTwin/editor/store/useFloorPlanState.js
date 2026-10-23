@@ -1,5 +1,4 @@
-import { getFloorTerrainEnvironment, applyFloorTerrainToRange } from "../terrain/floorTerrain";
-import { normalizeTerrainModel } from "../terrain/TerrainModel";
+import { applyFloorTerrainToRange, updateFloorTerrainEnvironment } from "../terrain/floorTerrain";
 import { useCallback, useMemo, useState } from "react";
 
 import {
@@ -568,9 +567,7 @@ export default function useFloorPlanState({ buildings, floors, currentBuilding, 
     if (!currentFloor || !currentBuilding) return;
     setFloorPlansById((plans) => {
       const plan = normalizeFloorSpatialPlan(plans[currentFloor.id] ?? { floorId: currentFloor.id, structures: [] }, buildingForFloor(currentBuilding, currentFloor));
-      const environment = getFloorTerrainEnvironment(plan);
-      const terrain = normalizeTerrainModel(changes.terrain ?? { ...environment.terrain, material: changes.groundMaterial ?? environment.terrain.material }, environment.width, environment.depth);
-      return { ...plans, [currentFloor.id]: { ...plan, terrain } };
+      return { ...plans, [currentFloor.id]: updateFloorTerrainEnvironment(plan, changes) };
     });
   }, [currentBuilding, currentFloor]);
 

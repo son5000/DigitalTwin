@@ -1,6 +1,6 @@
 import { updateEnclosureDoors } from "../generators/EnclosureGenerator";
 import EnclosureDoorControls from "../components/EnclosureDoorControls";
-import { advanceEnclosureDoors, enclosureDoorOverride, getEnclosureSurfaces, getSensorMountPose, projectSensorMount, withDoorOverrides } from "../model/equipmentEnclosure";
+import { advanceEnclosureDoors, enclosureDoorOverride, getEnclosure, getEnclosureSurfaces, getSensorMountPose, projectSensorMount, withDoorOverrides } from "../model/equipmentEnclosure";
 import { createSensorSceneLayer } from "./sensorSceneLayer";
 import ModelLayerControls from "../components/ModelLayerControls";
 import { applyModelLayerAppearance } from "./modelLayerAppearance";
@@ -15,9 +15,12 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { createDualTransformControls, attachDualTransformControls, disposeDualTransformControls, detachDualTransformControls, setDualTransformDragging, dualTransformIsActive } from "./dualTransformControls";
 
 import { ASSET_TYPES } from "@/features/digitalTwin/editor/model/equipmentDetailModel";
-import { GROUND_VIEW_MODES } from "@/features/digitalTwin/editor/model/undergroundModel";
+import { GROUND_VIEW_MODES, getGroundViewPresentation } from "@/features/digitalTwin/editor/model/undergroundModel";
+import { createTerrainMesh, createTerrainGrid } from "../terrain/TerrainMeshFactory";
+import { DEFAULT_GRID_SETTINGS } from "../constants/gridSettings";
 import { normalizeScanLighting, EQUIPMENT_REPRESENTATIONS, resolveEquipmentRepresentation } from "@/features/digitalTwin/editor/model/viewerPreset";
-import { createEquipmentObject } from "@/features/digitalTwin/editor/objects/EquipmentFactory";
+import { createEquipmentObject, getEquipmentGeometrySignature } from "@/features/digitalTwin/editor/objects/EquipmentFactory";
+import { addEquipmentLabel } from "../generators/generatorHelpers";
 import { normalizeEquipmentPart } from "@/features/digitalTwin/editor/constants/partTemplates";
 import { createPartObject } from "@/features/digitalTwin/editor/world/PartFactory";
 import { applyAssetAlignment, loadBindingObject } from "@/features/digitalTwin/editor/three/EquipmentAssetViewer";
@@ -31,6 +34,7 @@ import InteractionGuide from "../components/InteractionGuide";
 import { captureViewerCamera, restoreEquipmentCamera, rememberViewerCamera, restoreViewerCamera } from "./viewerCameraMemory";
 import { applySensorView } from "./sensorCamera";
 import { bindMonitoringLayers } from "./monitoringLayers";
+import { bindEquipmentCoordinateFrame } from "./equipmentCoordinateFrameLayer.js";
 
 import styles from "./EquipmentAssetViewer.module.css";
 function fitCamera(camera, controls, object) {
@@ -76,11 +80,21 @@ function findSensorId(object, root) {
 
 const EMPTY_ITEMS = [];
 
+function proxySignature(item, includeProxy) {
+  const stableDoors = (value) => value ? { ...value, doors: value.doors?.map((door) => Object.fromEntries(Object.entries(door).filter(([key]) => !["open", "angle", "hideWhenOpen"].includes(key)))) } : value;
+  const enclosure = item.enclosure ? { ...stableDoors(item.enclosure), rear: stableDoors(item.enclosure.rear) } : undefined;
+  const siteShape = item.siteObject ? { ...item.siteObject, position: undefined, rotation: undefined } : null;
+  return JSON.stringify([getEquipmentGeometrySignature({ ...item, name: "", showNameLabel: false, enclosure }), item.parts, siteShape, includeProxy]);
+}
+
 export default function EquipmentObservationScene({
   snapshotRequest,
   onSnapshot,
   equipment: sourceEquipment,
   equipmentList: sourceEquipmentList = EMPTY_ITEMS,
+  overview = false,
+  terrainEnvironment = null,
+  gridSettings = DEFAULT_GRID_SETTINGS,
   focusEquipmentId,
   preserveWorldOnSelection = false,
   animateEquipmentFocus = false,
@@ -110,7 +124,9 @@ export default function EquipmentObservationScene({
   cameraScope = "OBSERVATION",
 }) {
   // Workflow metadata does not alter any model geometry or asset sources.
-  const sceneItem = (item) => item ? { ...item, metadata: { ...item.metadata, detailSetup: undefined } } : null;
+  const sceneItem = (item) => item ? { ...item, metadata: { ...item.metadata, detailSetup: undefined, coordinateFrame: undefined } } : null;
+  const coordinateEquipmentRef = useRef(sourceEquipment);
+  useEffect(() => { coordinateEquipmentRef.current = sourceEquipment ?? sourceEquipmentList.find((item) => item.id === focusEquipmentId); }, [sourceEquipment, sourceEquipmentList, focusEquipmentId]);
   const equipmentKey = JSON.stringify(sceneItem(sourceEquipment));
   const equipmentListKey = JSON.stringify(sourceEquipmentList.map(sceneItem));
   const equipment = useMemo(() => JSON.parse(equipmentKey), [equipmentKey]);
@@ -168,8 +184,14 @@ export default function EquipmentObservationScene({
   useEffect(() => { selectedScanRef.current = focusEquipmentId; }, [focusEquipmentId]);
   const sceneFocusId = preserveWorldOnSelection ? null : focusEquipmentId;
   const scenePartId = preserveWorldOnSelection ? null : selectedPartId;
+  const sceneInputsRef = useRef(null);
+  useEffect(() => { sceneInputsRef.current = { equipment, equipmentList, assetBindings, representationKey, onEquipmentSelect, onCameraControlsChange, onZoomChange }; }, [equipment, equipmentList, assetBindings, representationKey, onEquipmentSelect, onCameraControlsChange, onZoomChange]);
+  const structureKey = JSON.stringify([(equipmentList.length ? equipmentList : equipment ? [equipment] : []).map((item) => item.id),
+    assetBindings.map(({ id, equipmentId, assetId, assetType, sourceType, sourceKey, objectUrl, relatedSourceKey, textureSourceKey }) => [id, equipmentId, assetId, assetType, sourceType, sourceKey, objectUrl, relatedSourceKey, textureSourceKey])]);
 
   useEffect(() => {
+    const { equipment, equipmentList, assetBindings } = sceneInputsRef.current;
+    const onEquipmentSelect = sceneInputsRef.current.onEquipmentSelect ? (...args) => sceneInputsRef.current.onEquipmentSelect?.(...args) : null;
     const mount = mountRef.current;
     const entries = (equipmentList.length ? equipmentList : equipment ? [equipment] : []).map((item) => withDoorOverrides(item, doorOverridesRef.current[item.id]));
     if (!mount || !entries.length) return undefined;
@@ -180,7 +202,7 @@ export default function EquipmentObservationScene({
     let frameId;
     let dragging = false;
     let disposed = false;
-    const focusEquipment = entries.find((item) => item.id === sceneFocusId) ?? (entries.length === 1 ? entries[0] : null);
+    const focusEquipment = overview ? null : entries.find((item) => item.id === sceneFocusId) ?? (entries.length === 1 ? entries[0] : null);
     const origin = focusEquipment?.position ?? { x: 0, y: 0, z: 0 };
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(theme === "light" ? 0xe8eef1 : 0x0b1217);
@@ -210,6 +232,12 @@ export default function EquipmentObservationScene({
     root.add(equipmentRoot);
     scene.add(root);
     const renderedEquipment = new Map();
+    function createProxy(item) {
+      return item.siteObject && !item.enclosure?.enabled ? createSiteEnvironmentObject({ ...item.siteObject, position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, visible: true }, { theme, selected: false, selectionColor: SCENE_THEMES[theme].selection, edgeColor: SCENE_THEMES[theme].worldEdge })
+        : createEquipmentObject({ ...item, showNameLabel: false, dimensions: { width: 1, height: 1, depth: 1, ...item.dimensions }, appearance: { color: "#6f8f9d", opacity: 1, ...item.appearance }, position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, visible: true }, {
+          theme, viewerTranslucent: true, enableLod: false, selected: Boolean(onEquipmentSelect && item.id === sceneFocusId), exposeParts: Boolean(onEquipmentSelect && !overview), selectedPartId: item.id === sceneFocusId ? scenePartId : null,
+        });
+    }
     entries.forEach((item) => {
       const displayEquipment = {
         ...item,
@@ -227,22 +255,16 @@ export default function EquipmentObservationScene({
       logicalRoot.rotation.set(Number(item.rotation?.x) || 0, Number(item.rotation?.y) || 0, Number(item.rotation?.z) || 0);
       logicalRoot.userData.equipmentId = item.id;
       const includeProxy = assetBindings.filter((binding) => binding.equipmentId === item.id && [ASSET_TYPES.OBJ, ASSET_TYPES.PLY].includes(binding.assetType)).at(-1)?.includeProxy;
-      const proxy = item.siteObject && !item.enclosure?.enabled ? createSiteEnvironmentObject({
-        ...item.siteObject, position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, visible: true,
-      }, { theme, selected: false, selectionColor: SCENE_THEMES[theme].selection, edgeColor: SCENE_THEMES[theme].worldEdge })
-        : createEquipmentObject({ ...displayEquipment, appearance: { ...displayEquipment.appearance, ...(includeProxy && !item.enclosure?.enabled ? { opacity: 0.28 } : {}) }, position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } }, {
-        theme, viewerTranslucent: Boolean(includeProxy), enableLod: false,
-        selected: Boolean(onEquipmentSelect && item.id === sceneFocusId),
-        exposeParts: Boolean(onEquipmentSelect), selectedPartId: item.id === sceneFocusId ? scenePartId : null,
-      });
+      const proxy = createProxy(item, includeProxy);
       logicalRoot.add(proxy);
+      const label = addEquipmentLabel(logicalRoot, item.showNameLabel ? item.name : null, item.enclosure?.height ?? item.dimensions?.height ?? 1, SCENE_THEMES[theme].equipmentEdge, SCENE_THEMES[theme]);
       const selectedPart = !item.customAssetId && item.id === sceneFocusId && Array.isArray(item.parts)
         ? item.parts.find((part) => part?.id === scenePartId) : null;
       if (selectedPart) {
         logicalRoot.add(createPartObject(normalizeEquipmentPart(selectedPart), displayEquipment, { selected: true, theme, selectionColor: "#ffc14d" }));
       }
       equipmentRoot.add(logicalRoot);
-      renderedEquipment.set(item.id, { item, object: logicalRoot, proxy, actual: null, loading: null, position: logicalRoot.position.clone() });
+      renderedEquipment.set(item.id, { item, object: logicalRoot, proxy, label, proxyKey: proxySignature(item, includeProxy), actual: null, loading: null, position: logicalRoot.position.clone() });
     });
     const detailedBindings = new Map();
     assetBindings.forEach((binding) => {
@@ -264,7 +286,7 @@ export default function EquipmentObservationScene({
         }
         const aligned = new THREE.Group();
         aligned.add(loaded.object);
-        if (!applyAssetAlignment({ actualObject: loaded.object, aligned }, binding, entry.item)) {
+        if (!applyAssetAlignment({ actualObject: loaded.object, aligned }, detailedBindings.get(entry.item.id) ?? binding, entry.item)) {
           disposeObject3D(aligned);
           loaded.revoke();
           throw new Error("EMPTY_MODEL");
@@ -272,6 +294,7 @@ export default function EquipmentObservationScene({
         aligned.userData.releaseAssetSources = loaded.revoke;
         entry.object.add(aligned);
         entry.actual = aligned;
+        entry.actualObject = loaded.object;
         setScanLoadState(entry.item.id, "스캔 모델 준비 완료");
         invalidateWorldSnapshot(snapshotRequest);
         requestSnapshot();
@@ -313,7 +336,7 @@ export default function EquipmentObservationScene({
         }
         const binding = detailedBindings.get(equipmentId);
         const representation = resolveEquipmentRepresentation({
-          preset: { equipmentRepresentation: JSON.parse(representationKey) },
+          preset: { equipmentRepresentation: JSON.parse(sceneInputsRef.current.representationKey) },
           equipmentId,
           hasDetailedModel: Boolean(binding),
           selected,
@@ -342,19 +365,37 @@ export default function EquipmentObservationScene({
     const size = bounds.getSize(new THREE.Vector3());
     const center = bounds.getCenter(new THREE.Vector3());
     const span = Math.max(size.x, size.z, 2) * 3;
-    const floor = new THREE.Mesh(
+    const floor = terrainEnvironment ? createTerrainMesh(terrainEnvironment) : new THREE.Mesh(
       new THREE.PlaneGeometry(span, span),
       new THREE.MeshStandardMaterial({ color: theme === "light" ? 0xcbd5da : 0x17242b, roughness: 0.94, metalness: 0 }),
     );
-    floor.rotation.x = -Math.PI / 2;
-    floor.position.set(center.x, bounds.min.y - 0.015, center.z);
+    if (!terrainEnvironment) {
+      floor.rotation.x = -Math.PI / 2;
+      floor.position.set(center.x, bounds.min.y - 0.015, center.z);
+    }
     floor.receiveShadow = true;
     scene.add(floor);
-    const grid = new THREE.GridHelper(span, 20, theme === "light" ? 0x6f8792 : 0x557484, theme === "light" ? 0x9fb0b7 : 0x2b424d);
-    grid.position.set(center.x, bounds.min.y, center.z);
+    const grid = terrainEnvironment
+      ? createTerrainGrid(terrainEnvironment, [], gridSettings.baseSize, { grid: SCENE_THEMES[theme].worldEdge, gridCenter: SCENE_THEMES[theme].worldEdge, edge: SCENE_THEMES[theme].worldEdge })
+      : new THREE.GridHelper(span, 20, theme === "light" ? 0x6f8792 : 0x557484, theme === "light" ? 0x9fb0b7 : 0x2b424d);
+    if (!terrainEnvironment) grid.position.set(center.x, bounds.min.y, center.z);
     scene.add(grid);
     let environmentKey;
     function syncEnvironment() {
+      if (terrainEnvironment) {
+        if (environmentKey) return;
+        const presentation = getGroundViewPresentation(groundViewMode);
+        floor.visible = presentation.visible;
+        grid.visible = presentation.gridVisible && gridSettings.enabled;
+        floor.traverse((object) => {
+          if (!object.material) return;
+          object.material.transparent = presentation.transparent;
+          object.material.opacity = presentation.opacity;
+          object.material.depthWrite = presentation.depthWrite;
+        });
+        environmentKey = "terrain";
+        return;
+      }
       const environment = focusEquipment ? environmentsRef.current?.[focusEquipment.id] : null;
       const key = JSON.stringify(environment ?? null);
       if (key === environmentKey) return;
@@ -565,11 +606,18 @@ export default function EquipmentObservationScene({
       const bounds = new THREE.Box3();
       const entries = focusEquipment ? [renderedEquipment.get(focusEquipment.id)] : [...renderedEquipment.values()];
       for (const entry of entries) for (const object of [entry?.proxy, entry?.actual]) if (object?.visible) bounds.union(new THREE.Box3().setFromObject(object));
+      if (overview && floor.visible) bounds.union(new THREE.Box3().setFromObject(floor));
       return bounds.isEmpty() ? new THREE.Box3().setFromObject(focusObject) : bounds;
     };
     const stopFit = () => { allowDetailedFit = false; focusRuntime.cameraFocus = null; };
+    const coordinateLayer = bindEquipmentCoordinateFrame({ renderer, camera, controls, renderedEquipment,
+      getEquipment: () => coordinateEquipmentRef.current, getStage: () => editorStageRef.current, getBinding: (id) => detailedBindings.get(id) });
     const cameraApi = {
       equipmentId: focusEquipment?.id,
+      coordinateBounds: coordinateLayer.bounds,
+      previewCoordinateFrame: coordinateLayer.preview,
+      pickCoordinateOrigin: coordinateLayer.pick,
+      coordinateFront: (yaw) => { stopFit(); coordinateLayer.front(yaw); },
       ready: () => Boolean(viewObject()), capture: () => captureViewerCamera(camera, controls),
       preview: (view) => { stopFit(); restoreEquipmentCamera(camera, controls, view); },
       fit: () => { stopFit(); camera.zoom = 1; fitCamera(camera, controls, viewObject()); },
@@ -607,7 +655,7 @@ export default function EquipmentObservationScene({
     const monitoringLayers = bindMonitoringLayers({ renderedEquipment, getOptions: () => monitoringOptionsRef.current ?? {} });
     const projectionLayer = bindSensorProjectionLayer({ renderer, renderedEquipment, markers: sensorMarkers,
       getOptions: () => monitoringOptionsRef.current, getSensors: () => sensorStateRef.current?.sensors, onError: setProjectionNotice });
-    const disconnectViewerCamera = bindViewerCamera(controls, onCameraControlsChange, onZoomChange);
+    const disconnectViewerCamera = bindViewerCamera(controls, (...args) => sceneInputsRef.current.onCameraControlsChange?.(...args), (...args) => sceneInputsRef.current.onZoomChange?.(...args));
     controls.addEventListener("end", syncEquipmentRepresentations);
     syncEquipmentRepresentations();
 
@@ -629,13 +677,53 @@ export default function EquipmentObservationScene({
     let sampleStart = performance.now(), sampleFrames = 0;
     let previousFrame = performance.now();
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let previousInputs = sceneInputsRef.current;
+    function syncEquipmentInputs() {
+      const next = sceneInputsRef.current;
+      if (previousInputs === next || dragging) return;
+      previousInputs = next;
+      detailedBindings.clear();
+      next.assetBindings.forEach((binding) => { if ([ASSET_TYPES.OBJ, ASSET_TYPES.PLY].includes(binding.assetType)) detailedBindings.set(binding.equipmentId, binding); });
+      for (const source of next.equipmentList.length ? next.equipmentList : next.equipment ? [next.equipment] : []) {
+        const entry = renderedEquipment.get(source.id);
+        if (!entry) continue;
+        const item = withDoorOverrides(source, doorOverridesRef.current[source.id]);
+        const binding = detailedBindings.get(source.id);
+        const key = proxySignature(item, binding?.includeProxy);
+        entry.object.position.set((item.position?.x ?? 0) - (origin.x ?? 0), (item.position?.y ?? 0) - (origin.y ?? 0), (item.position?.z ?? 0) - (origin.z ?? 0));
+        entry.object.rotation.set(item.rotation?.x ?? 0, item.rotation?.y ?? 0, item.rotation?.z ?? 0);
+        entry.position.copy(entry.object.position);
+        if (entry.proxyKey !== key) {
+          entry.proxy.removeFromParent(); disposeObject3D(entry.proxy);
+          entry.proxy = createProxy(item, binding?.includeProxy); entry.object.add(entry.proxy);
+          entry.proxyKey = key; entry.layerDefault = null; entry.unselectedLayers = null;
+        }
+        const labelKey = JSON.stringify([item.name, item.showNameLabel, item.enclosure?.height ?? item.dimensions?.height]);
+        if (entry.labelKey !== labelKey) {
+          if (entry.label) { entry.label.removeFromParent(); disposeObject3D(entry.label); }
+          entry.label = addEquipmentLabel(entry.object, item.showNameLabel ? item.name : null, item.enclosure?.height ?? item.dimensions?.height ?? 1, SCENE_THEMES[theme].equipmentEdge, SCENE_THEMES[theme]);
+          entry.labelKey = labelKey;
+        }
+        entry.item = item; entry.doorTarget = item;
+        updateEnclosureDoors(entry.proxy, item);
+        const alignmentKey = JSON.stringify([binding?.alignmentTransform, item.dimensions]);
+        if (entry.actual && entry.alignmentKey !== alignmentKey) {
+          applyAssetAlignment({ actualObject: entry.actualObject, aligned: entry.actual }, binding, item);
+          entry.alignmentKey = alignmentKey;
+        }
+        entry.object.updateMatrixWorld(true);
+      }
+      sensorState = null;
+      worldBounds.copy(new THREE.Box3().setFromObject(root)).union(new THREE.Box3().setFromObject(floor));
+    }
     function render() {
       const now = performance.now(), delta = Math.max(.001, (now - previousFrame) / 1000); previousFrame = now;
+      syncEquipmentInputs();
       if (placingSensorRef.current || projectionPickingRef.current || (editorStageRef.current && !["SENSOR", "POINT"].includes(editorStageRef.current)) || pointOptionsRef.current?.placing) detachDualTransformControls(transform);
       if (lastDoorOverrides !== doorOverridesRef.current && !dragging) {
         lastDoorOverrides = doorOverridesRef.current;
         renderedEquipment.forEach((entry) => {
-          const original = equipmentList.find((item) => item.id === entry.item.id) ?? equipment ?? entry.item;
+          const original = sceneInputsRef.current.equipmentList.find((item) => item.id === entry.item.id) ?? sceneInputsRef.current.equipment ?? entry.item;
           entry.doorTarget = withDoorOverrides(original, lastDoorOverrides[entry.item.id]);
         });
       }
@@ -660,6 +748,7 @@ export default function EquipmentObservationScene({
       }
       if (selectedMarker?.userData.observationPointId) { transform.rotate.enabled = false; transform.rotate.getHelper().visible = false; }
       roiInteraction.update();
+      coordinateLayer.update();
       monitoringLayers.update();
       projectionLayer.update();
       if (!viewSensor) { controls.update(); updateViewerCameraRange(camera, worldBounds); }
@@ -699,6 +788,7 @@ export default function EquipmentObservationScene({
       cancelSnapshot();
       disconnectViewerCamera();
       roiInteraction.dispose();
+      coordinateLayer.dispose();
       monitoringLayers.dispose();
       projectionLayer.dispose();
       disconnectFocus();
@@ -720,14 +810,12 @@ export default function EquipmentObservationScene({
       controls.dispose();
       root.traverse((object) => object.userData.releaseAssetSources?.());
       disposeObject3D(root);
-      floor.geometry.dispose();
-      floor.material.dispose();
-      grid.geometry.dispose();
-      grid.material.dispose();
+      disposeObject3D(floor);
+      disposeObject3D(grid);
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, [snapshotRequest, onSnapshot, assetBindings, equipment, equipmentList, sceneFocusId, scenePartId, animateEquipmentFocus, onEquipmentSelect, groundViewMode, onCameraControlsChange, onZoomChange, theme, representationKey, sharedCameraMemory, cameraResetVersion, cameraScope, cameraControllerRef]);
+  }, [snapshotRequest, onSnapshot, structureKey, sceneFocusId, scenePartId, animateEquipmentFocus, overview, terrainEnvironment, gridSettings, groundViewMode, theme, sharedCameraMemory, cameraResetVersion, cameraScope, cameraControllerRef]);
 
   useEffect(() => {
     if (!preserveWorldOnSelection) return;
@@ -744,7 +832,7 @@ export default function EquipmentObservationScene({
 
   return <section className={styles.viewer} aria-label="설비와 센서 위치·화각">
     <div ref={mountRef} className={styles.canvas} />
-    {doorEquipment && <ModelLayerControls value={modelLayers[doorEquipment.id]} hasScan={Boolean(doorBinding)} scanDefault={Boolean(doorBinding && doorBinding.displayMode !== "PROXY")} shapeDefault={!doorBinding || ["PROXY", "COMPARE"].includes(doorBinding.displayMode) || doorBinding.includeProxy} shapeOpacity={doorEquipment.enclosure?.opacity ?? doorEquipment.appearance?.opacity ?? 1} onChange={(value) => setModelLayers((current) => ({ ...current, [doorEquipment.id]: value }))} />}
+    {!overview && doorEquipment && <ModelLayerControls value={modelLayers[doorEquipment.id]} hasScan={Boolean(doorBinding)} scanDefault={Boolean(doorBinding && doorBinding.displayMode !== "PROXY")} shapeDefault={!doorBinding || ["PROXY", "COMPARE"].includes(doorBinding.displayMode) || doorBinding.includeProxy} shapeOpacity={doorEquipment.enclosure?.enabled ? getEnclosure(doorEquipment).opacity : doorEquipment.appearance?.opacity ?? 1} onChange={(value) => setModelLayers((current) => ({ ...current, [doorEquipment.id]: value }))} />}
     {onSensorChange && (!editorStage || editorStage === "SENSOR") && selectedSensorId && !sensorViewId && <div className={styles.surfacePlacement} data-camera-safe-ui>
       {hasVisibleEnclosure && <button type="button" aria-pressed={placingSensorId === selectedSensorId} onClick={() => { setPlacingSensorId(placingSensorId === selectedSensorId ? null : selectedSensorId); setProjectionPicking(null); setPlacementNotice(""); }}>{placingSensorId === selectedSensorId ? "부착 취소" : "외관에 센서 부착"}</button>}
       {sensors.find((sensor) => sensor.id === selectedSensorId)?.textureProjection?.enabled && <button type="button" aria-pressed={projectionPicking === selectedSensorId} onClick={() => { setProjectionPicking(projectionPicking === selectedSensorId ? null : selectedSensorId); setPlacingSensorId(null); setPlacementNotice(""); }}>{projectionPicking === selectedSensorId ? "적용면 선택 취소" : "영상 적용면 선택"}</button>}
@@ -753,6 +841,6 @@ export default function EquipmentObservationScene({
     {pointOptions?.placing && <><InteractionGuide message="모델 표면을 클릭해 관측 영역을 놓으세요." /><div className={styles.surfacePlacement} data-camera-safe-ui><button type="button" onClick={pointOptions.onPlaced}>영역 지정 취소</button></div></>}
     {(placingSensorId === selectedSensorId || projectionPicking === selectedSensorId) && selectedSensorId && <InteractionGuide key={projectionPicking ? "projection" : "sensor"} message={projectionPicking ? "영상이 표시될 모델 표면을 클릭하세요." : "센서를 부착할 모델 표면을 클릭하세요."} />}
     {projectionNotice && <div className={styles.projectionNotice} role="status" data-camera-safe-ui>{projectionNotice}</div>}
-    {hasVisibleEnclosure && <EnclosureDoorControls equipment={displayedDoorEquipment} onToggle={(index, open, side) => setDoorOverrides((current) => ({ ...current, [doorEquipment.id]: enclosureDoorOverride(doorEquipment, displayedDoorEquipment, index, open, side) }))} />}
+    {!overview && hasVisibleEnclosure && <EnclosureDoorControls equipment={displayedDoorEquipment} onToggle={(index, open, side) => setDoorOverrides((current) => ({ ...current, [doorEquipment.id]: enclosureDoorOverride(doorEquipment, displayedDoorEquipment, index, open, side) }))} />}
   </section>;
 }

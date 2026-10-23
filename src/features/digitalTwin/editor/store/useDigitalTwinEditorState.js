@@ -775,6 +775,8 @@ export default function useDigitalTwinEditorState() {
     if (!selectedEquipment) return;
 
     const duplicateId = createId("WORLD_OBJECT");
+    const independentCopy = structuredClone(selectedEquipment);
+    if (independentCopy.metadata?.coordinateFrame) independentCopy.metadata.coordinateFrame = { ...independentCopy.metadata.coordinateFrame, id: `equipment-frame:${duplicateId}`, equipmentId: duplicateId, version: 1 };
     const offset = Math.max(snapSize, 0.5);
     const duplicatedPosition = clampPositionToWorld(
       {
@@ -789,7 +791,7 @@ export default function useDigitalTwinEditorState() {
     setEquipmentInstances((items) => [
       ...items,
       {
-        ...selectedEquipment,
+        ...independentCopy,
         id: duplicateId,
         name: createSequentialCopyName(selectedEquipment.name, items),
         parameters: { ...selectedEquipment.parameters },

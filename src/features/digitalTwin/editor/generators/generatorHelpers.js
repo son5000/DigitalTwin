@@ -51,6 +51,8 @@ export function addEquipmentLabel(group, label, height, edgeColor, sceneTheme) {
     scale: { x: 1.6, y: 0.4 },
   });
   namePlate.position.set(0, height + 0.26, 0);
+  namePlate.userData.equipmentNameLabel = true;
+  namePlate.raycast = () => {};
   group.add(namePlate);
   return namePlate;
 }

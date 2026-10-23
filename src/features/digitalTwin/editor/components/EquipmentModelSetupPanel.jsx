@@ -2,6 +2,7 @@ import EquipmentEnclosureFields from "./EquipmentEnclosureFields";
 import { useState } from "react";
 import EquipmentEnvironmentFields from "./EquipmentEnvironmentFields";
 import NumericField from "./NumericField";
+import EquipmentCoordinateFrameFields from "./EquipmentCoordinateFrameFields";
 import { DEFAULT_SCAN_LIGHTING, normalizeScanLighting } from "../model/viewerPreset";
 import styles from "./MonitoringSettingsPanel.module.css";
 
@@ -53,7 +54,8 @@ export default function EquipmentModelSetupPanel({ workspaceViewControllerRef, e
       <div className={styles.checkGrid}>{[["autoCentered", "원본 중심 정렬"], ["floorAligned", "원본 바닥 정렬"], ["completed", "모델 정합 완료"]].map(([key, label]) => <label className={styles.check} key={key}><input type="checkbox" checked={alignment[key]} onChange={(event) => align({ [key]: event.target.checked })} />{label}</label>)}</div>
       <button type="button" onClick={() => cameraAction("floor")}>현재 방향으로 바닥에 놓기</button>
     </fieldset>}
-    <fieldset className={styles.settingsGroup}><legend>4. 모델 표시·조명</legend>
+    <EquipmentCoordinateFrameFields key={`${equipment.id}:${equipment.metadata?.coordinateFrame?.version ?? 0}`} equipment={equipment} binding={binding} cameraController={cameraController} onUpdateEquipment={onUpdateEquipment} />
+    <fieldset className={styles.settingsGroup}><legend>5. 모델 표시·조명</legend>
       <p className={styles.help}>관제 화면의 기본 표시와 설비별 표시를 선택하세요.</p>
       <label className={styles.field}><span>고객 뷰어 공통 기본 표시</span><select value={viewerPreset?.equipmentRepresentation?.globalMode ?? "AUTO"} onChange={(event) => onViewerPresetChange({ equipmentRepresentation: { globalMode: event.target.value } })}><option value="SIMPLIFIED">기준 도형</option><option value="REALISTIC">스캔 모델</option><option value="AUTO">선택·거리별 자동</option><option value="CUSTOM">설비별 지정 우선</option></select></label>
       <label className={styles.field}><span>고객에게 보여줄 현재 설비 모델</span><select value={viewerPreset?.equipmentRepresentation?.overrides?.[equipment.id] ?? "AUTO"} onChange={(event) => onEquipmentRepresentationChange(equipment.id, event.target.value)}><option value="AUTO">공통 기본 표시 따름</option><option value="DETAILED">스캔 모델</option><option value="SIMPLIFIED">기준 도형</option><option value="DISTANCE">거리별 자동 전환</option></select></label>
@@ -64,7 +66,7 @@ export default function EquipmentModelSetupPanel({ workspaceViewControllerRef, e
       <button type="button" onClick={() => onViewerPresetChange({ lighting: { ...DEFAULT_SCAN_LIGHTING } })}>조명 기본값</button>
     </fieldset>
     <EquipmentEnvironmentFields equipmentId={equipment.id} viewerPreset={viewerPreset} onChange={onViewerPresetChange} />
-    <fieldset className={styles.settingsGroup}><legend>6. 최초 관제 화면·카메라</legend>
+    <fieldset className={styles.settingsGroup}><legend>7. 최초 관제 화면·카메라</legend>
       <p className={styles.help}>원하는 각도와 배율로 맞춘 뒤 관제 시작 화면으로 저장하세요.</p>
       <div className={styles.actionRow}>{[["front", "정면"], ["back", "후면"], ["left", "좌측"], ["right", "우측"], ["top", "위에서"]].map(([value, label]) => <button type="button" key={value} onClick={() => cameraAction("direction", value)}>{label}</button>)}<button type="button" onClick={() => cameraAction("fit")}>모델 전체 맞춤</button><button type="button" onClick={() => cameraAction("zoom", 1.2)}>확대 +</button><button type="button" onClick={() => cameraAction("zoom", 1 / 1.2)}>축소 −</button></div>
       <NumericField displayPrecision={2} label="화면 배율" unit="배" min={0.1} step={0.1} value={cameraInfo?.zoom ?? savedView?.zoom ?? 1} onChange={(value) => cameraAction("zoomLevel", value)} />

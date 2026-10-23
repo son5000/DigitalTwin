@@ -21,7 +21,7 @@ export default function EquipmentDetailWorkspace({
   const sensorStep = setup.currentStep === "SENSOR";
   const [placingRoi, setPlacingRoi] = useState(false);
   const viewKey = equipment?.id;
-  const viewMode = viewChoice?.key === viewKey ? viewChoice.mode : "SELECTED";
+  const viewMode = viewChoice && viewChoice.key === viewKey ? viewChoice.mode : "SELECTED";
   function setViewMode(mode, resetCamera = true) {
     setViewChoice({ key: viewKey, mode });
     if (resetCamera) setCameraResetVersion((value) => value + 1);

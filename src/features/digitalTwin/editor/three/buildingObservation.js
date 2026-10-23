@@ -145,7 +145,7 @@ function createInterior(data, theme, labelRoot, labelClass, onSelectFloor) {
       if (bindings.get(record.equipment.id)?.includeProxy && !record.equipment.enclosure?.enabled) record.equipment.appearance.opacity = 0.28;
       const [object] = createEquipmentRenderObjects([record], renderOptions);
       parent.add(object);
-      const fallback = [...object.children];
+      const fallback = object.children.filter((child) => !child.userData.equipmentNameLabel);
       const detail = { object, equipmentId: record.equipment.id, fallback, aligned: null,
         binding: bindings.get(record.equipment.id), equipment: record.equipment, controller: null, attempted: false };
       entry.detailedModels.push(detail);

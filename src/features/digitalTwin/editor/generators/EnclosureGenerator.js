@@ -1,13 +1,13 @@
 import * as THREE from "three";
-import { getEnclosure, getEnclosureDoor, getEnclosureDoorEntries } from "../model/equipmentEnclosure.js";
+import { getEnclosure, getEnclosureBodyAppearance, getEnclosureDoor, getEnclosureDoorEntries } from "../model/equipmentEnclosure.js";
 import { addEquipmentLabel, addGeometry } from "./generatorHelpers";
 
 export function generateEnclosure(equipment, { edgeColor, sceneTheme }) {
   const c = getEnclosure(equipment), { width: w, height: h, depth: d, thickness: t } = c;
   const group = new THREE.Group();
-  const appearance = { ...equipment.appearance, color: c.color, opacity: c.opacity };
+  const appearance = { ...getEnclosureBodyAppearance(equipment), color: c.color, opacity: c.opacity };
   function panel(parent, id, dimensions, position) {
-    const mesh = addGeometry(parent, new THREE.BoxGeometry(...dimensions), { appearance, edgeColor, position, showEdges: true });
+    const mesh = addGeometry(parent, new THREE.BoxGeometry(...dimensions), { appearance, materialSlot: "body", edgeColor, position, showEdges: appearance.showEdges !== false });
     mesh.userData.enclosurePanel = id;
     return mesh;
   }

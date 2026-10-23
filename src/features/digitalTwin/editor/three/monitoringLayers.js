@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { resultPositionToModel } from "../model/equipmentCoordinateFrame.js";
 import { isFreshMeasurement, mediaUrl } from "../model/monitoringContract.js";
 
 // Server-generated UV textures only. Do not infer UVs or sensor measurements.
@@ -22,7 +23,8 @@ export function bindMonitoringLayers({ renderedEquipment, getOptions }) {
       const valid = (records ?? []).filter((record) => record.equipmentId === options.equipmentId && isFreshMeasurement(record, options.now)
         && record.modelVersion === options.model?.version && record.representation === representation);
       const mismatched = !valid.length && (records ?? []).some((record) => record.equipmentId === options.equipmentId && isFreshMeasurement(record, options.now) && (record.modelVersion !== options.model?.version || record.representation !== representation));
-      const next = JSON.stringify([model?.uuid, options.mode, options.opacity, valid, options.point, mismatched]);
+      const hotspots = (options.hotspots ?? []).filter((record) => record.equipmentId === options.equipmentId && isFreshMeasurement(record, options.now) && record.modelVersion === options.model?.version && record.representation === representation);
+      const next = JSON.stringify([model?.uuid, options.mode, options.opacity, valid, hotspots, options.equipment?.metadata?.coordinateFrame, options.point, mismatched]);
       if (next === identity) return;
       identity = next; clear();
       if (!entry || !model) return;
@@ -35,6 +37,12 @@ export function bindMonitoringLayers({ renderedEquipment, getOptions }) {
         object.renderOrder = 5; entry.object.add(object); overlays.push(object);
       };
       if (options.point?.representation === representation) sphere(options.point.position, 0x4da8ff, .045);
+      for (const hotspot of hotspots) {
+        try {
+          const position = options.demo ? hotspot.position : resultPositionToModel(hotspot, options.equipment ?? entry.item);
+          sphere(position, 0xff763b, Number.isFinite(hotspot.radius) ? Math.max(.005, Math.min(10, hotspot.radius)) : .05);
+        } catch (error) { options.onLayerError?.(error.message); }
+      }
       if (!["VISION", "THERMAL"].includes(options.mode)) return;
       const version = generation;
       valid.filter((record) => record.kind === options.mode).slice(0, 8).forEach((record) => {

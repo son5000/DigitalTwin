@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { EQUIPMENT_SHAPE_TEMPLATE_MAP } from "../constants/equipmentShapeTemplates.js";
 
 const clamp = (value, min, max, fallback) => Math.max(min, Math.min(max, Number.isFinite(Number(value)) ? Number(value) : fallback));
 export const ENCLOSURE_WALLS = { front: "앞판", back: "뒷판", left: "왼쪽 벽", right: "오른쪽 벽", top: "천장", bottom: "바닥" };
@@ -19,21 +20,38 @@ function doorSet(source, width, height, defaultCount) {
   };
 }
 
+export function getEnclosureBodyAppearance(equipment) {
+  const body = equipment?.appearanceSlots?.body ?? {};
+  const defaults = EQUIPMENT_SHAPE_TEMPLATE_MAP[equipment?.shapeTemplateId]?.materialSlots?.find((slot) => slot.id === "body")?.defaultAppearance ?? {};
+  // Older layouts materialized every slot's defaults. An untouched slot must not
+  // replace the equipment's saved paint when enabling its cabinet enclosure.
+  const customized = Object.entries(body).some(([key, value]) => value !== defaults[key]);
+  return { ...equipment?.appearance, ...(customized ? body : {}) };
+}
+
 export function getEnclosure(equipment) {
   const source = equipment?.enclosure ?? {};
+  const bodyAppearance = getEnclosureBodyAppearance(equipment);
   const width = clamp(source.width ?? equipment?.dimensions?.width, .05, 100, 1);
   const height = clamp(source.height ?? equipment?.dimensions?.height, .05, 100, 2);
   const depth = clamp(source.depth ?? equipment?.dimensions?.depth, .05, 100, .8);
   const thickness = clamp(source.thickness, .001, Math.min(width, height, depth) / 4, .02);
   return {
     enabled: source.enabled === true, width, height, depth, thickness,
-    opacity: clamp(source.opacity, .05, 1, 1),
-    color: /^#[0-9a-f]{6}$/i.test(source.color ?? "") ? source.color : "#78909c",
+    opacity: clamp(source.opacity ?? bodyAppearance.opacity, .05, 1, 1),
+    color: /^#[0-9a-f]{6}$/i.test(source.color ?? "") ? source.color : bodyAppearance.color ?? "#78909c",
     walls: Object.fromEntries(Object.keys(ENCLOSURE_WALLS).map((id) => [id, id === "front" ? source.walls?.front === true : source.walls?.[id] !== false])),
     ...doorSet(source, width - 2 * thickness, height - 2 * thickness, 1),
     rear: doorSet(source.rear ?? {}, width - 2 * thickness, height - 2 * thickness, 0),
     interactive: source.interactive !== false,
   };
+}
+
+// Overview presentation only: keep the saved door state intact for equipment detail.
+export function withClosedEnclosureDoors(equipment) {
+  if (!equipment.enclosure?.enabled) return equipment;
+  const close = (set) => ({ ...set, doors: set?.doors?.map((door) => ({ ...door, open: false })) });
+  return { ...equipment, enclosure: { ...close(equipment.enclosure), rear: close(equipment.enclosure.rear) } };
 }
 
 export function getEnclosureDoorLabel(enclosure, index) {

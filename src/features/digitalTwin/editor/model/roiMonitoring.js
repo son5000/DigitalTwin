@@ -1,3 +1,22 @@
+import { getEquipmentCoordinateFrame, mapSurfaceCoordinates, validateCoordinateFrame } from "./equipmentCoordinateFrame.js";
+
+export function roiToReferencePayload(roi, equipment) {
+  const coordinateFrame = getEquipmentCoordinateFrame(equipment);
+  if (!coordinateFrame) return roi;
+  validateCoordinateFrame(coordinateFrame, roi.equipmentId);
+  const { observationPoint: _point, ...record } = roi;
+  void _point;
+  return { ...record, schemaVersion: 2, coordinateFrame, surface: mapSurfaceCoordinates(roi.surface, coordinateFrame) };
+}
+
+export function roiFromReferencePayload(roi) {
+  if (!roi?.coordinateFrame) return roi;
+  validateCoordinateFrame(roi.coordinateFrame, roi.equipmentId);
+  const { coordinateFrame, schemaVersion: _version, ...record } = roi;
+  void _version;
+  return { ...record, surface: mapSurfaceCoordinates(roi.surface, coordinateFrame, false) };
+}
+
 export const ROI_METRICS = Object.freeze([
   { id: "temperature.max", label: "최고 온도", unit: "℃" },
   { id: "temperature.min", label: "최저 온도", unit: "℃" },
@@ -43,9 +62,11 @@ export function roiToObservationPoint(roi) {
     sensorIds: [...new Set((roi.measurements ?? []).map((item) => item.sensorId).filter(Boolean))] };
 }
 
-export function roiAudioSelection(roi) {
+export function roiAudioSelection(roi, equipment) {
+  const payload = roiToReferencePayload(roi, equipment);
   return { type: "ROI", roiId: roi.id, revision: roi.revision, coordinateSpace: "EQUIPMENT_LOCAL",
-    representation: roi.surface.representation, surface: roi.surface };
+    ...(payload.coordinateFrame ? { coordinateFrame: payload.coordinateFrame, schemaVersion: 2 } : {}),
+    representation: roi.surface.representation, surface: payload.surface };
 }
 
 export function validateRoi(roi) {

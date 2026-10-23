@@ -43,7 +43,7 @@ function createStore(projectId) {
       };
     },
     refresh,
-    async save(roi) { const saved = await repository.save(roi); await refresh(); return saved; },
+    async save(roi, equipment) { const saved = await repository.save(roi, equipment); await refresh(); return saved; },
     async remove(roi) { await repository.remove(roi); await refresh(); },
     preview: repository.preview,
   };

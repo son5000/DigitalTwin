@@ -29,7 +29,7 @@ function DoorSetFields({ equipment, side, onChange }) {
 export default function EquipmentEnclosureFields({ equipment, binding, onUpdateEquipment, onUpdateAsset, onEquipmentRepresentationChange }) {
   const c = getEnclosure(equipment);
   const mode = !binding || binding.displayMode === "PROXY" ? "SHAPE" : binding.displayMode === "POINT_CLOUD" ? "POINT_CLOUD" : binding.includeProxy || binding.displayMode === "COMPARE" ? "BOTH" : "SCAN";
-  function update(changes) { onUpdateEquipment({ enclosure: { ...c, ...changes } }); }
+  function update(changes) { onUpdateEquipment({ enclosure: { ...equipment.enclosure, ...changes } }); }
   function composition(value) {
     if (binding) onUpdateAsset(binding.id, { displayMode: value === "SHAPE" ? "PROXY" : value === "BOTH" ? "COMPARE" : value === "POINT_CLOUD" ? "POINT_CLOUD" : "ACTUAL", includeProxy: value === "BOTH" });
     onEquipmentRepresentationChange(equipment.id, value === "SHAPE" ? "SIMPLIFIED" : "DETAILED");

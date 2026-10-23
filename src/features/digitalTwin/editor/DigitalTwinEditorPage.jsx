@@ -717,7 +717,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     setMonitoringEquipmentPickerOpen(false);
     return equipmentId;
   }, [addFloorEquipment, editor.allFloorEquipment.length, editor.currentFloor?.id, editor.gridSettings.baseSize, editor.observationWorkflow.viewerSettings?.equipmentIds, selectFloorEquipment, selectedFloor?.id, updateObservationViewerSettings]);
-  const handleMonitoringAssetFiles = useCallback(async (equipmentId, files) => {
+  const handleMonitoringAssetFiles = useCallback(async (equipmentId, files, { preserveExterior = true } = {}) => {
     const prepared = createLocalEquipmentAssetRecord(files);
     if (!prepared.ok) {
       setMonitoringEquipmentNotice(prepared.message);
@@ -736,7 +736,8 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
         sourceType: ASSET_SOURCE_TYPES.UPLOAD,
         assetType: prepared.assetType,
         usageType: prepared.usageType,
-        displayMode: prepared.displayMode,
+        displayMode: preserveExterior ? "COMPARE" : prepared.displayMode,
+        includeProxy: preserveExterior,
         status: "READY",
       });
       setMonitoringEquipmentNotice(`${prepared.primary.name} 파일을 이 브라우저에 저장하고 연결했습니다.`);
@@ -757,7 +758,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     const equipmentId = handleMonitoringEquipmentAdd("CABINET_SINGLE");
     if (!equipmentId) return;
     updateFloorEquipment(equipmentId, { name: prepared.primary.name.replace(/\.[^.]+$/, "") || "사용자 설비" });
-    await handleMonitoringAssetFiles(equipmentId, files);
+    await handleMonitoringAssetFiles(equipmentId, files, { preserveExterior: false });
   }, [handleMonitoringAssetFiles, handleMonitoringEquipmentAdd, updateFloorEquipment]);
   const handleMonitoringEquipmentSelect = useCallback((equipmentId) => {
     selectAssetBinding(null);

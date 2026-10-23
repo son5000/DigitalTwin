@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { requestPointAudio } from "../api/monitoringClient";
 import { demoAudioBlob } from "../model/monitoringDemo";
+import { getEquipmentCoordinateFrame, modelToReference } from "../model/equipmentCoordinateFrame.js";
 import { MONITORING_MODES } from "../model/monitoringContract";
 import { roiAudioSelection } from "../model/roiMonitoring.js";
 import styles from "./MonitoringRoiWorkspace.module.css";
 
 const STATUS = { DISCONNECTED: "서버 미연결", CONNECTING: "연결 중", CONNECTED: "수신 중", RECONNECTING: "재연결 중", ERROR: "연결 오류", DEMO: "예시 모드 · 실측 아님" };
-export default function MonitoringDataPanel({ projectId, equipmentId, telemetry, mode, setMode, opacity, setOpacity, point, picking, setPicking, fps, layerError, model, sensorView, availability, rois, onRoiSelect, onClose }) {
+export default function MonitoringDataPanel({ equipment, projectId, equipmentId, telemetry, mode, setMode, opacity, setOpacity, point, picking, setPicking, fps, layerError, model, sensorView, availability, rois, onRoiSelect, onClose }) {
   const [source, setSource] = useState("SURFACE");
   const [roiId, setRoiId] = useState("");
   const [processing, setProcessing] = useState("AUDIBLE");
@@ -15,7 +16,9 @@ export default function MonitoringDataPanel({ projectId, equipmentId, telemetry,
   const [error, setError] = useState("");
   const pending = useRef(null), audioObjectUrl = useRef(null);
   const selectedRoi = rois.find((roi) => roi.id === roiId);
-  const selection = source === "ROI" ? selectedRoi ? roiAudioSelection(selectedRoi) : null : point;
+  const coordinateFrame = getEquipmentCoordinateFrame(equipment);
+  const referencePoint = point && coordinateFrame ? { ...point, schemaVersion: 2, coordinateFrame, position: Object.values(modelToReference(point.position, coordinateFrame)) } : point;
+  const selection = source === "ROI" ? selectedRoi ? roiAudioSelection(selectedRoi, equipment) : null : referencePoint;
   const pointKey = JSON.stringify([selection, equipmentId, telemetry.demo, processing]);
   useEffect(() => () => { pending.current?.abort(); if (audioObjectUrl.current) URL.revokeObjectURL(audioObjectUrl.current); }, [pointKey]);
   async function listen() {
@@ -45,7 +48,7 @@ export default function MonitoringDataPanel({ projectId, equipmentId, telemetry,
     {source === "SURFACE" ? <>
       <button type="button" disabled={!equipmentId || sensorView} aria-pressed={picking} onClick={() => setPicking(!picking)}>{picking ? "위치 선택 취소" : point ? "3D 표면에서 다시 선택" : "3D 표면에서 위치 선택"}</button>
       {sensorView && <p className={styles.hint}>자유 시점에서 위치를 선택하세요.</p>}
-      {point && <small className={styles.hint}>선택 위치 · {point.position.map((value) => value.toFixed(2)).join(", ")} m</small>}
+      {point && <small className={styles.hint}>선택 위치 · {referencePoint.position.map((value) => value.toFixed(2)).join(", ")} m</small>}
     </> : <>
       <select aria-label="소리를 들을 ROI" value={selectedRoi?.id ?? ""} onChange={(event) => { setRoiId(event.target.value); onRoiSelect(event.target.value); }}><option value="">관측 영역 선택</option>{rois.map((roi) => <option key={roi.id} value={roi.id}>{roi.name}</option>)}</select>
       {!rois.length && <p className={styles.hint}>저장된 ROI가 없습니다.</p>}

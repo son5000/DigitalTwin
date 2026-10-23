@@ -1,4 +1,4 @@
-import { isSphereRoi, observationPointToRoi, roiToObservationPoint, validateRoi } from "../model/roiMonitoring.js";
+import { isSphereRoi, observationPointToRoi, roiToObservationPoint, roiFromReferencePayload, roiToReferencePayload, validateRoi } from "../model/roiMonitoring.js";
 import { normalizeObservationPoint } from "../model/equipmentDetailModel.js";
 import { readProjects, updateProjectObservationPoints } from "../../../portal/projects/projectRepository.js";
 
@@ -20,7 +20,7 @@ export function createRoiRepository(projectId, storage = window.localStorage) {
     if (!Array.isArray(records)) throw new Error("저장된 ROI를 읽을 수 없습니다. 기존 데이터는 유지됩니다.");
     const layout = readProjects(storage).projects.find((project) => project.id === projectId)?.layout;
     const spheres = (layout?.observationConfig?.observationPoints ?? layout?.observationPoints ?? []).map((point) => observationPointToRoi(normalizeObservationPoint(point)));
-    return [...records.filter((roi) => !spheres.some((sphere) => sphere.id === roi.id)), ...spheres].map(validateRoi);
+    return [...records.filter((roi) => !spheres.some((sphere) => sphere.id === roi.id)), ...spheres].map(roiFromReferencePayload).map(validateRoi);
   }
   return {
     shared: Boolean(monitoringApiBase),
@@ -28,15 +28,17 @@ export function createRoiRepository(projectId, storage = window.localStorage) {
       if (!monitoringApiBase) return readLocal();
       const result = await request(path, { signal });
       if (!Array.isArray(result?.rois)) throw new Error("서버의 ROI 목록 형식을 확인하세요.");
-      return result.rois.map(validateRoi);
+      return result.rois.map(roiFromReferencePayload).map(validateRoi);
     },
-    async save(input) {
+    async save(input, equipment) {
       const roi = validateRoi(input);
+      const payload = roiToReferencePayload(roi, equipment);
       if (monitoringApiBase) {
         const result = await request(`${path}/${encodeURIComponent(roi.id)}`, {
-          method: "PUT", headers: { "If-Match": String(roi.revision) }, body: JSON.stringify(roi), signal: AbortSignal.timeout(15000),
+          method: "PUT", headers: { "If-Match": String(roi.revision) }, body: JSON.stringify(payload), signal: AbortSignal.timeout(15000),
         });
-        return validateRoi(result.roi);
+        if (payload.coordinateFrame && !result.roi?.coordinateFrame) throw new Error("서버 ROI 응답에 기준좌표 정보가 없습니다.");
+        return validateRoi(roiFromReferencePayload(result.roi));
       }
       const records = readLocal();
       const existing = records.find((item) => item.id === roi.id);
@@ -47,7 +49,7 @@ export function createRoiRepository(projectId, storage = window.localStorage) {
         updateProjectObservationPoints(projectId, (points) => [...points.filter((item) => item.id !== point.id), point], storage);
         window.dispatchEvent(new CustomEvent("digital-twin-roi-change", { detail: { projectId, point } }));
         return observationPointToRoi(point);
-      } else storage.setItem(roiStorageKey(projectId), JSON.stringify([...records.filter((item) => !isSphereRoi(item) && item.id !== roi.id), saved]));
+      } else storage.setItem(roiStorageKey(projectId), JSON.stringify([...records.filter((item) => !isSphereRoi(item) && item.id !== roi.id), roiToReferencePayload(saved, equipment)]));
       return saved;
     },
     async remove(roi) {
@@ -65,10 +67,10 @@ export function createRoiRepository(projectId, storage = window.localStorage) {
       if (!Array.isArray(result?.readings)) throw new Error("서버의 측정값 형식을 확인하세요.");
       return result.readings;
     },
-    async preview(roi, signal) {
+    async preview(roi, signal, equipment) {
       if (!monitoringApiBase) return null;
       const query = validateRoi({ ...roi, name: roi.name.trim() || "임시 ROI", rules: [], monitoringEnabled: false });
-      const result = await request(`${path}/preview`, { method: "POST", body: JSON.stringify(query), signal });
+      const result = await request(`${path}/preview`, { method: "POST", body: JSON.stringify(roiToReferencePayload(query, equipment)), signal });
       return result.reading;
     },
   };

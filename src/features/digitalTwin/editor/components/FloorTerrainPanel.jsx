@@ -1,5 +1,6 @@
 import { useState } from "react";
 import PropertySection from "./PropertySection";
+import NumericField from "./NumericField";
 import TerrainEditorPanel from "./TerrainEditorPanel";
 import { GROUND_VIEW_MODES } from "../model/undergroundModel";
 import styles from "./TerrainEditorPanel.module.css";
@@ -10,6 +11,11 @@ export default function FloorTerrainPanel({ floor, floors, environment, brush, g
   const [message, setMessage] = useState("");
   return <>
     <p className={styles.contextHelp}>{floor.name}의 부지를 편집합니다. 높이는 해당 층 바닥 기준 상대 높이입니다.</p>
+    <div className={styles.panel}>
+      <NumericField label="부지 가로 · X" unit="m" min={1} step={1} value={environment.width} onChange={(width) => onEnvironmentChange({ width })} />
+      <NumericField label="부지 세로 · Z" unit="m" min={1} step={1} value={environment.depth} onChange={(depth) => onEnvironmentChange({ depth })} />
+      <p className={styles.help}>건물과 독립된 부지 크기입니다. 설비의 위치와 크기는 유지됩니다.</p>
+    </div>
     <TerrainEditorPanel environment={environment} brush={brush} gridCellSize={gridCellSize} onBrushChange={onBrushChange} onEnvironmentChange={onEnvironmentChange} areaSelection={areaSelection} onAreaSelectionChange={onAreaSelectionChange} />
     <div className={styles.panel}>
       <label className={styles.selectField}><span>부지 표시</span><select value={groundViewMode} onChange={(event) => onGroundViewModeChange(event.target.value)}>

@@ -5,7 +5,7 @@ import { getBuildingFootprint } from "@/features/digitalTwin/editor/utils/buildi
 import { clampDimension } from "@/features/digitalTwin/editor/utils/editorMath";
 import { normalizeEquipmentInstance } from "@/features/digitalTwin/editor/utils/templateParameters";
 import { createSequentialCopyName } from "@/features/digitalTwin/editor/utils/objectCopyName";
-import { getFloorHeightAtPoint } from "@/features/digitalTwin/editor/model/floorSpatialModel";
+import { getFloorHeightAtPoint, getFloorFootprintBounds } from "@/features/digitalTwin/editor/model/floorSpatialModel";
 
 function createId(prefix) { return `${prefix}_${crypto.randomUUID()}`; }
 
@@ -35,12 +35,13 @@ function constrainEquipment(equipment, building, gridSize, floorPlan) {
   const rotation = equipment.rotation?.y ?? 0;
   const halfWidth = (Math.abs(Math.cos(rotation)) * equipment.dimensions.width + Math.abs(Math.sin(rotation)) * equipment.dimensions.depth) / 2;
   const halfDepth = (Math.abs(Math.sin(rotation)) * equipment.dimensions.width + Math.abs(Math.cos(rotation)) * equipment.dimensions.depth) / 2;
-  const xLimit = Math.max(0, footprint.width / 2 - halfWidth);
-  const zLimit = Math.max(0, footprint.depth / 2 - halfDepth);
+  const bounds = floorPlan?.floorFootprint?.regions?.length ? getFloorFootprintBounds(floorPlan.floorFootprint)
+    : { minX: -footprint.width / 2, maxX: footprint.width / 2, minZ: -footprint.depth / 2, maxZ: footprint.depth / 2 };
+  const constrain = (value, min, max, halfSize) => max - min < halfSize * 2 ? (min + max) / 2 : Math.min(max - halfSize, Math.max(min + halfSize, value));
   const spacing = Math.max(0.1, Number(gridSize) || 1);
   const snappedPosition = {
-    x: Math.min(xLimit, Math.max(-xLimit, Math.round(equipment.position.x / spacing) * spacing)),
-    z: Math.min(zLimit, Math.max(-zLimit, Math.round(equipment.position.z / spacing) * spacing)),
+    x: constrain(Math.round(equipment.position.x / spacing) * spacing, bounds.minX, bounds.maxX, halfWidth),
+    z: constrain(Math.round(equipment.position.z / spacing) * spacing, bounds.minZ, bounds.maxZ, halfDepth),
   };
   const floorHeight = getFloorHeightAtPoint(floorPlan?.elevationZones, snappedPosition);
   return {
@@ -168,8 +169,10 @@ export default function useFloorEquipmentState({ buildings, floors, currentBuild
     const id = createId("FLOOR_EQUIPMENT");
     const duplicate = {
       ...structuredClone(selectedFloorEquipment), id, batchGroupId: null,
+      parts: (selectedFloorEquipment.parts ?? []).map((part) => ({ ...structuredClone(part), id: createId("PART") })),
       position: { ...selectedFloorEquipment.position, x: selectedFloorEquipment.position.x + Math.max(0.5, gridSettings.baseSize) },
     };
+    if (duplicate.metadata?.coordinateFrame) duplicate.metadata.coordinateFrame = { ...duplicate.metadata.coordinateFrame, id: `equipment-frame:${id}`, equipmentId: id, version: 1 };
     setEquipmentByFloorId((collections) => ({
       ...collections,
       [duplicate.floorId]: [...(collections[duplicate.floorId] ?? []), {

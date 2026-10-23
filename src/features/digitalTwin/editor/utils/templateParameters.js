@@ -53,6 +53,9 @@ export function getDimensionsFromParameters(template, parameters = {}) {
 
 export function createTemplateInstanceDefaults(template) {
   const parameters = { ...template.defaultParameters };
+  const cabinet = (template.floorCategory ?? template.category) === "CABINET";
+  const stacked = ["CABINET_HORIZONTAL_SPLIT", "BATTERY_CABINET", "DISTRIBUTION_PANEL"].includes(template.id);
+  const double = stacked || ["CABINET_DOUBLE", "CABINET_VERTICAL_SPLIT", "SWITCHBOARD", "MCC_PANEL"].includes(template.id);
 
   return {
     domain: template.domain,
@@ -64,6 +67,7 @@ export function createTemplateInstanceDefaults(template) {
     dimensions: getDimensionsFromParameters(template, parameters),
     appearance: { ...template.defaultAppearance },
     parts: createDefaultEquipmentParts(template),
+    ...(cabinet ? { enclosure: { enabled: true, doorCount: double ? 2 : 1, doorLayout: stacked ? "STACKED" : "SIDE_BY_SIDE" } } : {}),
   };
 }
 
@@ -77,6 +81,7 @@ export function normalizeEquipmentInstance(equipment, template) {
     domain: template.domain,
     category: template.category,
     parameters,
+    ...(equipment.enclosure ? { enclosure: structuredClone(equipment.enclosure) } : defaults.enclosure ? { enclosure: defaults.enclosure } : {}),
     dimensions: hasParameters
       ? getDimensionsFromParameters(template, parameters)
       : { ...defaults.dimensions, ...equipment.dimensions },
