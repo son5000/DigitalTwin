@@ -3,6 +3,8 @@ import { ChevronRightIcon } from "@/components/icons/actionIcons";
 import { getTreeAncestors, toggleTreeNode } from "./worldTreeModel";
 import styles from "./WorldTreePanel.module.css";
 
+const PROJECT_TREE_KEY = "viewer:project";
+
 function Snapshot({ tree, snapshot, representativeImage }) {
   const [failed, setFailed] = useState(false);
   const source = !failed && (representativeImage || snapshot?.url)
@@ -13,12 +15,12 @@ function Snapshot({ tree, snapshot, representativeImage }) {
   </div>;
 }
 
-export default function WorldTreePanel({ tree, snapshot, representativeImage, selectedKey, selectionVersion, onSelect }) {
-  const [expansion, setExpansion] = useState(() => ({ selectedKey, selectionVersion, keys: new Set([...tree.roots.map((node) => node.key), ...getTreeAncestors(tree, selectedKey)]) }));
+export default function WorldTreePanel({ tree, projectName, snapshot, representativeImage, selectedKey, selectionVersion, onSelect }) {
+  const [expansion, setExpansion] = useState(() => ({ selectedKey, selectionVersion, keys: new Set([PROJECT_TREE_KEY, ...tree.roots.map((node) => node.key), ...getTreeAncestors(tree, selectedKey)]) }));
   const containerRef = useRef(null);
   let expanded = expansion.keys;
   if (expansion.selectedKey !== selectedKey || expansion.selectionVersion !== selectionVersion) {
-    expanded = new Set([...expanded, ...getTreeAncestors(tree, selectedKey)]);
+    expanded = new Set([...expanded, PROJECT_TREE_KEY, ...getTreeAncestors(tree, selectedKey)]);
     setExpansion({ selectedKey, selectionVersion, keys: expanded });
   }
   useEffect(() => {
@@ -36,10 +38,14 @@ export default function WorldTreePanel({ tree, snapshot, representativeImage, se
       {open && node.children.length > 0 && <ul>{node.children.map(renderNode)}</ul>}
     </li>;
   }
+  // Sidebar-only grouping preserves scene IDs and equipment/ROI selection behavior.
+  const children = !tree.roiTree && ["SITE", "MULTI_EQUIPMENT"].includes(tree.scope) && tree.root
+    ? [...tree.root.children, ...tree.roots.filter((node) => node !== tree.root)] : tree.roots;
+  const projectRoot = { key: PROJECT_TREE_KEY, label: projectName, synthetic: true, children };
   return <section className={styles.panel} aria-label="월드 계층">
     <Snapshot key={`${tree.root?.key}:${representativeImage ?? snapshot?.url ?? tree.scope}`} tree={tree} snapshot={snapshot} representativeImage={representativeImage} />
     <div ref={containerRef} className={styles.scroll}>
-      {tree.roots.length ? <ul className={styles.tree} aria-label={`${tree.config.label} 계층`}>{tree.roots.map(renderNode)}</ul> : <p className={styles.empty}>등록된 월드 객체가 없습니다.</p>}
+      <ul className={styles.tree} aria-label={`${tree.config.label} 계층`}>{renderNode(projectRoot)}</ul>
       {tree.roiTree && !tree.root.children.length && <p className={`${styles.empty} ${styles.roiEmpty}`}>지정된 ROI가 없습니다.</p>}
     </div>
   </section>;

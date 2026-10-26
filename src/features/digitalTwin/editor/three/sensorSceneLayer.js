@@ -2,9 +2,10 @@ import { createObservationBadge, updateObservationBadge } from "./observationBad
 import { observationReadings, observationStatus } from "../model/observationReadings.js";
 import { getSensorMountPose } from "../model/equipmentEnclosure.js";
 import * as THREE from "three";
-import { normalizeObservationPoint, sensorHasImaging } from "../model/equipmentDetailModel.js";
+import { normalizeObservationPoint, getSensorCapabilities } from "../model/equipmentDetailModel.js";
 import { createSensorMarker } from "./sensorPresentation.js";
 import { disposeObject3D } from "./disposeObject3D.js";
+import { createRoiOverlay } from "./roiOverlay.js";
 
 // Own only sensor markers, point markers and links. Never dispose equipment/scans.
 export function createSensorSceneLayer({ root, renderedEquipment, origin, addCameraFrustum = () => {} }) {
@@ -25,7 +26,6 @@ export function createSensorSceneLayer({ root, renderedEquipment, origin, addCam
       if (sensor.surfaceMount && !mountPose) return;
       const base = host ? new THREE.Vector3() : new THREE.Vector3(-(Number(origin.x) || 0), -(Number(origin.y) || 0), -(Number(origin.z) || 0));
       const position = base.clone().add(new THREE.Vector3(Number(sensor.position?.x) || 0, Number(sensor.position?.y) || 0, Number(sensor.position?.z) || 0));
-      const isCamera = sensorHasImaging(sensor);
       const marker = createSensorMarker(sensor, sensor.id === selectedSensorId);
       marker.position.copy(mountPose?.position ?? position);
       if (mountPose) marker.rotation.copy(mountPose.rotation);
@@ -34,7 +34,7 @@ export function createSensorSceneLayer({ root, renderedEquipment, origin, addCam
       marker.userData.sensorId = sensor.id;
       marker.userData.sensorEquipmentId = sensor.equipmentIds.find((id) => renderedEquipment.has(id));
       marker.userData.sensorBase = base.toArray();
-      if (isCamera) addCameraFrustum(marker, sensor);
+      if (getSensorCapabilities(sensor).includes("THERMAL")) addCameraFrustum(marker, sensor);
 
       (host?.object ?? root).add(marker);
       sensorPositions.set(sensor.id, marker.getWorldPosition(new THREE.Vector3()));
@@ -53,12 +53,13 @@ export function createSensorSceneLayer({ root, renderedEquipment, origin, addCam
       marker.userData.observationPointId = point.id;
       marker.userData.equipmentId = point.equipmentId;
       marker.userData.representation = point.representation ?? "BOTH";
+      const overlay = createRoiOverlay(marker);
       const index = pointIndices.get(point.equipmentId) ?? 0; pointIndices.set(point.equipmentId, index + 1);
       const badge = createObservationBadge(marker, point, index, observationStatus(observationReadings(point, sensors, readings, now, previewReadings)));
       if (badge) pointBadges.set(point.id, badge);
       pointMarkers.set(point.id, marker);
-      host.object.add(marker);
-      objects.push(marker);
+      host.object.add(overlay);
+      objects.push(overlay);
       pointPositions.set(point.id, marker.getWorldPosition(new THREE.Vector3()));
     });
 
@@ -84,6 +85,9 @@ export function createSensorSceneLayer({ root, renderedEquipment, origin, addCam
       object.visible = Boolean(entry && !entry.loading)
         && (!object.userData.observationPointId || !object.userData.representation || object.userData.representation === "BOTH" || object.userData.representation === (entry.actual?.visible ? "ACTUAL" : "PROXY"))
         && !(hiddenSensorId && object.userData.sensorId === hiddenSensorId);
+      // Picking reads the mesh's own visibility; keep it aligned with its
+      // priority wrapper when loading or switching model representations.
+      if (object.isGroup && object.userData.observationPointId) pointMarkers.get(object.userData.observationPointId).visible = object.visible;
     }
   }
   function updateObservationLabels(camera, renderer, selectedId, hoveredId, hidden) {
@@ -101,7 +105,7 @@ export function createSensorSceneLayer({ root, renderedEquipment, origin, addCam
     }
     for (const line of objects.filter((item) => item.userData.sourceDeviceId)) {
       const marker = markers.get(line.userData.sourceDeviceId);
-      const point = objects.find((item) => item.isMesh && item.userData.observationPointId === line.userData.observationPointId);
+      const point = pointMarkers.get(line.userData.observationPointId);
       if (!marker || !point) continue;
       const a = root.worldToLocal(marker.getWorldPosition(new THREE.Vector3())), b = root.worldToLocal(point.getWorldPosition(new THREE.Vector3()));
       const positions = line.geometry.attributes.position;

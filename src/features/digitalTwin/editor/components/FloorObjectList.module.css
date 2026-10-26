@@ -1,5 +1,6 @@
 .list { min-height: 100%; }
 .group { border-top: 1px solid var(--color-border); }
+.items:empty { display: none; }
 .group > header { display: flex; min-height: 36px; padding: 0 var(--catalog-inline-padding); align-items: center; justify-content: space-between; }
 .group > header strong { color: var(--color-heading); font-size: var(--editor-font-size-sm); }
 .group > header span { color: var(--color-text-faint); font-size: var(--editor-font-size-xs); }

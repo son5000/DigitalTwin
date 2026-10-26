@@ -1,24 +1,6 @@
 import { isFreshMeasurement, mediaUrl } from "./monitoringContract.js";
-
-const number = (value, fallback, min, max) => Number.isFinite(Number(value)) ? Math.max(min, Math.min(max, Number(value))) : fallback;
-export function normalizeSensorProjection(source = {}) {
-  return {
-    enabled: source.enabled === true,
-    kind: source.kind === "THERMAL" ? "THERMAL" : "VISION",
-    target: ["ACTUAL", "PROXY", "BOTH"].includes(source.target) ? source.target : "PROXY",
-    surfaceId: typeof source.surfaceId === "string" ? source.surfaceId : "",
-    meshPath: typeof source.meshPath === "string" ? source.meshPath : null,
-    meshName: typeof source.meshName === "string" ? source.meshName : "",
-    opacity: number(source.opacity, 1, 0, 1),
-    scaleX: number(source.scaleX, 1, .05, 20), scaleY: number(source.scaleY, 1, .05, 20),
-    offsetX: number(source.offsetX, 0, -2, 2), offsetY: number(source.offsetY, 0, -2, 2),
-    rotation: number(source.rotation, 0, -180, 180),
-    cropX: number(source.cropX, 0, 0, .99), cropY: number(source.cropY, 0, 0, .99),
-    cropWidth: number(source.cropWidth, 1, .01, 1), cropHeight: number(source.cropHeight, 1, .01, 1),
-    temperatureMin: number(source.temperatureMin, 0, -273.15, 10000),
-    temperatureMax: number(source.temperatureMax, 100, -273.14, 10001),
-  };
-}
+import { activeVisionSample, normalizeSensorProjection } from "./sensorImageTransform.js";
+export { normalizeSensorProjection } from "./sensorImageTransform.js";
 
 export function validTemperatureGrid(grid) {
   return Number.isInteger(grid?.width) && Number.isInteger(grid?.height) && grid.width > 0 && grid.height > 0
@@ -45,6 +27,8 @@ export function temperaturePixels(grid, min, max) {
 
 export function sensorProjectionFrame(sensor, records, now = Date.now(), demo = false) {
   const settings = normalizeSensorProjection(sensor.textureProjection);
+  const sample = settings.kind === "VISION" && activeVisionSample(sensor);
+  if (sample) return { url: sample.url, kind: "VISION", dataSource: "SAMPLE", sample: true, loadedAt: sample.loadedAt };
   const matches = (records ?? []).filter((record) => record.kind === settings.kind
     && ((sensor.serverSensorId && record.sensorId === sensor.serverSensorId) || record.bindingId === sensor.id)
     && isFreshMeasurement(record, now));

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getRuntimeCustomAsset } from "@/features/customAssets/core/customAssetRegistry";
+import { getProjectName } from "@/features/digitalTwin/editor/model/projectMetadata";
 import { getFloorBaseElevation, getFloorHeight } from "@/features/customAssets/building/buildingMetrics";
 
 import {
@@ -422,6 +423,7 @@ export default function useDigitalTwinEditorState() {
   const [gridSettings, setGridSettings] = useState(createDefaultGridSettings);
   const [navigationContext, setNavigationContext] = useState(createInitialNavigationContext);
   const [observationWorkflow, setObservationWorkflow] = useState(createUnconfiguredObservationWorkflow);
+  const [projectName, setProjectName] = useState("");
   const [viewerPreset, setViewerPreset] = useState(createViewerPreset);
   const [representativeImage, setRepresentativeImage] = useState(null);
   const [historyAvailability, setHistoryAvailability] = useState({ canUndo: false, canRedo: false });
@@ -1050,6 +1052,7 @@ export default function useDigitalTwinEditorState() {
     setGridSettings(createDefaultGridSettings());
     setNavigationContext(createInitialNavigationContext());
     setObservationWorkflow(createUnconfiguredObservationWorkflow());
+    setProjectName("");
     setViewerPreset(createViewerPreset());
     setRepresentativeImage(null);
     resetWorldStructures();
@@ -1092,6 +1095,7 @@ export default function useDigitalTwinEditorState() {
 
     clearHistory();
     setHierarchy(nextHierarchy);
+    setProjectName(layout.observationWorkflow?.configured === false ? layout.name ?? "" : getProjectName(layout));
     setObservationWorkflow({
       ...normalizedWorkflow,
       viewerSettings: {
@@ -2059,6 +2063,8 @@ export default function useDigitalTwinEditorState() {
     setViewerPreset((current) => setEquipmentDisplayOverride(current, equipmentId, override));
   }, []);
   const layoutDocument = useMemo(() => ({
+    name: projectName,
+    projectStatus: "DRAFT",
     hierarchy,
     gridSettings,
     siteEnvironment,
@@ -2082,7 +2088,7 @@ export default function useDigitalTwinEditorState() {
       observationPoints: monitoringEditor.observationPoints,
       serverBindings: monitoringEditor.serverBindings,
     },
-  }), [currentRoomScene, floorEquipmentEditor.equipmentByFloorId, floorPlanEditor.floorPlansById, floorPlanEditor.verticalStructuresByBuildingId, gridSettings, hierarchy, monitoringEditor.equipmentAssetBindings, monitoringEditor.observationPoints, monitoringEditor.sensorBindings, monitoringEditor.serverBindings, observationWorkflow, representativeImage, roomScenes, siteEnvironment, siteObjects, viewerPreset]);
+  }), [projectName, currentRoomScene, floorEquipmentEditor.equipmentByFloorId, floorPlanEditor.floorPlansById, floorPlanEditor.verticalStructuresByBuildingId, gridSettings, hierarchy, monitoringEditor.equipmentAssetBindings, monitoringEditor.observationPoints, monitoringEditor.sensorBindings, monitoringEditor.serverBindings, observationWorkflow, representativeImage, roomScenes, siteEnvironment, siteObjects, viewerPreset]);
 
   const updateMonitoringEquipment = useCallback((equipmentId, changes) => {
     const equipment = allMonitoringEquipment.find((item) => item.id === equipmentId);
@@ -2264,6 +2270,8 @@ export default function useDigitalTwinEditorState() {
     selectedSiteObjectId,
     protectedHierarchyNodeIds,
     layoutDocument,
+    projectName,
+    setProjectName,
     world,
     equipmentInstances,
     detailAssets,

@@ -3,6 +3,7 @@ import { clampRoiRadius, isSphereRoi } from "../model/roiMonitoring.js";
 import { isVisibleSurfaceIntersection } from "./objectRaycast.js";
 import { ROI_STATUSES } from "../model/roiMonitoring.js";
 import { disposeObject3D } from "./disposeObject3D.js";
+import { createRoiOverlay } from "./roiOverlay.js";
 
 // Store raycast samples in equipment-local metres, independent of camera and
 // equipment placement. These are geometry samples, never simulated sensor data.
@@ -101,6 +102,7 @@ export function bindSurfaceRoiInteraction({ renderer, camera, controls, rendered
           }
           group.userData = { roiId: roi.id, equipmentId: roi.equipmentId, representation: roi.surface.representation };
           group.traverse((object) => { object.raycast = () => {}; object.userData.monitoringOverlay = true; });
+          createRoiOverlay(group);
           entry.object.add(group);
           overlays.push(group);
         });

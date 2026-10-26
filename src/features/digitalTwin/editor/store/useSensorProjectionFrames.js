@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { getSensorFrame, monitoringApiBase } from "../api/monitoringClient";
+import { activeVisionSample } from "../model/sensorImageTransform";
 
 export default function useSensorProjectionFrames(sensors = []) {
   // Moving a sensor must neither restart requests nor reload its scene.
-  const key = JSON.stringify(sensors.filter((sensor) => sensor.textureProjection?.enabled && sensor.serverSensorId && sensor.dataSource !== "DEMO")
+  const key = JSON.stringify(sensors.filter((sensor) => sensor.textureProjection?.enabled && sensor.serverSensorId && sensor.dataSource !== "DEMO"
+    && !(sensor.textureProjection.kind !== "THERMAL" && activeVisionSample(sensor)))
     .map((sensor) => [sensor.id, sensor.serverSensorId, sensor.textureProjection.kind === "THERMAL" ? "THERMAL" : "VISION"]));
   const [state, setState] = useState({ key: "", frames: [] });
   useEffect(() => {

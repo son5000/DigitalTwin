@@ -97,9 +97,38 @@ SSE 연결 시 최신 스냅샷을 다시 조회한다. 재연결 시 미확인 
 - 음원 `selection`은 `{coordinateSpace:"EQUIPMENT_LOCAL",representation,position:[x,y,z],equipmentId,modelVersion,model:{assetId,version}}`. 서버는 보정된 센서 위치·동기화된 원신호를 기반으로 처리해야 한다. 음원 URL은 브라우저가 재생 가능한 코덱/컨테이너로 제공한다. 프론트에서 비동기 요청 중 지점이 바뀌면 취소한다.
 - 열화상 이미지만으로 ROI 온도를 추정하지 않는다. 비전 변화율·dB·음원도 서버 결과를 사용한다.
 
-## 센서 영상의 부분 투영
+## 센서 영상의 텍스처 편집
 
-설정은 센서의 `textureProjection`에 저장하며 보정 내보내기에도 포함한다. `enabled`, `kind: VISION | THERMAL`, `target: ACTUAL | PROXY | BOTH`, 도형의 `surfaceId`, 스캔의 `meshPath`로 적용 대상을 고른다. `scaleX/Y`는 영상 늘림, `offsetX/Y`는 정규화 영상 이동, `rotation`은 도 단위 회전이다. `cropX/Y/Width/Height`는 0~1 범위이며 아래쪽이 Y 원점이다. `opacity`는 0~1이다. 센서의 설치 위치·방향·수직 화각·종횡비·근거리·원거리로 투영하며 가려진 표면은 센서 시점 깊이 검사로 제외한다. UV 자동 보정이나 렌즈 왜곡 추정은 수행하지 않는다.
+### 설치 위치와 이미지 적용면의 분리 (schemaVersion 3)
+
+비전 센서의 `position`, `rotation`, `surfaceMount`, 화각·종횡비·관측 거리는 월드의 장치 표시용이다. 비전 이미지 가공과 표면 배치는 이 값에 의존하지 않는다. 열화상은 기존 센서 카메라 투영을 유지한다.
+
+`textureProjection.equipmentId`로 적용 설비를 지정한다. 도형은 `surfaceId`의 표면 프레임을 사용하며 문 개폐를 따른다. 기본은 정면이며 `imagePlane`으로 FRONT/BACK/LEFT/RIGHT/TOP/BOTTOM을 고른다. 스캔 부분을 선택하면 정합된 메시 경계와 선택면 법선에서 `surfaceMapping`을 생성해 저장한다.
+
+**이미지 가공 JSON 내보내기**는 독립 계약 `{schemaVersion:3, projectId, sensorId, bindingId, serialNumber, imageTransform, target}`을 내보낸다. `target`은 equipmentId, model, representation, surfaceId, meshPath, meshName, enabled, opacity와 `mapping:OBJECT_SURFACE_PLANAR`, `surface`를 포함한다. `surface`는 `{space:EQUIPMENT_MODEL_LOCAL, unit:m, origin:[x,y,z], right:[x,y,z], up:[x,y,z], normal:[x,y,z], width,height}`다. origin은 적용면 왼쪽 아래, right/up은 직교 단위 벡터다. 표면 점은 `origin + right * width * u + up * height * v`로 재현한다. 월드 배치는 설비 변환을 별도로 적용하며 센서 pose/FOV를 사용하지 않는다.
+
+3단계 패널은 센서 연결 / 설치 위치 / 이미지·텍스처로 나뉜다. 정밀 편집창은 드래그 이동·영역 자르기, 픽셀 crop(왼쪽 위 기준), 축별 크기·비율 잠금·확대, 회전·반전, 9점 기준점과 수치 입력을 제공한다. 조정 간격은 0.001~10이며 입력은 Enter/포커스 이동으로 반영한다. 보기 배율·격자는 작업 표시용으로 내보내지 않는다. 되돌리기/다시 실행은 해당 세션의 이미지 값에만 적용하고, 편집 취소/Escape는 창을 열기 전 이미지 값으로 복원한다. 적용값은 프로젝트 저장으로 보관한다.
+
+### 샘플 영상과 재현 가능한 이미지 변환
+
+- 센서 등록에서 **비전카메라 추가 → 샘플 불러오기**를 선택하면 `/samples/cabinet-vision.jpg`를 HTTP 요청으로 읽고 원본 크기를 확인한다. 사용자 제공 JPG 원본을 그대로 보관한다. `projectionSample: { enabled, url, width, height, loadedAt }`는 테스트 소스이며 서버 센서 ID·시리얼·연결 상태·실측 시각을 생성하거나 덮어쓰지 않는다. 샘플은 수동 해제 전까지 표시하며 실제 프레임의 신선도 검사는 그대로 유지한다. 샘플 선택 중 비전 프레임 폴링은 중단하고 해제하면 재개한다.
+- `textureProjection`에 `zoom` (전체 배율), `flipX/Y`, `pivotX/Y`를 추가한다. 과거 설정은 각각 `1`, `false`, `0.5`로 복원한다. `scaleX/Y`와 `zoom`은 0.01~100, 이동은 -10~10, 회전은 -3600~3600도, 기준점은 0~1이다. crop은 원본 경계 안으로 정규화하며 최소 크기는 0.000001 UV다. 해상도를 아는 편집창은 최소 1픽셀을 사용한다.
+- 기준 좌표는 **왼쪽 아래 (0,0), 오른쪽 위 (1,1)**. 양의 이동은 오른쪽/위쪽, 양의 회전은 반시계 방향이다. 이동 1은 적용면(열화상은 카메라 투영 영역)의 폭/높이 100%다. 기준점은 **잘라내기·원근 보정 후 정규화 좌표**다. 회전은 픽셀 공간이 아닌 정규화 UV 공간에서 수행하므로 적용면 폭/높이도 재현에 필요하다.
+- 순서는 원본 crop → 원근 보정 → 기준점 기준 반전·축별 배율·전체 확대 → 회전 → 이동 → 표면 배치(열화상은 센서 카메라 투영)다. `c = (sourceUV - cropOrigin) / cropSize`, `h = perspective.matrix × [c.x,c.y,1]`, `q = pivot + offset + R(rotation) × diag(scaleX × zoom × signX, scaleY × zoom × signY) × (h.xy / h.z - pivot)`.
+- 보정 payload 및 이미지 가공 내보내기는 `imageTransform`을 포함한다. `source`에는 소스 종류 `SAMPLE | SERVER | DEMO`, URL, 원본 width/height, 수신/실측 시각을 분리한다. 해상도를 제공하지 않으면 width/height 및 cropPixels는 null이다. 프레임 응답의 `resolution:{width,height}`가 있으면 센서 기본 해상도보다 우선한다. `parameters`는 정규화된 입력값, `effectiveScale`은 반전을 포함한 최종 축 배율이다. `cropPixels`는 **왼쪽 위 픽셀 원점**으로 환산한 원본 잘라내기 영역이다(반올림하지 않음).
+- `targetUvToCropUv`, `targetUvToSourceUv`, `sourceUvToTargetUv`는 길이 9의 **행 우선(row-major)** 행렬이며 열벡터 `[u,v,1]`에 곱한다. 3D 셰이더와 미리보기는 이 행렬과 동일한 계산을 사용한다. 비전은 표면 UV/crop 밖을 버리고 선택면 법선과 내적 0.9 이상인 면에 적용한다(점군은 법선 검사 제외). 센서 시점 가림 검사는 하지 않는다. 열화상은 기존 센서 깊이 검사를 유지한다. 원본 파일은 수정하지 않는다.
+- 독립 이미지 가공 payload는 모델 버전, 적용 대상/면/메시 경로와 적용면 기준을 포함한다. 센서 설치 보정 payload는 별도이며 기존 호환을 위해 이미지 가공값도 함께 포함한다. 백엔드는 이미지 행렬과 적용면 프레임, 원본 모델을 함께 사용한다. 샘플 파일 경로는 현재 웹 앱의 경로이며 백엔드 서버 파일 경로가 아니다. 실제 서버 저장 및 DB 반영은 별도 연동이다.
+
+### 네 점 원근 보정
+
+- `textureProjection.perspective = {enabled, source, target}`. source/target 각각 4개의 `[u,v]`이며 순서는 왼쪽 위 → 오른쪽 위 → 오른쪽 아래 → 왼쪽 아래다. 저장 UV의 Y는 위쪽으로 증가한다. 기본은 `[[0,1],[1,1],[1,0],[0,0]]`, enabled=false다. 과거 설정을 열면 원근 보정을 끈 상태로 기존 결과를 유지한다.
+- source는 **잘라낸 이미지**의 UV(0~1), target은 크기·회전·이동 **이전** 보정 결과 UV(-2~3)다. 원본 네 점을 캐비넷 꼭짓점에 맞추고 target을 기본 직사각형으로 두면 사다리꼴 영역을 펼친다. target의 아래 두 점을 벌리면 사진을 눕히듯 아래쪽을 펼친다. UI의 좌표 입력은 편의를 위해 왼쪽 위 원점의 %이며 저장 시 아래쪽 원점 UV로 환산한다. ‘아래쪽 좁음’ 시작값은 자동 감지 결과가 아니다.
+- 네 점은 지정 순서의 볼록 사각형이어야 한다. 교차·오목·겹침·퇴화 영역은 적용하지 않고 마지막 유효값을 유지한다. 잘못된 저장값은 원근 보정을 끈 기본값으로 복원한다. 드래그, 각 점의 X/Y 수치, 기준점 버튼의 방향키가 같은 값을 수정한다. 되돌리기·다시 실행·편집 취소·전체 초기화에 원근 보정값도 포함한다.
+- `imageTransform.schemaVersion=3`. `perspective`는 입력값과 함께 `matrix`(crop UV → 보정 UV), `inverseMatrix`, `sourcePixels`(원본 왼쪽 위 원점 픽셀), `finalTargetUv`(크기·회전·이동까지 적용한 결과 네 점), 두 좌표 공간 및 점 순서를 내보낸다. 원본 해상도가 없으면 sourcePixels=null이다. 비활성 상태의 matrix/inverseMatrix는 항등행렬이다.
+- 모든 3×3 행렬은 행 우선/열벡터 방식이다. **반드시 `[x,y,w] = H × [u,v,1]` 계산 후 `[x/w,y/w]`로 나눈다.** 세 번째 행을 `[0,0,1]`로 가정하면 원근 보정이 재현되지 않는다. `sourceUvToTargetUv`와 역행렬 `targetUvToSourceUv`에는 crop/원근/일반 변환을 모두 합성한다. `targetUvToRectifiedUv`와 `rectifiedUvToTargetUv`는 원근 뒤의 일반 변환만 나타낸다.
+- 활성화하면 원본 사각형 바깥을 제외하고, 최종 적용면 0~1 밖도 제외한다. 미리보기는 같은 행렬을 CSS matrix3d로 환산하고 원본 사각형을 clip-path로 제한한다. 3D 셰이더는 역행렬의 동차 나눗셈과 같은 사각형 경계 검사를 사용한다. 이는 평면 원근 보정이며 곡면 복원이나 렌즈 왜곡 추정은 아니다.
+
+설정은 센서의 `textureProjection`에 저장하며 보정 내보내기에도 포함한다. `enabled`, `kind: VISION | THERMAL`, `target: ACTUAL | PROXY | BOTH`, 도형의 `surfaceId`, 스캔의 `meshPath`로 적용 대상을 고른다. `scaleX/Y`는 영상 늘림, `offsetX/Y`는 정규화 영상 이동, `rotation`은 도 단위 회전이다. `cropX/Y/Width/Height`는 0~1 범위이며 아래쪽이 Y 원점이다. `opacity`는 0~1이다. 비전은 오브젝트 기준 평면 매핑이며 열화상만 센서 카메라를 통해 투영한다. UV 자동 보정이나 렌즈 왜곡 추정은 수행하지 않는다.
 
 활성화한 센서는 `GET /sensors/:id/frame?kind=VISION|THERMAL`을 5초 간격으로 조회한다. 기존 monitoring SSE의 `textures`에도 아래 원본 프레임을 보낼 수 있다. 센서 ID가 일치하고 유효 시간이 남은 프레임만 표시한다. 영상 조회 실패나 오래된 프레임은 수신 대기로 바뀐다.
 

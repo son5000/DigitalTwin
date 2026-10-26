@@ -1,4 +1,5 @@
 import { LAYOUT_STORAGE_KEY, readLocalLayout } from "../../digitalTwin/editor/model/layoutInitialization.js";
+import { getProjectName } from "../../digitalTwin/editor/model/projectMetadata.js";
 
 export const PROJECT_STORAGE_KEY = "digital-twin-projects-v1";
 const LEGACY_PROJECT_ID = "local-world";
@@ -21,7 +22,7 @@ export function readProjects(storage = window.localStorage) {
   if (current.status === "ERROR") throw new Error(current.message);
   if (current.layout && !isLayout(current.layout)) throw new Error("저장된 월드 형식을 확인해 주세요. 기존 데이터는 유지됩니다.");
   const projects = [...registry.projects];
-  if (current.layout && current.layout.observationWorkflow?.configured !== false) {
+  if (current.layout && (current.layout.observationWorkflow?.configured !== false || current.layout.name?.trim())) {
     const project = { id: registry.activeId, layout: current.layout };
     const index = projects.findIndex((item) => item.id === project.id);
     if (index < 0) projects.push(project);
@@ -75,21 +76,18 @@ export function updateProjectObservationPoints(projectId, update, storage = wind
 
 export function getProjectDetails(project) {
   const { layout } = project;
-  const nodes = layout.hierarchy?.nodes ?? [];
   const scope = layout.observationWorkflow?.scopeType ?? "SITE";
   const names = { SITE: "전체 공간·부지", BUILDING: "건물 중심 관측", SINGLE_EQUIPMENT: "단일 설비 관측", MULTI_EQUIPMENT: "다중 설비 관측", CUSTOM: "사용자 정의" };
-  const equipment = Object.values(layout.equipmentByFloorId ?? {}).flat();
-  const name = layout.name || (scope === "BUILDING" ? nodes.find((node) => node.type === "BUILDING")?.name
-    : scope.includes("EQUIPMENT") ? equipment[0]?.name : nodes.find((node) => node.type === "SITE")?.name);
   const image = scope.includes("EQUIPMENT") ? "sensors" : scope === "BUILDING" ? "building" : "site";
   const date = new Date(layout.savedAt);
   return {
-    name: name || "이름 없는 월드",
+    name: getProjectName(layout),
     scope: names[scope] ?? names.SITE,
     thumbnail: typeof layout.representativeImage === "string" && layout.representativeImage.startsWith("data:image/")
       ? layout.representativeImage
       : `/portal/workflow-${image}.svg`,
     modified: Number.isNaN(date.getTime()) ? "수정일 정보 없음" : date.toLocaleString("ko-KR", { dateStyle: "medium", timeStyle: "short" }),
-    status: "로컬 저장됨",
+    isDraft: layout.projectStatus === "DRAFT" || layout.observationWorkflow?.configured === false,
+    status: layout.projectStatus === "DRAFT" || layout.observationWorkflow?.configured === false ? "작업 중" : "저장 완료",
   };
 }

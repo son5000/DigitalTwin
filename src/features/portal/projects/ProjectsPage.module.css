@@ -28,6 +28,7 @@
 .thumbnail { display: block; width: 100%; height: 180px; object-fit: cover; background: #edf4fc; }
 .cardBody { padding: 24px; }
 .status { display: inline-block; background: #edf4ff; color: #2458d6; border-radius: 20px; padding: 5px 10px; font-size: 11px; }
+.status[data-draft="true"] { background: #fff3d6; color: #805500; }
 .card h2 { font-size: 20px; margin: 15px 0 8px; overflow-wrap: anywhere; }
 .card p { color: #536681; font-size: 13px; }
 .card small { display: block; color: #65768d; font-size: 11px; margin-top: 12px; }

@@ -17,6 +17,7 @@ import { createStairRenderObject } from "@/features/digitalTwin/editor/world/Sta
 import { createWorldStructureObject, getWorldStructureDimensions } from "@/features/digitalTwin/editor/world/WorldStructureFactory";
 
 import { disposeObject3D } from "./disposeObject3D";
+import { createRoiOverlay } from "./roiOverlay.js";
 import { createFloorPlacementPreview } from "./floorPlacementPreview";
 import { createEquipmentRenderObjects } from "./equipmentInstancing";
 import {
@@ -657,7 +658,7 @@ export default function FloorPlan3DScene({
       marker.position.copy(position);
       marker.userData.observationPointId = point.id;
       markRenderFloor(marker, target.floorId);
-      (runtime.floorLayers.get(target.floorId)?.sensors ?? runtime.helperRoot).add(marker);
+      (runtime.floorLayers.get(target.floorId)?.sensors ?? runtime.helperRoot).add(createRoiOverlay(marker));
     });
     monitoringDevices.forEach((device) => {
       const sensorLocation = sensorWorldPosition(device);

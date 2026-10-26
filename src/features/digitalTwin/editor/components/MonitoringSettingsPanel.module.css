@@ -38,16 +38,18 @@
   min-height: 0;
   grid-template-columns: minmax(0, 1fr);
   align-content: start;
+  grid-auto-rows: max-content;
   gap: var(--editor-space-3, 12px);
   padding: var(--editor-space-3, 12px);
   overflow-y: auto;
+  overflow-x: hidden;
   overscroll-behavior: contain;
   scroll-padding-block: var(--editor-space-3, 12px);
   scrollbar-color: var(--color-scrollbar) transparent;
   scrollbar-width: thin;
 }
 .stepBody > * { min-width: 0; max-width: 100%; }
-.stepBody .content { min-width: 0; padding: 0; gap: var(--editor-space-3, 12px); overflow: visible; }
+.stepBody .content { min-width: 0; min-height: auto; grid-auto-rows: max-content; padding: 0; gap: var(--editor-space-3, 12px); overflow: visible; }
 :where(.stepBody, .stepBody .content) > button {
   min-width: 0;
   min-height: var(--editor-control-height, 36px);
@@ -90,12 +92,18 @@
 .assetFileRow small { color: var(--color-text-muted); }
 .assetFiles dd { overflow-wrap: anywhere; }
 .assetFiles .uploadButton:has(input:disabled) { opacity: 0.5; cursor: not-allowed; }
-@media (max-width: 900px), (max-height: 700px) {
-  .panel { height: auto; min-height: 100%; grid-template-rows: auto auto auto auto; overflow: visible; }
+/* Short docked panels scroll as a whole so the header/footer cannot consume
+   the entire viewport. The normal desktop panel keeps only its body scrollable. */
+@media (max-width: 900px), (max-height: 700px), (orientation: portrait) {
+  .panel { overflow-y: auto; grid-template-rows: auto auto max-content auto; align-content: start; }
   .stepBody { overflow: visible; }
+  .stepFooter { padding: 8px 12px; }
 }
 
-.settingsGroup { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: var(--editor-space-3, 12px); min-width: 0; margin: 0; padding: var(--editor-space-3, 12px); border: 1px solid var(--color-border); border-radius: 6px; }
+.settingsGroup { display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-rows: max-content; align-content: start; gap: var(--editor-space-3, 12px); min-width: 0; margin: 0; padding: var(--editor-space-2, 8px); border: 1px solid var(--color-border); border-radius: 4px; }
+.settingsGroup > * { min-width: 0; max-width: 100%; }
+details.settingsGroup { display: block; }
+details.settingsGroup[open] > :not(summary) + * { margin-top: 12px; }
 .settingsGroup legend { max-width: 100%; padding-inline: var(--editor-space-1, 4px); overflow-wrap: anywhere; }
 .settingsGroup legend, .settingsGroup > summary { color: var(--color-heading); font-size: 13px; font-weight: 700; }
 .settingsGroup summary { cursor: pointer; padding: 6px 0; }
@@ -105,7 +113,8 @@
 .settingsGroup input[type="range"] { padding: 0; accent-color: var(--color-accent); }
 .settingsGroup .primaryAction { border-color: var(--color-accent); color: var(--color-accent-strong); }
 
-.rangeGrid { --inspector-field-columns: minmax(0, 1fr); align-items: start; gap: 12px; }
+.rangeGrid { --inspector-field-columns: minmax(0, 1fr); grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 8px; }
+.rangeGrid > :only-child { grid-column: 1 / -1; }
 .rangeGrid input[type="number"] { text-align: right; }
 .numberHint { margin: 0; padding: 6px 12px 0; color: var(--color-text-muted); font-size: 12px; line-height: 1.5; }
 .roiReadout { display: grid; gap: 0; max-height: 190px; overflow-y: auto; font-size: 12px; }
@@ -116,9 +125,26 @@
 .roiReadout [data-level="WARNING"] strong { color: #bd7418; }
 .roiReadout [data-level="DANGER"] strong { color: #e56c61; }
 
-@container editor-inspector (max-width: 320px) {
-  .stepBody .actionRow, .stepBody .checkGrid { grid-template-columns: minmax(0, 1fr); }
+@container editor-inspector (max-width: 260px) {
+  .stepBody .actionRow, .stepBody .checkGrid, .stepBody .rangeGrid { grid-template-columns: minmax(0, 1fr); }
 }
+
+.stepBody :where(button, select, input, textarea) { font: inherit; font-size: 12px; }
+.stepBody button { white-space: normal; overflow-wrap: anywhere; cursor: pointer; }
+.stepBody button:disabled { opacity: .5; cursor: not-allowed; }
+.stepBody button[aria-pressed="true"] { color: var(--color-accent-strong); border-color: var(--color-accent); background: var(--state-selected); }
+.stepBody :where(input, select, textarea):focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.sampleSource { display: grid; gap: 8px; }
+.sensorNavigation { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; position: sticky; top: -12px; z-index: 2; padding-block: 8px; background: var(--color-surface); }
+.sensorNavigation button { min-width: 0; min-height: 38px; padding: 6px 3px; border: 1px solid var(--color-border); border-radius: 4px; color: var(--color-heading); background: var(--color-input); }
+.imageComparison { display: grid; gap: 8px; }
+.imageComparison figure { display: grid; gap: 4px; min-width: 0; margin: 0; }
+.imageComparison figcaption { color: var(--color-text-muted); font-size: 12px; }
+.imageComparison img { width: 100%; height: 100px; object-fit: contain; background: var(--color-input); }
+.imageComparison svg { display: block; width: 100%; max-height: 220px; overflow: hidden; border: 1px solid var(--color-border); background: var(--color-input); }
+.transformDetails { padding-top: 8px; border-top: 1px solid var(--color-border); }
+.transformDetails[open] > :not(summary) { margin-top: 10px; }
+.transformJson { max-width: 100%; max-height: 220px; margin: 0; padding: 8px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--color-text-subtle); background: var(--color-input); font-size: 11px; line-height: 1.5; }
 
 @media (pointer: coarse) {
   .stepBody :where(button, summary, select),

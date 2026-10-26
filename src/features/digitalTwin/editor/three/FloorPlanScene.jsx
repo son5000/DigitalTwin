@@ -180,6 +180,7 @@ function clampToFootprint(position, structure, footprint, cellSize, snap = true)
 }
 
 export default function FloorPlanScene({
+  spaceName,
   building,
   floor,
   floors = [],
@@ -664,7 +665,7 @@ export default function FloorPlanScene({
     <section className={styles.viewport} aria-label="층별 도면 구성 화면">
       <div ref={containerRef} className={styles.canvasMount} />
       <div className={styles.sceneMeta} data-camera-safe-ui>
-        <div className={styles.context}><strong>{building?.name ?? "건축물 미선택"}</strong><span>{floor?.name ?? "층 미선택"}</span></div>
+        <div className={styles.context}><strong>{spaceName || building?.name || "건축물 미선택"}</strong>{!spaceName ? <span>{floor?.name ?? "층 미선택"}</span> : null}</div>
         <div className={styles.mode}>{footprint.width.toFixed(1)} × {footprint.depth.toFixed(1)} m · 연결 {buildingVerticalStructureCount}</div>
         <div className={styles.legend}><span className={styles.floorKey} /> 바닥 <span className={styles.openingKey} /> 개구부</div>
         <div className={styles.viewRotation} role="group" aria-label="2D 도면 보기 회전">

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { WORLD_WIZARD_STEPS } from "@/features/digitalTwin/editor/constants/worldWizard";
 import {
@@ -13,7 +13,16 @@ import {
 
 import styles from "./ObservationScopeSelector.module.css";
 
-export default function ObservationScopeSelector({ onSelect, currentScopeType = null, expansion = false, onCancel }) {
+export default function ObservationScopeSelector({ onSelect, projectName, onProjectNameChange, currentScopeType = null, expansion = false, onCancel }) {
+  const nameInputRef = useRef(null);
+  const selectNamedScope = (scopeType, options) => {
+    if (!projectName.trim()) {
+      nameInputRef.current?.setCustomValidity("프로젝트명을 입력해 주세요.");
+      nameInputRef.current?.reportValidity();
+      return;
+    }
+    onSelect(scopeType, options);
+  };
   const [customSteps, setCustomSteps] = useState(OBSERVATION_ALL_STEP_IDS);
   const [customSelectionOpen, setCustomSelectionOpen] = useState(currentScopeType === OBSERVATION_SCOPE_TYPES.CUSTOM);
   const labels = useMemo(() => new Map(WORLD_WIZARD_STEPS.map((step) => [step.id, step.shortLabel])), []);
@@ -31,6 +40,12 @@ export default function ObservationScopeSelector({ onSelect, currentScopeType = 
         <h1 id="observation-scope-title">무엇을 관측하시겠습니까?</h1>
         <p>{expansion ? "현재 데이터는 그대로 유지됩니다. 필요한 범위와 단계를 추가하세요." : "관측 대상에 맞는 편집 화면만 열어 더 빠르게 시작할 수 있습니다."}</p>
       </div>
+      <label className={styles.projectName}>
+        <span>프로젝트명</span>
+        <input ref={nameInputRef} value={projectName} readOnly={expansion} required maxLength={100} placeholder="예: 생산동 설비 관측 공간"
+          onChange={(event) => { event.target.setCustomValidity(""); onProjectNameChange(event.target.value); }} />
+        <small>프로젝트 목록과 뷰어 트리의 최상단에 표시됩니다.</small>
+      </label>
       <div className={styles.grid}>
         {OBSERVATION_SCOPE_DEFINITIONS.map((definition) => {
           const isCurrent = definition.id === currentScopeType;
@@ -40,7 +55,7 @@ export default function ObservationScopeSelector({ onSelect, currentScopeType = 
               setCustomSelectionOpen(true);
               return;
             }
-            onSelect(definition.id, { activeStepIds: customSteps });
+            selectNamedScope(definition.id, { activeStepIds: customSteps });
           };
 
           return (
@@ -88,7 +103,7 @@ export default function ObservationScopeSelector({ onSelect, currentScopeType = 
           <button
             type="button"
             disabled={customSteps.length === 0 || currentScopeType === OBSERVATION_SCOPE_TYPES.CUSTOM}
-            onClick={() => onSelect(OBSERVATION_SCOPE_TYPES.CUSTOM, { activeStepIds: customSteps })}
+            onClick={() => selectNamedScope(OBSERVATION_SCOPE_TYPES.CUSTOM, { activeStepIds: customSteps })}
           >
             {expansion ? "선택한 단계로 확장" : "선택한 단계로 시작"}
           </button>

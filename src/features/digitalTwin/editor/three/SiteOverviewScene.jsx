@@ -2201,7 +2201,6 @@ export default function SiteOverviewScene({
       <div ref={containerRef} className={styles.canvasMount} />
       <div ref={observationLabelsRef} className={styles.observationLabels} aria-label="건축물 층별 정보" />
       {showSceneControls && <>
-      <div className={styles.sceneStatus}><span /> {viewMode === VIEW_MODES.LAYOUT_2D ? "평면 편집" : "공간 편집"}</div>
       {interactionMode === SITE_INTERACTION_MODES.EDIT_MOVEMENT_PATH ? (
         <div className={styles.movementEditStatus} role="status">
           <strong>지면을 클릭해 경유점을 추가하세요</strong>

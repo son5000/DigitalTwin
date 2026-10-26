@@ -176,19 +176,20 @@
 }
 
 .brandMark {
-  display: grid;
+  display: flex;
   flex: 0 0 auto;
-  width: 38px;
-  height: 38px;
-  place-items: center;
-  border: 1px solid rgb(var(--color-accent-rgb) / 52%);
-  border-radius: 5px;
-  color: var(--color-accent-strong);
-
-  font-size: var(--editor-font-size-xs);
-  letter-spacing: 0.08em;
-  background: rgb(var(--color-accent-rgb) / 12%);
+  width: 104px;
+  height: 30px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 5px;
+  border: 0;
+  border-radius: 4px;
+  background: #fff;
 }
+
+.brandLogo { display: block; width: 100%; height: 100%; object-fit: contain; }
 
 .brandCopy { display: grid; gap: 1px; line-height: 1; }
 .brandCopy strong { color: var(--color-heading); font-size: 13px; font-weight: var(--font-weight-semibold); letter-spacing: .01em; }
@@ -506,8 +507,8 @@
   }
 
   .brandMark {
-    width: 40px;
-    height: 40px;
+    width: 112px;
+    height: 32px;
   }
 
   .headerMeta { display: none; }
@@ -695,13 +696,17 @@
 .stageGuide button { max-width: none; min-height: 36px; box-shadow: none; }
 
 .workspaceControls {
-  top: 52px;
+  top: auto;
+  bottom: var(--editor-workspace-controls-bottom, 12px);
   right: 8px;
   left: var(--editor-overlay-left-safe);
-  width: auto;
-  max-width: none;
-  margin: 0;
-  overflow-x: auto;
+  width: fit-content;
+  max-width: calc(100% - var(--editor-overlay-left-safe) - 8px);
+  margin-inline: auto;
+  flex-wrap: wrap;
+  justify-content: center;
+  overflow: visible;
+  z-index: 6;
   background: var(--color-surface);
   box-shadow: none;
   scrollbar-width: thin;
@@ -733,7 +738,7 @@
   outline-offset: -2px;
 }
 
-.brandMark { width: 28px; height: 28px; border: 0; color: var(--color-text-muted); background: transparent; }
+.brandMark { width: 104px; height: 30px; border: 0; background: #fff; }
 .brandCopy span { font-size: 10px; color: var(--editor-panel-text-muted); }
 .headerMeta { display: block; overflow: hidden; text-overflow: ellipsis; }
 .mobilePanelTabs { display: none; }
@@ -751,7 +756,7 @@
   .workflowControls { min-width: 0; max-width: calc(100% - 72px); flex-wrap: wrap; }
   .workflowControls label { flex-wrap: wrap; }
   .workflowControls select { min-width: 120px; max-width: 100%; }
-  .workspaceControls { top: 52px; left: 8px; right: 8px; }
+  .workspaceControls { top: auto; left: 8px; right: 8px; max-width: calc(100% - 16px); }
   .floorSelectControl select { min-width: 120px; }
   .spreadControl input[type="range"] { width: 72px; }
   .shortcutHint { display: none; }
@@ -765,6 +770,20 @@
   .workspaceControls :where(button, select),
   .floatingPanelHost > :global([data-editor-panel]) > header button { min-width: 44px; min-height: 44px; }
 }
+
+@media (orientation: portrait), (max-width: 900px), (max-height: 820px) and (orientation: landscape) {
+  .workspaceControls { --editor-workspace-controls-bottom: 68px; left: 8px; right: 8px; max-width: calc(100% - 16px); }
+}
+
+.floorSelectControl { position: relative; display: block; }
+.floorSelectControl summary { display: flex; min-height: 32px; max-width: 220px; padding: 0 8px; align-items: center; gap: 8px; list-style: none; color: var(--color-heading); background: var(--color-input); border: 1px solid var(--color-border); border-radius: 4px; }
+.floorSelectControl summary::-webkit-details-marker { display: none; }
+.floorSelectControl summary span:first-of-type { overflow: hidden; text-overflow: ellipsis; }
+.floorOptions { position: absolute; bottom: calc(100% + 8px); left: 0; display: grid; width: max-content; min-width: 100%; max-width: min(260px, 70vw); max-height: min(240px, 35dvh); overflow-y: auto; padding: 4px; border: 1px solid var(--color-border-strong); border-radius: 4px; background: var(--color-surface); box-shadow: var(--shadow-panel); }
+.floorOptions button { text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.floorOptions button[aria-pressed="true"] { color: var(--color-accent-strong); background: var(--state-selected); }
+.projectBackButton { min-height: 36px; padding: 0 10px; border: 1px solid var(--color-border-strong); border-radius: 4px; color: var(--color-heading); background: var(--color-surface); font-size: 12px; white-space: nowrap; }
+.projectTitle { display: block; max-width: min(220px, 22vw); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 @media (min-width: 700px) and (max-width: 900px) and (orientation: landscape) {
   .workspace.panelOpen {

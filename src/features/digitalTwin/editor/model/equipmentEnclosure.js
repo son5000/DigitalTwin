@@ -32,13 +32,20 @@ export function getEnclosureBodyAppearance(equipment) {
 export function getEnclosure(equipment) {
   const source = equipment?.enclosure ?? {};
   const bodyAppearance = getEnclosureBodyAppearance(equipment);
+  const defaults = EQUIPMENT_SHAPE_TEMPLATE_MAP[equipment?.shapeTemplateId]?.defaultAppearance;
+  // Older equipment templates supplied 86% opacity even for opaque metals.
+  // Do not inherit that preview default into an otherwise opaque cabinet.
+  // Explicit enclosure/body-slot opacity and customized materials still win.
+  const legacyOpacity = bodyAppearance.opacity === .86 && defaults?.opacity === 1
+    && equipment?.appearanceSlots?.body?.opacity == null
+    && Object.entries(defaults).every(([key, value]) => ["color", "opacity", "showEdges"].includes(key) || bodyAppearance[key] === value);
   const width = clamp(source.width ?? equipment?.dimensions?.width, .05, 100, 1);
   const height = clamp(source.height ?? equipment?.dimensions?.height, .05, 100, 2);
   const depth = clamp(source.depth ?? equipment?.dimensions?.depth, .05, 100, .8);
   const thickness = clamp(source.thickness, .001, Math.min(width, height, depth) / 4, .02);
   return {
     enabled: source.enabled === true, width, height, depth, thickness,
-    opacity: clamp(source.opacity ?? bodyAppearance.opacity, .05, 1, 1),
+    opacity: clamp(source.opacity ?? (legacyOpacity ? 1 : bodyAppearance.opacity), .05, 1, 1),
     color: /^#[0-9a-f]{6}$/i.test(source.color ?? "") ? source.color : bodyAppearance.color ?? "#78909c",
     walls: Object.fromEntries(Object.keys(ENCLOSURE_WALLS).map((id) => [id, id === "front" ? source.walls?.front === true : source.walls?.[id] !== false])),
     ...doorSet(source, width - 2 * thickness, height - 2 * thickness, 1),

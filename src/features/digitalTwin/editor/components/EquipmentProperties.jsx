@@ -83,6 +83,7 @@ export default function EquipmentProperties({
   onOpenPartEditor,
   placementOnly = false,
   floors = [],
+  showPlacementOwnership = true,
   spaces = [],
 }) {
   const [uploadMessage, setUploadMessage] = useState("");
@@ -195,7 +196,7 @@ export default function EquipmentProperties({
         </label>
       </PropertySection>
 
-      {placementOnly ? (
+      {placementOnly && showPlacementOwnership ? (
         <PropertySection title="배치 소속" summary={floors.find((floor) => floor.id === equipment.floorId)?.name ?? "층 미지정"} defaultOpen>
           <label className={styles.textField}>
             <span>소속 층</span>

@@ -35,6 +35,8 @@ export function saveLayout(layout) {
   const payload = {
     version: 18,
     savedAt: new Date().toISOString(),
+    name: typeof layout.name === "string" ? layout.name.trim() : "",
+    projectStatus: layout.projectStatus ?? "DRAFT",
     hierarchy: layout.hierarchy,
     observationWorkflow: layout.observationWorkflow,
     viewerPreset: layout.viewerPreset,

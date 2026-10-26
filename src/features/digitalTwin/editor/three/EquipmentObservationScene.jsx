@@ -5,6 +5,7 @@ import { createSensorSceneLayer } from "./sensorSceneLayer";
 import ModelLayerControls from "../components/ModelLayerControls";
 import { applyModelLayerAppearance } from "./modelLayerAppearance";
 import { bindSensorProjectionLayer, projectionMeshes } from "./sensorProjectionLayer";
+import { imageSurfaceFromMesh } from "../model/textureSurfaceMapping";
 import { applyEquipmentEnvironment } from "./equipmentEnvironment";
 import { bindViewerCamera } from "./bindViewerCamera";
 import { invalidateWorldSnapshot, scheduleWorldSnapshot } from "./captureWorldSnapshot";
@@ -529,7 +530,7 @@ export default function EquipmentObservationScene({
       }
       if (projectionPickingRef.current) {
         const sensor = sensorStateRef.current.sensors.find((item) => item.id === projectionPickingRef.current);
-        const entry = renderedEquipment.get(sensor?.surfaceMount?.equipmentId ?? sensor?.equipmentIds?.[0]);
+        const entry = renderedEquipment.get(sensor?.textureProjection?.equipmentId ?? sensor?.equipmentIds?.[0]);
         if (!entry) return;
         const visible = (object) => { for (let current = object; current; current = current.parent) if (!current.visible) return false; return true; };
         const candidates = [["ACTUAL", entry.actual], ["PROXY", entry.proxy]].flatMap(([kind, model]) => projectionMeshes(model).map((item) => ({ ...item, kind })));
@@ -537,10 +538,12 @@ export default function EquipmentObservationScene({
         const target = hit && candidates.find((item) => item.object === hit.object);
         if (!target) { setPlacementNotice("영상이 표시될 부분을 선택하세요."); return; }
         const panel = hit.object.userData.enclosurePanel;
-        const normal = hit.face?.normal.clone().applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld)).transformDirection(entry.object.matrixWorld.clone().invert());
+        const normal = hit.face?.normal.clone().applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld))
+          .applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(entry.object.matrixWorld.clone().invert()));
         const surface = normal && getEnclosureSurfaces(entry.item).find((s) => (s.id === panel || (panel && s.id.startsWith(`${panel}-`))) && s.normal.dot(normal) > .9);
-        sensorCallbacksRef.current.onSensorChange?.(sensor.id, { textureProjection: { ...sensor.textureProjection, target: target.kind,
-          surfaceId: surface?.id ?? "", meshPath: target.kind === "ACTUAL" ? target.path : null, meshName: hit.object.name || "선택한 부분" } });
+        sensorCallbacksRef.current.onSensorChange?.(sensor.id, { textureProjection: { ...sensor.textureProjection, target: target.kind, equipmentId: entry.item.id,
+          surfaceId: surface?.id ?? "", meshPath: target.kind === "ACTUAL" ? target.path : null, meshName: hit.object.name || "선택한 부분",
+          surfaceMapping: surface ? null : imageSurfaceFromMesh(hit.object, entry.object, normal) } });
         setProjectionPicking(null); setPlacementNotice(""); return;
       }
       if (placingSensorRef.current) {

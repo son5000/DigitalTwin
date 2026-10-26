@@ -40,6 +40,7 @@ function getStructureFloorLabel(structure, floorNameById) {
 
 export default function FloorObjectList({
   floors = [],
+  showFloorLabels = true,
   structures = [],
   equipment = [],
   selectedStructureId,
@@ -67,10 +68,9 @@ export default function FloorObjectList({
             <button key={structure.id} type="button" className={selectedStructureId === structure.id ? styles.active : ""} aria-pressed={selectedStructureId === structure.id} onClick={() => onSelectStructure(structure)}>
               <span className={styles.icon}><WorldStructureTypeIcon definition={WORLD_STRUCTURE_TEMPLATE_MAP[structure.type]} size={17} /></span>
               <span>{structure.name}</span>
-              <small>{getStructureFloorLabel(structure, floorNameById)}</small>
+              {showFloorLabels ? <small>{getStructureFloorLabel(structure, floorNameById)}</small> : null}
             </button>
           ))}
-          {!visibleStructures.length ? <p>구조 오브젝트 없음</p> : null}
         </div>
       </section>
 
@@ -81,7 +81,7 @@ export default function FloorObjectList({
             <button key={item.id} type="button" className={selectedEquipmentId === item.id ? styles.active : ""} aria-pressed={selectedEquipmentId === item.id} onClick={() => onSelectEquipment(item)}>
               <span className={styles.icon}><EquipmentTemplateIcon template={UNIFIED_EQUIPMENT_TEMPLATE_MAP[item.shapeTemplateId]} size={17} /></span>
               <span>{item.name}</span>
-              <small>{floorNameById[item.floorId] ?? "층 미지정"}</small>
+              {showFloorLabels ? <small>{floorNameById[item.floorId] ?? "층 미지정"}</small> : null}
             </button>
           ))}
           {!visibleEquipment.length ? <p>설비 오브젝트 없음</p> : null}

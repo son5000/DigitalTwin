@@ -338,7 +338,7 @@ function SavedWorldViewer({ project, requestedEquipmentId, operationsSection, op
           <button type="button" data-parent={isolatedEquipmentView} onClick={isolatedEquipmentView ? showParentSpace : () => setEquipmentDetail(true)}><ChevronRightIcon size={14} />{isolatedEquipmentView ? tree.scope === "MULTI_EQUIPMENT" ? "전체 설비 보기" : "상위 공간 보기" : "설비 상세 보기"}</button>
         </nav>}
         {(showEquipment || equipmentDetail) && !detailEquipment.length && <p className={viewerStyles.empty} role="status">등록된 설비가 없습니다. 프로젝트 목록에서 편집하기로 설비를 추가하세요.</p>}
-        <WorldTreePanel tree={sidebarTree} snapshot={snapshot?.request === snapshotRequest ? snapshot : null} representativeImage={representativeImage} selectedKey={sidebarSelectedKey} selectionVersion={treeSelection.version} onSelect={selectTreeNode} />
+        <WorldTreePanel tree={sidebarTree} projectName={getProjectDetails(project).name} snapshot={snapshot?.request === snapshotRequest ? snapshot : null} representativeImage={representativeImage} selectedKey={sidebarSelectedKey} selectionVersion={treeSelection.version} onSelect={selectTreeNode} />
 
         <div className={portalStyles.sidebarFooter}><button type="button" onClick={goHome}>프로젝트 목록으로</button></div>
       </aside>

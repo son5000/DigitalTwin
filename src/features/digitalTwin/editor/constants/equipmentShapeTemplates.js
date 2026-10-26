@@ -29,16 +29,16 @@ const EQUIPMENT_MATERIAL_SLOTS = Object.freeze({
 });
 
 const APPEARANCE_PRESETS = {
-  BASIC: createMaterialAppearance("PAINTED_METAL", { color: "#5D8FA3", opacity: 0.86, showEdges: true }),
-  CABINET: createMaterialAppearance("PAINTED_METAL", { color: "#4B718C", opacity: 0.86, showEdges: true }),
-  MECHANICAL: createMaterialAppearance("PAINTED_METAL", { color: "#4F7F89", opacity: 0.86, showEdges: true }),
-  PIPE: createMaterialAppearance("GALVANIZED", { color: "#78909C", opacity: 0.86, showEdges: true }),
-  DUCT: createMaterialAppearance("GALVANIZED", { color: "#8A9DA4", opacity: 0.86, showEdges: true }),
-  TANK: createMaterialAppearance("STAINLESS", { color: "#8CA0A7", opacity: 0.86, showEdges: true }),
-  SAFETY: createMaterialAppearance("PAINTED_METAL", { color: "#D99A36", opacity: 0.86, showEdges: true }),
-  SENSOR: createMaterialAppearance("PLASTIC", { color: "#4C91C7", opacity: 0.86, showEdges: true }),
-  UTILITY: createMaterialAppearance("ALUMINUM", { color: "#829B8C", opacity: 0.86, showEdges: true }),
-  CUSTOM: createMaterialAppearance("PAINTED_METAL", { color: "#7A6E98", opacity: 0.86, showEdges: true }),
+  BASIC: createMaterialAppearance("PAINTED_METAL", { color: "#5D8FA3", showEdges: true }),
+  CABINET: createMaterialAppearance("PAINTED_METAL", { color: "#4B718C", showEdges: true }),
+  MECHANICAL: createMaterialAppearance("PAINTED_METAL", { color: "#4F7F89", showEdges: true }),
+  PIPE: createMaterialAppearance("GALVANIZED", { color: "#78909C", showEdges: true }),
+  DUCT: createMaterialAppearance("GALVANIZED", { color: "#8A9DA4", showEdges: true }),
+  TANK: createMaterialAppearance("STAINLESS", { color: "#8CA0A7", showEdges: true }),
+  SAFETY: createMaterialAppearance("PAINTED_METAL", { color: "#D99A36", showEdges: true }),
+  SENSOR: createMaterialAppearance("PLASTIC", { color: "#4C91C7", showEdges: true }),
+  UTILITY: createMaterialAppearance("ALUMINUM", { color: "#829B8C", showEdges: true }),
+  CUSTOM: createMaterialAppearance("PAINTED_METAL", { color: "#7A6E98", showEdges: true }),
 };
 
 function createTemplate({

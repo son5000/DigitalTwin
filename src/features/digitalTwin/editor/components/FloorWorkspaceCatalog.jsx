@@ -121,6 +121,7 @@ export default function FloorWorkspaceCatalog({
   mode,
   onModeChange,
   equipmentOnly = false,
+  showFloorControls = true,
   allowedStructureTemplateIds = [],
   activeStructureTemplateId,
   activeEquipmentTemplateId,
@@ -186,14 +187,14 @@ export default function FloorWorkspaceCatalog({
 
       <ObjectLibrarySearch value={query} resultCount={templates.length} onChange={setQuery} />
 
-      {!isEquipment && floorNavigator ? (
+      {showFloorControls && !isEquipment && floorNavigator ? (
         <details className={styles.floorConfiguration}>
           <summary><span>층 및 바닥</span><ChevronDownIcon size={15} /></summary>
           {floorNavigator}
         </details>
       ) : null}
 
-      {isEquipment && floors.length ? (
+      {showFloorControls && isEquipment && floors.length ? (
         <fieldset className={styles.floorTargets}>
           <legend>설비 배치 대상 층</legend>
           <div>

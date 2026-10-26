@@ -74,8 +74,13 @@ export default function ProjectsPage() {
             const details = getProjectDetails(project);
             return <article key={project.id} className={styles.card} aria-label={details.name}>
               <img className={styles.thumbnail} src={details.thumbnail} alt={`${details.scope} 미리보기`} width="800" height="480" />
-              <div className={styles.cardBody}><span className={styles.status}>{details.status}</span><h2>{details.name}</h2><p>{details.scope}</p><small>최근 수정 · {details.modified}</small>
-                <div className={styles.actions}><button className={styles.primary} onClick={() => navigateTo(`/viewer?project=${encodeURIComponent(project.id)}`)}>뷰어 열기</button><button onClick={() => enterProject(project.id)}>편집하기</button><button disabled={bundleState.busy} onClick={() => exportBundle(project)}>구성 내보내기</button></div>
+              <div className={styles.cardBody}><span className={styles.status} data-draft={details.isDraft}>{details.status}</span><h2>{details.name}</h2><p>{details.scope}</p><small>최근 수정 · {details.modified}</small>
+                <div className={styles.actions}>
+                  {details.isDraft ? <button className={styles.primary} onClick={() => enterProject(project.id)}>이어서 편집</button> : null}
+                  {project.layout.observationWorkflow?.configured !== false ? <button className={details.isDraft ? undefined : styles.primary} onClick={() => navigateTo(`/viewer?project=${encodeURIComponent(project.id)}`)}>뷰어 열기</button> : null}
+                  {!details.isDraft ? <button onClick={() => enterProject(project.id)}>편집하기</button> : null}
+                  <button disabled={bundleState.busy} onClick={() => exportBundle(project)}>구성 내보내기</button>
+                </div>
               </div>
             </article>;
           })}
