@@ -233,6 +233,15 @@
   outline-offset: 2px;
 }
 
+.scopeHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.scopeHeaderActions .themeToggle { margin-left: 0; }
+
 .workspace {
   position: relative;
   display: grid;

@@ -1,4 +1,4 @@
-.panel { display: grid; height: 100%; min-width: 0; min-height: 0; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto; overflow: hidden; }
+.panel { container-type: inline-size; display: grid; height: 100%; min-width: 0; min-height: 0; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto; overflow: hidden; }
 .panel > header { display: grid; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--color-border); background: var(--color-surface); }
 .panel > header span { color: var(--color-accent-strong); font-size: 12px; letter-spacing: .12em; }
 .panel > header h2 { margin: 0; overflow: hidden; color: var(--color-heading); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
@@ -137,6 +137,7 @@ details.settingsGroup[open] > :not(summary) + * { margin-top: 12px; }
 .sampleSource { display: grid; gap: 8px; }
 .sensorNavigation { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; position: sticky; top: -12px; z-index: 2; padding-block: 8px; background: var(--color-surface); }
 .sensorNavigation button { min-width: 0; min-height: 38px; padding: 6px 3px; border: 1px solid var(--color-border); border-radius: 4px; color: var(--color-heading); background: var(--color-input); }
+.sensorNavigation:has(> button:nth-child(4)) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .imageComparison { display: grid; gap: 8px; }
 .imageComparison figure { display: grid; gap: 4px; min-width: 0; margin: 0; }
 .imageComparison figcaption { color: var(--color-text-muted); font-size: 12px; }
@@ -150,4 +151,39 @@ details.settingsGroup[open] > :not(summary) + * { margin-top: 12px; }
   .stepBody :where(button, summary, select),
   .stepBody .field input,
   .stepBody .check { min-height: var(--editor-touch-target, 44px); }
+}
+
+/* A single reading order inside the existing inspector scroll area. */
+.requirements { margin: 0; padding: 8px 10px; border-left: 3px solid var(--color-accent); background: var(--state-selected); color: var(--color-text-subtle); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.sensorModelPreview { display: grid; place-items: center; min-height: 150px; background: var(--color-input); border: 1px solid var(--color-border); border-radius: 4px; overflow: hidden; }
+.sensorModelPreview canvas { display: block; width: 100% !important; max-width: 260px; height: auto !important; }
+.heatmapLegend { height: 14px; border-radius: 3px; }
+.coordinateList { padding-left: 20px; margin: 4px 0; font-size: 12px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.appearanceOptions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.appearanceOptions button { min-width: 0; }
+.appearanceOptions button:last-child { grid-column: 1 / -1; }
+.roiEditor { display: grid; min-width: 0; gap: 12px; align-content: start; }
+.roiEditor > * { min-width: 0; }
+.sectionHeading, .ruleHeading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; color: var(--color-heading); font-size: 13px; line-height: 1.5; }
+.sectionHeading > span, .ruleHeading > span { color: var(--color-text-subtle); font-size: 12px; overflow-wrap: anywhere; }
+.radiusControl { display: grid; grid-template-columns: 36px minmax(0, 1fr) 36px; align-items: end; gap: 8px; }
+.radiusControl > button { padding: 0; font-size: 18px; }
+.measurementCard > summary { overflow-wrap: anywhere; }
+.measurementCard > summary > small { display: block; margin: 4px 0 0 16px; color: var(--color-text-subtle); font-size: 12px; font-weight: 400; line-height: 1.5; }
+.ruleSection { display: grid; min-width: 0; gap: 8px; padding-top: 10px; border-top: 1px solid var(--color-border); }
+.ruleRow { display: grid; min-width: 0; gap: 8px; padding: 10px; border-left: 2px solid var(--color-border-strong); background: var(--color-input); }
+.ruleHeading button { flex: 0 0 auto; }
+.addMeasurementActions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.addMeasurementActions > button:first-child { grid-column: 1 / -1; }
+.roiEditor button { min-height: 36px; padding: 6px 8px; border: 1px solid var(--color-border); border-radius: 4px; color: var(--color-heading); background: var(--color-input); }
+.roiEditor .primaryAction { color: var(--color-accent-strong); border-color: var(--color-accent); background: var(--state-selected); }
+.roiEditor .removeAction { color: var(--color-text-muted); justify-self: start; }
+.sensorRemoveAction { justify-self: end; min-height: 36px; border: 1px solid var(--color-border); background: var(--color-input); color: var(--color-danger, var(--color-heading)); }
+[data-validation-error="true"] { outline: 2px solid var(--color-accent); outline-offset: 3px; scroll-margin-block: 64px; }
+.stepFooter p[role="alert"] { color: var(--color-heading); border-left: 3px solid var(--color-accent); padding-left: 8px; }
+@container (max-width: 280px) {
+  .roiEditor .rangeGrid, .appearanceOptions, .addMeasurementActions { grid-template-columns: minmax(0, 1fr); }
+}
+@media (pointer: coarse) {
+  .roiEditor button, .appearanceOptions button { min-height: 44px; }
 }

@@ -67,7 +67,7 @@ export default function SensorProjectionFields({ sensor, equipment, assets = [],
       {message && <p className={styles.help} role="status">{message}</p>}
     </div>}
     </fieldset>
-    <fieldset className={styles.settingsGroup}><legend>오브젝트 텍스처</legend>
+    <fieldset className={styles.settingsGroup} data-setup-field="sensor-texture"><legend>오브젝트 텍스처</legend>
     <label className={styles.check}><input type="checkbox" checked={p.enabled} onChange={(event) => update({ enabled: event.target.checked })} />영상·온도 분포 입히기</label>
     {p.enabled && <>
       <label className={styles.field}><span>표시할 데이터</span><select value={p.kind} onChange={(event) => update({ kind: event.target.value })}><option value="VISION">비전 영상</option><option value="THERMAL">열화상·온도 분포</option></select></label>

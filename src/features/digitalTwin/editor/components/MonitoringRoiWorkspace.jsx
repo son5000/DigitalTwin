@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import EquipmentObservationScene from "../three/EquipmentObservationScene";
 import useSensorProjectionFrames from "../store/useSensorProjectionFrames";
 import useRoiMonitoring from "../store/useRoiMonitoring";
-import { clampRoiRadius, createSurfaceRoi, getRoiReading, isSphereRoi, observationPointToRoi, roiToObservationPoint, ROI_METRICS, ROI_STATUSES } from "../model/roiMonitoring.js";
+import { clampRoiRadius, createSurfaceRoi, getRoiReading, isObservationRoi, observationPointToRoi, roiToObservationPoint, ROI_METRICS, ROI_STATUSES } from "../model/roiMonitoring.js";
 import { readProjects } from "@/features/portal/projects/projectRepository";
 import styles from "./MonitoringRoiWorkspace.module.css";
 import MonitoringDataPanel from "./MonitoringDataPanel";
@@ -82,10 +82,10 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
   const dirty = currentDraft && JSON.stringify(currentDraft) !== JSON.stringify(saved);
   const geometryChanged = Boolean(currentDraft?.surface?.model?.version && currentDraft.surface.model.version !== model.version);
   const rois = useMemo(() => currentDraft && !geometryChanged ? [...compatibleRois.filter((roi) => roi.id !== currentDraft.id), currentDraft] : compatibleRois, [compatibleRois, currentDraft, geometryChanged]);
-  const displayPoints = useMemo(() => editorMode ? sceneProps.observationPoints : rois.filter(isSphereRoi).map(roiToObservationPoint), [editorMode, sceneProps.observationPoints, rois]);
+  const displayPoints = useMemo(() => editorMode ? sceneProps.observationPoints : rois.filter(isObservationRoi).map(roiToObservationPoint), [editorMode, sceneProps.observationPoints, rois]);
   const readings = telemetry.status === "DISCONNECTED" ? monitoring.readings : telemetry.readings;
   const statuses = useMemo(() => Object.fromEntries(monitoring.rois.map((roi) => {
-    const status = isSphereRoi(roi) ? observationStatus(observationReadings(roiToObservationPoint(roi), sceneProps.sensors, compatibleRois.includes(roi) ? readings : [], telemetry.now)).level
+    const status = isObservationRoi(roi) ? observationStatus(observationReadings(roiToObservationPoint(roi), sceneProps.sensors, compatibleRois.includes(roi) ? readings : [], telemetry.now)).level
       : getRoiReading(roi, compatibleRois.includes(roi) ? readings.find((reading) => reading.roiId === roi.id) : null, telemetry.now).status;
     return [roi.id, ROI_STATUSES[status] ? status : "NO_DATA"];
   })), [monitoring.rois, compatibleRois, readings, telemetry.now, sceneProps.sensors]);
@@ -108,7 +108,7 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
   const mode = modeChoice?.equipmentId === equipmentId ? modeChoice.mode : availability.VISION ? "VISION" : "MODEL";
   const setMode = (next) => setModeChoice({ equipmentId, mode: next });
   const activeAlarms = telemetry.alarms.filter((alarm) => !alarm.acknowledgedAt);
-  const spherePoint = currentDraft && isSphereRoi(currentDraft) ? roiToObservationPoint(currentDraft) : null;
+  const spherePoint = currentDraft && isObservationRoi(currentDraft) ? roiToObservationPoint(currentDraft) : null;
   const currentRadius = spherePoint?.radius ?? radius;
   function resizeRoi(amount) {
     const next = clampRoiRadius(currentRadius + amount);
@@ -186,7 +186,7 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
         if (dirty && !window.confirm("저장하지 않은 ROI 설정을 버리고 새 영역을 지정하시겠습니까?")) return;
         setDraft(null); setDrawingFor(equipmentId); setNotice(""); setError("");
       }}>{drawing ? "영역 지정 취소" : "새 영역 지정"}</button>
-      {(drawing || spherePoint) && <div className={styles.radiusControl} role="group" aria-label="ROI 구체 크기">
+      {(drawing || spherePoint?.geometryType === "SPHERE") && <div className={styles.radiusControl} role="group" aria-label="ROI 구체 크기">
         <span>반경 <strong>{currentRadius.toFixed(2)} m</strong></span>
         <button type="button" aria-label="ROI 반경 줄이기" disabled={busy || currentRadius <= .01} onClick={() => resizeRoi(-.05)}>−</button>
         <button type="button" aria-label="ROI 반경 늘리기" disabled={busy || currentRadius >= 100} onClick={() => resizeRoi(.05)}>+</button>

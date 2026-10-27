@@ -28,7 +28,7 @@ export default function SensorMountFields({ equipment, sensor, onChange }) {
     const euler = new THREE.Euler().setFromQuaternion(rotation, "XYZ");
     update({ surfaceMount: null, mountMode: mode, position: { x: position.x, y: position.y, z: position.z }, rotation: { x: euler.x, y: euler.y, z: euler.z } });
   }
-  return <fieldset className={styles.settingsGroup}><legend>센서 부착 위치</legend>
+  return <fieldset className={styles.settingsGroup} data-setup-field="sensor-mount"><legend>센서 부착 위치 · 필수</legend>
     <p className={styles.help}>{frame ? `설비 기준좌표 v${frame.version} · 단위 m` : "2단계에서 설비 기준좌표를 먼저 적용하세요. 현재는 기존 모델 좌표입니다."}</p>
     <label className={styles.field}><span>설치 방식</span><select value={mount ? "SURFACE" : sensor.mountMode} onChange={(event) => event.target.value === "SURFACE" ? attach(surfaces[0]?.id) : detach(event.target.value)}><option value="SURFACE" disabled={!surfaces.length}>외관 표면에 부착</option><option value="EQUIPMENT">설비 기준 좌표</option><option value="WORLD">외부 구조물 · 월드 좌표</option></select></label>
     {mount ? <>

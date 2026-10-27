@@ -36,7 +36,7 @@ export default function EquipmentModelSetupPanel({ workspaceViewControllerRef, e
         <div className={styles.actionRow}>{[["x", "앞뒤 기울이기"], ["y", "정면 돌리기"], ["z", "좌우 기울이기"]].map(([axis, label]) => <button key={axis} type="button" onClick={() => align({ rotation: { [axis]: alignment.rotation[axis] + Math.PI / 2 } })}>{label} 90°</button>)}<button type="button" onClick={() => align({ rotation: { x: 0, y: 0, z: 0 } })}>회전 초기화</button></div>
       </> : <p className={styles.help}>1단계에서 OBJ 또는 PLY 모델을 등록하세요.</p>}
     </fieldset>
-    <fieldset className={styles.settingsGroup}><legend>2. 실제 크기·모델 배율</legend>
+    <fieldset className={styles.settingsGroup} data-setup-field="model-size"><legend>2. 실제 크기·모델 배율 · 필수</legend>
       {alignment && <>
         <strong>업로드 모델 자체 크기</strong>
         <div className={styles.rangeGrid}>{[["width", "메시 가로 X"], ["height", "메시 높이 Y"], ["depth", "메시 깊이 Z"]].map(([key, label]) => <NumericField displayPrecision={2} key={key} label={label} unit="m" min={0.001} step={0.01} value={alignment.targetDimensions?.[key] ?? equipment.dimensions[key]} onChange={(value) => { if (value > 0) align({ targetDimensions: { ...equipment.dimensions, ...alignment.targetDimensions, [key]: value }, fitToProxy: true, fitDimension: "EXACT", scale: { x: 1, y: 1, z: 1 } }); }} />)}</div>
@@ -49,7 +49,7 @@ export default function EquipmentModelSetupPanel({ workspaceViewControllerRef, e
       </>}
       <details><summary>기준 설비 도형 크기</summary><div className={styles.rangeGrid}>{[["width", "가로 X"], ["height", "높이 Y"], ["depth", "깊이 Z"]].map(([key, label]) => <NumericField displayPrecision={2} key={key} label={label} unit="m" min={0.001} step={0.01} value={equipment.dimensions[key]} onChange={(value) => { if (value > 0) onUpdateEquipment({ dimensions: { ...equipment.dimensions, [key]: value } }); }} />)}</div></details>
     </fieldset>
-    {alignment && <fieldset className={styles.settingsGroup}><legend>3. 모델 위치·바닥 정렬</legend>
+    {alignment && <fieldset className={styles.settingsGroup} data-setup-field="model-alignment"><legend>3. 모델 위치·바닥 정렬 · 정합 확인 필수</legend>
       <div className={styles.rangeGrid}>{["x", "y", "z"].map((axis) => <NumericField displayPrecision={2} key={axis} label={`${axis.toUpperCase()} 위치`} unit="m" step={0.01} value={alignment.position[axis]} onChange={(value) => align({ position: { [axis]: value } })} />)}</div>
       <div className={styles.checkGrid}>{[["autoCentered", "원본 중심 정렬"], ["floorAligned", "원본 바닥 정렬"], ["completed", "모델 정합 완료"]].map(([key, label]) => <label className={styles.check} key={key}><input type="checkbox" checked={alignment[key]} onChange={(event) => align({ [key]: event.target.checked })} />{label}</label>)}</div>
       <button type="button" onClick={() => cameraAction("floor")}>현재 방향으로 바닥에 놓기</button>

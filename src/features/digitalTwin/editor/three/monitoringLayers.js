@@ -1,10 +1,11 @@
 import * as THREE from "three";
 import { resultPositionToModel } from "../model/equipmentCoordinateFrame.js";
 import { isFreshMeasurement, mediaUrl } from "../model/monitoringContract.js";
+import { createSensorHeatmap } from "./sensorHeatmap.js";
 
 // Server-generated UV textures only. Do not infer UVs or sensor measurements.
-export function bindMonitoringLayers({ renderedEquipment, getOptions }) {
-  let identity = "", generation = 0, disposed = false, previousOptions, previousModel, previousSecond;
+export function bindMonitoringLayers({ renderedEquipment, getOptions, getSensors = () => [] }) {
+  let identity = "", generation = 0, disposed = false, previousOptions, previousModel, previousSecond, previousSensors;
   const overlays = [], textures = [];
   function clear() {
     generation++;
@@ -14,9 +15,11 @@ export function bindMonitoringLayers({ renderedEquipment, getOptions }) {
   return {
     update() {
       const options = getOptions(), entry = renderedEquipment.get(options.equipmentId);
+      const sensors = getSensors();
       const model = entry?.actual?.visible ? entry.actual : entry?.proxy;
       const second = Math.floor((options.now ?? Date.now()) / 1000);
-      if (options === previousOptions && model === previousModel && second === previousSecond) return;
+      if (options === previousOptions && model === previousModel && second === previousSecond && sensors === previousSensors) return;
+      previousSensors = sensors;
       previousOptions = options; previousModel = model; previousSecond = second;
       const representation = entry?.actual?.visible ? "ACTUAL" : "PROXY";
       const records = (options.textures ?? []).filter((record) => record.kind === options.mode && record.mapping === "UV");
@@ -24,7 +27,7 @@ export function bindMonitoringLayers({ renderedEquipment, getOptions }) {
         && record.modelVersion === options.model?.version && record.representation === representation);
       const mismatched = !valid.length && (records ?? []).some((record) => record.equipmentId === options.equipmentId && isFreshMeasurement(record, options.now) && (record.modelVersion !== options.model?.version || record.representation !== representation));
       const hotspots = (options.hotspots ?? []).filter((record) => record.equipmentId === options.equipmentId && isFreshMeasurement(record, options.now) && record.modelVersion === options.model?.version && record.representation === representation);
-      const next = JSON.stringify([model?.uuid, options.mode, options.opacity, valid, hotspots, options.equipment?.metadata?.coordinateFrame, options.point, mismatched]);
+      const next = JSON.stringify([model?.uuid, options.mode, options.opacity, valid, hotspots, sensors.map((sensor) => [sensor.id, sensor.serverSensorId, sensor.heatmap]), options.equipment?.metadata?.coordinateFrame, options.point, mismatched]);
       if (next === identity) return;
       identity = next; clear();
       if (!entry || !model) return;
@@ -40,7 +43,15 @@ export function bindMonitoringLayers({ renderedEquipment, getOptions }) {
       for (const hotspot of hotspots) {
         try {
           const position = options.demo ? hotspot.position : resultPositionToModel(hotspot, options.equipment ?? entry.item);
-          sphere(position, 0xff763b, Number.isFinite(hotspot.radius) ? Math.max(.005, Math.min(10, hotspot.radius)) : .05);
+          const sensor = sensors.find((item) => item.equipmentIds?.includes(options.equipmentId)
+            && (hotspot.bindingId === item.id || (hotspot.sensorId && hotspot.sensorId === item.serverSensorId)));
+          let normal;
+          if (Array.isArray(hotspot.normal) && hotspot.normal.length === 3 && hotspot.normal.every(Number.isFinite) && Math.hypot(...hotspot.normal) > 1e-6) {
+            normal = new THREE.Vector3(...hotspot.normal);
+            if (hotspot.coordinateFrame) normal.applyEuler(new THREE.Euler(...hotspot.coordinateFrame.rotation));
+          }
+          const object = createSensorHeatmap(sensor?.heatmap ?? { radius: hotspot.radius }, position, normal);
+          entry.object.add(object); overlays.push(object);
         } catch (error) { options.onLayerError?.(error.message); }
       }
       if (!["VISION", "THERMAL"].includes(options.mode)) return;

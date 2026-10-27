@@ -7,7 +7,7 @@ import {
   ASSET_SOURCE_TYPES, ASSET_TYPES, ASSET_USAGE_TYPES,
   createCabinetSampleBindings, createEquipmentAssetBinding, createId,
   isCabinetEquipment, normalizeEquipmentDetailSnapshot,
-  normalizeObservationPoint, normalizeSensorBinding,
+  normalizeObservationPoint, normalizeSensorBinding, detachObservationSensor,
 } from "@/features/digitalTwin/editor/model/equipmentDetailModel";
 
 export default function useMonitoringState({ equipment }) {
@@ -97,12 +97,12 @@ export default function useMonitoringState({ equipment }) {
     } : item.alignmentTransform,
   } : item)), []);
 
-  const addObservationPoint = useCallback((equipmentId, localPosition = { x: 0, y: 0.5, z: 0 }) => {
+  const addObservationPoint = useCallback((equipmentId, localPosition = { x: 0, y: 0.5, z: 0 }, geometry = {}) => {
     if (!equipmentId) return null;
     const id = createId("OBSERVATION_POINT");
     setObservationPoints((items) => [...items, normalizeObservationPoint({
       id, equipmentId, targetPartId: null, name: `관측 영역 ${items.filter((item) => item.equipmentId === equipmentId).length + 1}`,
-      description: "", localPosition, targetNormal: { x: 0, y: 0, z: 1 }, sensorIds: [], metric: "TEMPERATURE", unit: "°C",
+      description: "", localPosition, targetNormal: geometry.targetNormal ?? { x: 0, y: 0, z: 1 }, geometryType: geometry.geometryType, sensorIds: [], metric: "TEMPERATURE", unit: "°C",
       normalRange: { min: 0, max: 60 }, warningRange: { min: 60, max: 80 }, dangerRange: { min: 80, max: 120 },
     })]);
     setSelectedObservationPointId(id);
@@ -143,11 +143,21 @@ export default function useMonitoringState({ equipment }) {
 
   const updateMonitoringDevice = useCallback((id, changes) => setSensorBindings((items) => items.map((item) => item.id === id ? normalizeSensorBinding({
     ...item, ...changes,
+    heatmap: changes.heatmap ? { ...item.heatmap, ...changes.heatmap } : item.heatmap,
     sensorType: changes.sourceType ?? changes.sensorType ?? item.sensorType,
     calibrationConfirmed: ["surfaceMount", "position", "rotation", "mountMode", "fieldOfView", "aspectRatio", "near", "far", "capabilities"].some((key) => key in changes) ? false : changes.calibrationConfirmed ?? item.calibrationConfirmed,
     position: changes.position ? { ...item.position, ...changes.position } : item.position,
     rotation: changes.rotation ? { ...item.rotation, ...changes.rotation } : item.rotation,
   }) : item)), []);
+
+  const removeMonitoringDevice = useCallback((id) => {
+    if (!id || !sensorBindings.some((sensor) => sensor.id === id)) return;
+    setSensorBindings((items) => items.filter((sensor) => sensor.id !== id));
+    setServerBindings((items) => items.filter((binding) => binding.sourceDeviceId !== id));
+    setObservationPoints((items) => items.map((point) => detachObservationSensor(point, id)));
+    setSelectedSensorBindingId((current) => current === id ? null : current);
+    setSelectedServerBindingId((current) => serverBindings.some((binding) => binding.id === current && binding.sourceDeviceId === id) ? null : current);
+  }, [sensorBindings, serverBindings]);
 
   const addMonitoringBinding = useCallback((input) => {
     const { equipmentId, observationPointId = null, targetPartId = null, sourceDeviceId, metric = "TEMPERATURE", unit = "°C" } = input;
@@ -208,7 +218,7 @@ export default function useMonitoringState({ equipment }) {
       ensureEquipmentDetail,
       addAssetBinding, updateAssetBinding, selectAssetBinding: setSelectedAssetBindingId,
       addObservationPoint, updateObservationPoint, removeObservationPoint, selectObservationPoint: setSelectedObservationPointId,
-      addMonitoringDevice, updateMonitoringDevice, selectMonitoringDevice: setSelectedSensorBindingId,
+      addMonitoringDevice, updateMonitoringDevice, removeMonitoringDevice, selectMonitoringDevice: setSelectedSensorBindingId,
       addMonitoringBinding, updateMonitoringBinding, selectMonitoringBinding: setSelectedServerBindingId,
       hydrateMonitoringState, resetMonitoringState, removeEquipmentMonitoringData,
     },

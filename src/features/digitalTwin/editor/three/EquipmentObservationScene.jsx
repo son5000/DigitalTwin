@@ -12,6 +12,7 @@ import { invalidateWorldSnapshot, scheduleWorldSnapshot } from "./captureWorldSn
 import { SCENE_THEMES } from "@/features/digitalTwin/editor/constants/sceneThemes";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
+import { planeOrientation } from "../model/observationGeometry.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { createDualTransformControls, attachDualTransformControls, disposeDualTransformControls, detachDualTransformControls, setDualTransformDragging, dualTransformIsActive } from "./dualTransformControls";
 
@@ -163,7 +164,7 @@ export default function EquipmentObservationScene({
   const sensorStateRef = useRef(null);
   const readingsRef = useRef(null);
   const sensorCallbacksRef = useRef({ onSensorSelect, onSensorChange });
-  useEffect(() => { sensorStateRef.current = { sensors, observationPoints, bindings, selectedSensorId, selectedPointId, pointEditing, transformTools, previewReadings }; }, [sensors, observationPoints, bindings, selectedSensorId, selectedPointId, pointEditing, transformTools, previewReadings]);
+  useEffect(() => { sensorStateRef.current = { sensors, observationPoints, bindings, selectedSensorId, selectedPointId, pointEditing, transformTools, previewReadings, editorStage }; }, [sensors, observationPoints, bindings, selectedSensorId, selectedPointId, pointEditing, transformTools, previewReadings, editorStage]);
   useEffect(() => { sensorCallbacksRef.current = { onSensorSelect, onSensorChange }; }, [onSensorSelect, onSensorChange]);
   const lightingRef = useRef(normalizeScanLighting(viewerPreset?.lighting));
   useEffect(() => { lightingRef.current = normalizeScanLighting(viewerPreset?.lighting); }, [viewerPreset?.lighting]);
@@ -451,7 +452,7 @@ export default function EquipmentObservationScene({
     syncSensors();
 
     root.traverse((object) => {
-      if (!object.isMesh) return;
+      if (!object.isMesh || object.userData.monitoringOverlay) return;
       object.castShadow = true;
       object.receiveShadow = true;
     });
@@ -463,7 +464,12 @@ export default function EquipmentObservationScene({
       if (event.value) pointerStart = null;
       if (event.value || !selectedMarker) return;
       if (selectedMarker.userData.observationPointId) {
-        pointOptionsRef.current?.onChange?.(selectedMarker.userData.observationPointId, { localPosition: { x: selectedMarker.position.x, y: selectedMarker.position.y, z: selectedMarker.position.z } }); return;
+        const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(selectedMarker.quaternion);
+        const xAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(selectedMarker.quaternion).applyQuaternion(planeOrientation(normal).invert());
+        pointOptionsRef.current?.onChange?.(selectedMarker.userData.observationPointId, {
+          localPosition: { x: selectedMarker.position.x, y: selectedMarker.position.y, z: selectedMarker.position.z },
+          ...(selectedMarker.geometry?.type === "PlaneGeometry" ? { targetNormal: { x: normal.x, y: normal.y, z: normal.z }, planeRotation: Math.atan2(xAxis.y, xAxis.x) } : {}),
+        }); return;
       }
       const sensor = sensorStateRef.current.sensors.find((item) => item.id === selectedMarker.userData.sensorId);
       if (sensor?.surfaceMount) {
@@ -517,12 +523,14 @@ export default function EquipmentObservationScene({
           const candidates = [entry.actual, entry.proxy].filter((object) => object?.visible);
           const hit = raycaster.intersectObjects(candidates, true).find((hit) => {
             if (!hit.object.isMesh && !hit.object.isPoints) return false;
-            for (let object = hit.object; object; object = object.parent) if (!object.visible) return false;
+            for (let object = hit.object; object; object = object.parent) if (!object.visible || object.userData.monitoringOverlay || object.userData.sensorId) return false;
             return true;
           });
           if (!hit) return;
           const position = entry.object.worldToLocal(hit.point.clone());
-          pointOptions.onAdd?.(entry.item.id, { x: position.x, y: position.y, z: position.z }); pointOptions.onPlaced?.(); return;
+          const localMatrix = entry.object.matrixWorld.clone().invert().multiply(hit.object.matrixWorld);
+          const normal = (hit.face?.normal?.clone() ?? new THREE.Vector3(0, 0, 1)).applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(localMatrix));
+          pointOptions.onAdd?.(entry.item.id, { x: position.x, y: position.y, z: position.z }, { x: normal.x, y: normal.y, z: normal.z }); pointOptions.onPlaced?.(); return;
         }
         const id = pointHit();
         if (id) pointOptions.onSelect?.(id);
@@ -655,7 +663,7 @@ export default function EquipmentObservationScene({
     }
     if (viewSensor && viewMarker) applySensorView(camera, viewMarker, viewSensor);
     const worldBounds = new THREE.Box3().setFromObject(root).union(new THREE.Box3().setFromObject(floor));
-    const monitoringLayers = bindMonitoringLayers({ renderedEquipment, getOptions: () => monitoringOptionsRef.current ?? {} });
+    const monitoringLayers = bindMonitoringLayers({ renderedEquipment, getOptions: () => monitoringOptionsRef.current ?? {}, getSensors: () => sensorStateRef.current?.sensors ?? [] });
     const projectionLayer = bindSensorProjectionLayer({ renderer, renderedEquipment, markers: sensorMarkers,
       getOptions: () => monitoringOptionsRef.current, getSensors: () => sensorStateRef.current?.sensors, onError: setProjectionNotice });
     const disconnectViewerCamera = bindViewerCamera(controls, (...args) => sceneInputsRef.current.onCameraControlsChange?.(...args), (...args) => sceneInputsRef.current.onZoomChange?.(...args));
@@ -841,7 +849,7 @@ export default function EquipmentObservationScene({
       {sensors.find((sensor) => sensor.id === selectedSensorId)?.textureProjection?.enabled && <button type="button" aria-pressed={projectionPicking === selectedSensorId} onClick={() => { setProjectionPicking(projectionPicking === selectedSensorId ? null : selectedSensorId); setPlacingSensorId(null); setPlacementNotice(""); }}>{projectionPicking === selectedSensorId ? "적용면 선택 취소" : "영상 적용면 선택"}</button>}
       {(placingSensorId === selectedSensorId || projectionPicking === selectedSensorId) && <span role="status">{placementNotice || (projectionPicking ? "영상이 표시될 부분을 클릭하세요." : "벽이나 문의 부착 위치를 클릭하세요.")}</span>}
     </div>}
-    {pointOptions?.placing && <><InteractionGuide message="모델 표면을 클릭해 관측 영역을 놓으세요." /><div className={styles.surfacePlacement} data-camera-safe-ui><button type="button" onClick={pointOptions.onPlaced}>영역 지정 취소</button></div></>}
+    {pointOptions?.placing && <><InteractionGuide message={pointOptions.placementLabel ?? "모델 표면을 클릭해 관측 영역을 놓으세요."} /><div className={styles.surfacePlacement} data-camera-safe-ui><button type="button" onClick={pointOptions.onPlaced}>영역 지정 취소</button></div></>}
     {(placingSensorId === selectedSensorId || projectionPicking === selectedSensorId) && selectedSensorId && <InteractionGuide key={projectionPicking ? "projection" : "sensor"} message={projectionPicking ? "영상이 표시될 모델 표면을 클릭하세요." : "센서를 부착할 모델 표면을 클릭하세요."} />}
     {projectionNotice && <div className={styles.projectionNotice} role="status" data-camera-safe-ui>{projectionNotice}</div>}
     {!overview && hasVisibleEnclosure && <EnclosureDoorControls equipment={displayedDoorEquipment} onToggle={(index, open, side) => setDoorOverrides((current) => ({ ...current, [doorEquipment.id]: enclosureDoorOverride(doorEquipment, displayedDoorEquipment, index, open, side) }))} />}

@@ -1,4 +1,5 @@
 import { getEquipmentCoordinateFrame, mapSurfaceCoordinates, validateCoordinateFrame } from "./equipmentCoordinateFrame.js";
+import { observationPlane, planeFields } from "./observationGeometry.js";
 
 export function roiToReferencePayload(roi, equipment) {
   const coordinateFrame = getEquipmentCoordinateFrame(equipment);
@@ -23,6 +24,9 @@ export const ROI_METRICS = Object.freeze([
   { id: "temperature.avg", label: "평균 온도", unit: "℃" },
   { id: "ultrasound.db", label: "초음파", unit: "dB" },
   { id: "vision.changePercent", label: "영상 변화율", unit: "%" },
+  // Detection is configured per ROI, independently of device appearance/capabilities.
+  { id: "vision.gaugeValue", label: "게이지 감지", unit: "" },
+  { id: "vision.switchState", label: "스위치 상태 감지", unit: "" },
 ]);
 
 export const ROI_STATUSES = Object.freeze({
@@ -40,14 +44,15 @@ export function createSurfaceRoi(equipmentId, surface) {
 }
 
 export const isSphereRoi = (roi) => roi?.surface?.type === "SPHERE";
+export const isObservationRoi = (roi) => ["SPHERE", "PLANE"].includes(roi?.surface?.type);
 export const clampRoiRadius = (radius) => Math.max(.01, Math.min(100, Math.round(radius * 1000) / 1000));
 
 // The editor and viewer use the same equipment-local sphere and measurement IDs.
 export function observationPointToRoi(point) {
   return {
     id: point.id, equipmentId: point.equipmentId, name: point.name, revision: point.revision ?? 0,
-    surface: { type: "SPHERE", coordinateSpace: "EQUIPMENT_LOCAL", representation: point.representation ?? "BOTH",
-      center: [point.localPosition.x, point.localPosition.y, point.localPosition.z], radius: point.radius ?? .15,
+    surface: { ...(point.geometryType === "PLANE" ? observationPlane(point) : { type: "SPHERE", center: [point.localPosition.x, point.localPosition.y, point.localPosition.z], radius: point.radius ?? .15 }),
+      coordinateSpace: "EQUIPMENT_LOCAL", representation: point.representation ?? "BOTH",
       ...(point.model ? { model: point.model } : {}) },
     opacity: point.opacity ?? .25, measurements: point.measurements ?? [], observationPoint: point,
     displayMetrics: [], rules: [], monitoringEnabled: false,
@@ -57,7 +62,8 @@ export function observationPointToRoi(point) {
 export function roiToObservationPoint(roi) {
   const [x, y, z] = roi.surface.center;
   return { ...roi.observationPoint, id: roi.id, equipmentId: roi.equipmentId, name: roi.name, revision: roi.revision,
-    geometryType: "SPHERE", localPosition: { x, y, z }, radius: roi.surface.radius, opacity: roi.opacity ?? .25,
+    geometryType: roi.surface.type === "PLANE" ? "PLANE" : "SPHERE", localPosition: { x, y, z }, radius: roi.surface.radius, opacity: roi.opacity ?? .25,
+    ...(roi.surface.type === "PLANE" ? planeFields(roi.surface) : {}),
     representation: roi.surface.representation, ...(roi.surface.model ? { model: roi.surface.model } : {}), measurements: roi.measurements ?? [],
     sensorIds: [...new Set((roi.measurements ?? []).map((item) => item.sensorId).filter(Boolean))] };
 }
@@ -69,17 +75,27 @@ export function roiAudioSelection(roi, equipment) {
     representation: roi.surface.representation, surface: payload.surface };
 }
 
+function validPlane(surface) {
+  if (!Array.isArray(surface.vertices) || surface.vertices.length !== 4 || surface.vertices.some((v) => !Array.isArray(v) || v.length !== 3 || !v.every(Number.isFinite))) return false;
+  const fields = planeFields(surface);
+  if (![fields.planeWidth, fields.planeHeight].every((n) => Number.isFinite(n) && n >= .01 && n <= 100)) return false;
+  const expected = observationPlane({ ...fields, localPosition: { x: surface.center[0], y: surface.center[1], z: surface.center[2] } });
+  return surface.vertices.every((vertex, i) => vertex.every((v, axis) => Math.abs(v - expected.vertices[i][axis]) < 1e-5))
+    && JSON.stringify(surface.outline) === "[0,1,2,3]" && JSON.stringify(surface.triangles) === "[0,1,2,0,2,3]";
+}
+
 export function validateRoi(roi) {
   if (!roi?.id || !roi.equipmentId || !roi.name?.trim()) throw new Error("ROI 이름과 대상 설비를 확인하세요.");
   if (!Number.isInteger(roi.revision) || roi.revision < 0) throw new Error("ROI 변경 버전을 확인하세요.");
   const surface = roi.surface;
-  if (isSphereRoi(roi)) {
+  if (isObservationRoi(roi)) {
     if (surface.coordinateSpace !== "EQUIPMENT_LOCAL" || !["ACTUAL", "PROXY", "BOTH"].includes(surface.representation)
       || !Array.isArray(surface.center) || surface.center.length !== 3 || !surface.center.every(Number.isFinite)
-      || !Number.isFinite(surface.radius) || surface.radius < .01 || surface.radius > 100
+      || (isSphereRoi(roi) && (!Number.isFinite(surface.radius) || surface.radius < .01 || surface.radius > 100))
+      || (surface.type === "PLANE" && !validPlane(surface))
       || !Array.isArray(roi.measurements) || roi.measurements.some((item) => !item.id || !item.metric || !Array.isArray(item.rules)
         || item.rules.some((rule) => !["gt", "gte", "lt", "lte"].includes(rule.operator) || !Number.isFinite(rule.threshold) || !["WARNING", "DANGER"].includes(rule.severity)))) {
-      throw new Error("관측 영역의 위치, 반경과 측정 항목을 확인하세요.");
+      throw new Error("관측 영역의 위치, 크기와 측정 항목을 확인하세요.");
     }
     return { ...roi, name: roi.name.trim() };
   }

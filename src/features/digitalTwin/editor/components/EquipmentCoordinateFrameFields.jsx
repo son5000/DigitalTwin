@@ -62,7 +62,7 @@ export default function EquipmentCoordinateFrameFields({ equipment, binding, cam
   }
   const degrees = Math.round(yaw * 180 / Math.PI * 1000) / 1000;
   const preset = [0, 90, 180, -90].includes(degrees) ? String(degrees) : "CUSTOM";
-  return <fieldset className={styles.settingsGroup}><legend>4. 설비 기준좌표 · 센서·ROI 공통</legend>
+  return <fieldset className={styles.settingsGroup} data-setup-field="coordinate-frame"><legend>4. 설비 기준좌표 · 필수</legend>
     <p className={styles.help}>위쪽은 +Y입니다. 정면과 원점을 지정한 뒤 적용하세요.</p>
     <label className={styles.field}><span>설비 정면 방향</span><select value={preset} onChange={(event) => { if (event.target.value !== "CUSTOM") changeFront(Number(event.target.value) * Math.PI / 180); }}><option value="0">+Z 방향을 정면으로</option><option value="90">+X 방향을 정면으로</option><option value="180">−Z 방향을 정면으로</option><option value="-90">−X 방향을 정면으로</option><option value="CUSTOM">사용자 지정 각도</option></select></label>
     <NumericField label="정면 회전각 · Y축" unit="°" step={1} value={degrees} onChange={(value) => changeFront(value * Math.PI / 180)} />

@@ -6,6 +6,8 @@ import { normalizeObservationPoint, getSensorCapabilities } from "../model/equip
 import { createSensorMarker } from "./sensorPresentation.js";
 import { disposeObject3D } from "./disposeObject3D.js";
 import { createRoiOverlay } from "./roiOverlay.js";
+import { planeOrientation } from "../model/observationGeometry.js";
+import { createSensorHeatmap } from "./sensorHeatmap.js";
 
 // Own only sensor markers, point markers and links. Never dispose equipment/scans.
 export function createSensorSceneLayer({ root, renderedEquipment, origin, addCameraFrustum = () => {} }) {
@@ -17,7 +19,7 @@ export function createSensorSceneLayer({ root, renderedEquipment, origin, addCam
     for (const object of objects) { object.removeFromParent(); disposeObject3D(object); }
     objects.length = 0; markers.clear(); pointMarkers.clear(); pointBadges.clear();
   }
-  function update({ sensors = [], observationPoints = [], bindings = [], selectedSensorId, selectedPointId, previewReadings, readings, now }) {
+  function update({ sensors = [], observationPoints = [], bindings = [], selectedSensorId, selectedPointId, previewReadings, readings, now, editorStage }) {
     clear();
     const sensorPositions = new Map();
     sensors.filter((sensor) => sensor.equipmentIds?.some((id) => renderedEquipment.has(id))).forEach((sensor) => {
@@ -40,6 +42,17 @@ export function createSensorSceneLayer({ root, renderedEquipment, origin, addCam
       sensorPositions.set(sensor.id, marker.getWorldPosition(new THREE.Vector3()));
       markers.set(sensor.id, marker);
       objects.push(marker);
+      if (editorStage === "SENSOR" && sensor.id === selectedSensorId && sensor.heatmap?.preview && getSensorCapabilities(sensor).includes("ULTRASONIC")) {
+        const previewEquipmentId = sensor.heatmap.equipmentId ?? sensor.equipmentIds[0];
+        const previewHost = sensor.equipmentIds.includes(previewEquipmentId) ? renderedEquipment.get(previewEquipmentId) : null;
+        if (previewHost) {
+          const p = sensor.heatmap.position;
+          const heatmap = createSensorHeatmap(sensor.heatmap, [p.x, p.y, p.z]);
+          heatmap.userData.sensorEquipmentId = previewEquipmentId;
+          heatmap.userData.samplePreview = true;
+          previewHost.object.add(heatmap); objects.push(heatmap);
+        }
+      }
     });
 
     const pointPositions = new Map();
@@ -47,7 +60,12 @@ export function createSensorSceneLayer({ root, renderedEquipment, origin, addCam
     observationPoints.filter((point) => renderedEquipment.has(point.equipmentId)).map(normalizeObservationPoint).forEach((point) => {
       const host = renderedEquipment.get(point.equipmentId);
       const position = new THREE.Vector3(Number(point.localPosition?.x) || 0, Number(point.localPosition?.y) || 0, Number(point.localPosition?.z) || 0);
-      const marker = new THREE.Mesh(new THREE.SphereGeometry(point.radius ?? .15, 24, 16), new THREE.MeshBasicMaterial({ color: point.id === selectedPointId ? 0x68d4ff : 0xffc14d, transparent: true, opacity: point.opacity ?? .25, depthWrite: false }));
+      const planar = point.geometryType === "PLANE";
+      const marker = new THREE.Mesh(planar ? new THREE.PlaneGeometry(point.planeWidth, point.planeHeight) : new THREE.SphereGeometry(point.radius ?? .15, 24, 16), new THREE.MeshBasicMaterial({ color: point.id === selectedPointId ? 0x68d4ff : 0xffc14d, transparent: true, opacity: point.opacity ?? .25, depthWrite: false, side: THREE.DoubleSide }));
+      if (planar) {
+        marker.quaternion.copy(planeOrientation(point.targetNormal, point.planeRotation));
+        marker.add(new THREE.LineSegments(new THREE.EdgesGeometry(marker.geometry), new THREE.LineBasicMaterial({ color: point.id === selectedPointId ? 0x68d4ff : 0xffc14d })));
+      }
       marker.position.copy(position);
       marker.userData.sensorEquipmentId = point.equipmentId;
       marker.userData.observationPointId = point.id;

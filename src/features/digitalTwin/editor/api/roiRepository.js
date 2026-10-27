@@ -1,4 +1,4 @@
-import { isSphereRoi, observationPointToRoi, roiToObservationPoint, roiFromReferencePayload, roiToReferencePayload, validateRoi } from "../model/roiMonitoring.js";
+import { isObservationRoi, observationPointToRoi, roiToObservationPoint, roiFromReferencePayload, roiToReferencePayload, validateRoi } from "../model/roiMonitoring.js";
 import { normalizeObservationPoint } from "../model/equipmentDetailModel.js";
 import { readProjects, updateProjectObservationPoints } from "../../../portal/projects/projectRepository.js";
 
@@ -44,22 +44,22 @@ export function createRoiRepository(projectId, storage = window.localStorage) {
       const existing = records.find((item) => item.id === roi.id);
       if ((existing?.revision ?? 0) !== roi.revision) throw new Error("다른 화면에서 변경했습니다. 목록을 새로고침하세요.");
       const saved = { ...roi, revision: roi.revision + 1, updatedAt: new Date().toISOString() };
-      if (isSphereRoi(saved)) {
+      if (isObservationRoi(saved)) {
         const point = normalizeObservationPoint(roiToObservationPoint(saved));
         updateProjectObservationPoints(projectId, (points) => [...points.filter((item) => item.id !== point.id), point], storage);
         window.dispatchEvent(new CustomEvent("digital-twin-roi-change", { detail: { projectId, point } }));
         return observationPointToRoi(point);
-      } else storage.setItem(roiStorageKey(projectId), JSON.stringify([...records.filter((item) => !isSphereRoi(item) && item.id !== roi.id), roiToReferencePayload(saved, equipment)]));
+      } else storage.setItem(roiStorageKey(projectId), JSON.stringify([...records.filter((item) => !isObservationRoi(item) && item.id !== roi.id), roiToReferencePayload(saved, equipment)]));
       return saved;
     },
     async remove(roi) {
       if (monitoringApiBase) return request(`${path}/${encodeURIComponent(roi.id)}`, { method: "DELETE", headers: { "If-Match": String(roi.revision) }, signal: AbortSignal.timeout(15000) });
       const records = readLocal();
       if (records.find((item) => item.id === roi.id)?.revision !== roi.revision) throw new Error("다른 화면에서 변경했습니다. 목록을 새로고침하세요.");
-      if (isSphereRoi(roi)) {
+      if (isObservationRoi(roi)) {
         updateProjectObservationPoints(projectId, (points) => points.filter((point) => point.id !== roi.id), storage);
         window.dispatchEvent(new CustomEvent("digital-twin-roi-change", { detail: { projectId, removedId: roi.id } }));
-      } else storage.setItem(roiStorageKey(projectId), JSON.stringify(records.filter((item) => !isSphereRoi(item) && item.id !== roi.id)));
+      } else storage.setItem(roiStorageKey(projectId), JSON.stringify(records.filter((item) => !isObservationRoi(item) && item.id !== roi.id)));
     },
     async readings(signal) {
       if (!monitoringApiBase) return [];

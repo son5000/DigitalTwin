@@ -1,3 +1,5 @@
+import { normalizeHeatmap } from "./sensorHeatmap.js";
+
 export const EQUIPMENT_DETAIL_VERSION = 1;
 
 export const ASSET_TYPES = Object.freeze({ OBJ: "OBJ", PLY: "PLY", IMAGE: "IMAGE", TEXTURE: "TEXTURE" });
@@ -6,7 +8,22 @@ export const ASSET_USAGE_TYPES = Object.freeze({ MODEL: "MODEL", POINT_CLOUD: "P
 export const EQUIPMENT_DISPLAY_MODES = Object.freeze({ PROXY: "PROXY", ACTUAL: "ACTUAL", COMPARE: "COMPARE", POINT_CLOUD: "POINT_CLOUD" });
 export const ALIGNMENT_UNITS = Object.freeze({ MM: "MM", CM: "CM", M: "M" });
 
-export const SENSOR_CAPABILITIES = Object.freeze({ ULTRASONIC: "초음파", THERMAL: "열화상", VISION: "비전 카메라", GAUGE: "게이지 감지", SWITCH: "스위치 감지" });
+// Legacy detection codes remain readable; new choices are device capabilities only.
+export const SENSOR_CAPABILITIES = Object.freeze({
+  ULTRASONIC: "초음파", THERMAL: "열화상", VISION: "비전 카메라", GAUGE: "게이지 감지", SWITCH: "스위치 감지",
+});
+export const SENSOR_DEVICE_CAPABILITIES = Object.freeze({ ULTRASONIC: "초음파", THERMAL: "열화상", VISION: "비전 카메라" });
+export const SENSOR_APPEARANCES = Object.freeze([
+  { id: "BULLET_CAMERA", label: "산업용 카메라", description: "차광 후드 · 렌즈 · 장착 브래킷" },
+  { id: "DOME_CAMERA", label: "돔 카메라", description: "원형 베이스 · 회전 헤드 · 적외선 링" },
+  { id: "BOX_SENSOR", label: "직사각 센서", description: "금속 하우징 · 표시창 · 커넥터" },
+  { id: "CYLINDER_SENSOR", label: "원통 센서", description: "나사산 · 고정 너트 · 감지 헤드" },
+  { id: "RADAR", label: "레이더", description: "접시 안테나 · 피드 혼 · 지지대" },
+]);
+export function getSensorAppearance(sensor = {}) {
+  return SENSOR_APPEARANCES.some(({ id }) => id === sensor.appearance) ? sensor.appearance
+    : sensorHasImaging(sensor) || sensor.sensorType === "CAMERA" || sensor.sourceType === "CAMERA" ? "BULLET_CAMERA" : "BOX_SENSOR";
+}
 export function getSensorCapabilities(sensor = {}) {
   const values = Array.isArray(sensor.capabilities) ? sensor.capabilities : [sensor.deviceKind ?? ((sensor.sensorType ?? sensor.sourceType) === "CAMERA" ? "VISION" : "GENERIC")];
   return [...new Set(values.map((value) => value === "ULTRASOUND" ? "ULTRASONIC" : value).filter((value) => Object.hasOwn(SENSOR_CAPABILITIES, value)))];
@@ -84,7 +101,10 @@ export function normalizeObservationPoint(point = {}) {
     id: point.id ?? createId("OBSERVATION_POINT"),
     equipmentId: point.equipmentId ?? null,
     name: point.name ?? "관측 영역",
-    geometryType: "SPHERE",
+    geometryType: point.geometryType === "PLANE" ? "PLANE" : "SPHERE",
+    planeWidth: Math.max(.01, Math.min(100, Number(point.planeWidth) || .3)),
+    planeHeight: Math.max(.01, Math.min(100, Number(point.planeHeight) || .3)),
+    planeRotation: Number.isFinite(point.planeRotation) ? point.planeRotation : 0,
     revision: Math.max(0, Math.floor(Number(point.revision) || 0)),
     radius: Math.max(.01, Math.min(100, Number(point.radius) || .15)),
     opacity: Math.max(.05, Math.min(.8, Number.isFinite(Number(point.opacity)) ? Number(point.opacity) : .25)),
@@ -93,6 +113,16 @@ export function normalizeObservationPoint(point = {}) {
     targetNormal: { x: 0, y: 0, z: 1, ...point.targetNormal },
     sensorIds: [...new Set(measurements.map((item) => item.sensorId).filter(Boolean))],
   };
+}
+
+// Keep ROI geometry, thresholds and other sensors intact when a placed device is removed.
+export function detachObservationSensor(point, sensorId) {
+  if (!sensorId || !(point.sensorIds?.includes(sensorId) || point.sourceDeviceId === sensorId || point.measurements?.some((item) => item.sensorId === sensorId))) return point;
+  return normalizeObservationPoint({ ...point, revision: (point.revision ?? 0) + 1,
+    sensorIds: (point.sensorIds ?? []).filter((id) => id !== sensorId),
+    sourceDeviceId: point.sourceDeviceId === sensorId ? null : point.sourceDeviceId,
+    measurements: point.measurements?.map((item) => item.sensorId === sensorId ? { ...item, sensorId: "", previewValue: undefined } : item),
+  });
 }
 
 export function normalizeSensorBinding(device = {}) {
@@ -112,6 +142,8 @@ export function normalizeSensorBinding(device = {}) {
     sourceType: sensorType,
     mountMode: device.mountMode ?? "WORLD",
     markerDiameter: getSensorMarkerDiameter(device),
+    appearance: getSensorAppearance(device),
+    heatmap: normalizeHeatmap(device.heatmap),
     position: { x: 2, y: 2, z: 2, ...device.position },
     rotation: { x: 0, y: 0, z: 0, ...device.rotation },
     fieldOfView: Number(device.fieldOfView ?? device.fov ?? 50),

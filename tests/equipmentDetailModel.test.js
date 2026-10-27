@@ -73,7 +73,10 @@ test("센서 이동·회전·크기·선택 갱신과 제거는 기존 스캔 �
       assert.equal(layer.markers.get("LOCAL").parent, equipment);
       assert.equal(layer.markers.get("LOCAL").position.x, index);
       assert.equal(layer.markers.get("LOCAL").rotation.x, .1 * index);
-      assert.equal(layer.markers.get("LOCAL").geometry.parameters.radius, (.05 + index * .01) / 2);
+      const marker = layer.markers.get("LOCAL");
+      assert.equal(marker.userData.markerDiameter, .05 + index * .01);
+      const modelSize = new THREE.Box3().setFromObject(marker.children[0].children[0], true).getSize(new THREE.Vector3());
+      assert.ok(Math.max(modelSize.x, modelSize.y, modelSize.z) > 0);
       assert.equal(layer.markers.get("WORLD").position.x, 2);
       assert.equal(scan.parent, equipment);
       assert.equal(scan.visible, true);

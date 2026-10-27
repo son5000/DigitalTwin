@@ -213,7 +213,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     removeSelectedFloorEquipment, duplicateSelectedFloorEquipment,
     addObservationPoint, updateObservationPoint, removeObservationPoint, selectObservationPoint,
     addAssetBinding, updateAssetBinding, selectAssetBinding,
-    addMonitoringDevice, updateMonitoringDevice, selectMonitoringDevice,
+    addMonitoringDevice, updateMonitoringDevice, removeMonitoringDevice, selectMonitoringDevice,
     addMonitoringBinding, updateMonitoringBinding, selectMonitoringBinding,
     configureObservationWorkflow, updateObservationViewerSettings,
     updateViewerPreset, updateEquipmentRepresentationOverride,
@@ -1159,13 +1159,13 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
         <header className={styles.header}>
           <div className={styles.brandIdentity} aria-label="Check Guard Digital Twin Spatial Editor">
             <div className={styles.brandMark} aria-hidden="true"><img className={styles.brandLogo} src="/portal/check-guard-logo.png" alt="" width="180" height="49" /></div>
-            <div className={styles.brandCopy}><strong>Digital Twin</strong><span>Spatial Editor</span></div>
           </div>
-          <div className={styles.headerMeta}><span>{showObservationScopeSelector ? "관측 범위 확장" : "새 관측 프로젝트"}</span></div>
-          <button type="button" className={styles.projectBackButton} disabled={pendingAssetUploads > 0 || isSaving} onClick={requestReturnToProjects}>프로젝트 목록으로 돌아가기</button>
-          <button type="button" className={styles.themeToggle} onClick={toggleTheme} aria-label={`${theme === EDITOR_THEMES.DARK ? "라이트" : "다크"} 테마로 전환`}>
-            <span aria-hidden="true">{theme === EDITOR_THEMES.DARK ? <MoonIcon size={19} /> : <SunIcon size={19} />}</span>
-          </button>
+          <div className={styles.scopeHeaderActions}>
+            <button type="button" className={styles.projectBackButton} disabled={pendingAssetUploads > 0 || isSaving} onClick={requestReturnToProjects}>프로젝트 목록으로 돌아가기</button>
+            <button type="button" className={styles.themeToggle} onClick={toggleTheme} aria-label={`${theme === EDITOR_THEMES.DARK ? "라이트" : "다크"} 테마로 전환`}>
+              <span aria-hidden="true">{theme === EDITOR_THEMES.DARK ? <MoonIcon size={19} /> : <SunIcon size={19} />}</span>
+            </button>
+          </div>
         </header>
         <ObservationScopeSelector
           projectName={editor.projectName}
@@ -1570,7 +1570,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                 selectedAsset={editor.selectedAssetBinding} selectedPoint={editor.selectedObservationPoint} selectedSensor={editor.selectedSensorBinding} selectedServer={editor.selectedServerBinding}
                 onAddAsset={addAssetBinding} onSelectAsset={selectAssetBinding} onUpdateAsset={updateAssetBinding}
                 onRemovePoint={removeObservationPoint} onSelectPoint={selectObservationPoint} onUpdatePoint={updateObservationPoint}
-                onAddSensor={addMonitoringDevice} onSelectSensor={selectMonitoringDevice} onUpdateSensor={updateMonitoringDevice}
+                onAddSensor={addMonitoringDevice} onSelectSensor={selectMonitoringDevice} onUpdateSensor={updateMonitoringDevice} onRemoveSensor={removeMonitoringDevice}
                 onAddServer={addMonitoringBinding} onSelectServer={selectMonitoringBinding} onUpdateServer={updateMonitoringBinding}
                 onUpdateEquipment={handleMonitoringEquipmentChange}
                 onUploadAssetFiles={handleMonitoringAssetFiles}

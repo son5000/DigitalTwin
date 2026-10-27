@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { clampRoiRadius, isSphereRoi } from "../model/roiMonitoring.js";
+import { clampRoiRadius, isObservationRoi } from "../model/roiMonitoring.js";
 import { isVisibleSurfaceIntersection } from "./objectRaycast.js";
 import { ROI_STATUSES } from "../model/roiMonitoring.js";
 import { disposeObject3D } from "./disposeObject3D.js";
@@ -87,7 +87,7 @@ export function bindSurfaceRoiInteraction({ renderer, camera, controls, rendered
         previousRois = options.rois; previousStatuses = options.statuses; previousSelected = options.selectedId;
         (options.rois ?? []).forEach((roi) => {
           const entry = renderedEquipment.get(roi.equipmentId);
-          if (!entry || isSphereRoi(roi) || !roi.surface?.vertices?.length) return;
+          if (!entry || isObservationRoi(roi) || !roi.surface?.vertices?.length) return;
           const group = new THREE.Group();
           const status = options.statuses?.[roi.id] ?? "NO_DATA";
           const selected = options.selectedId === roi.id;

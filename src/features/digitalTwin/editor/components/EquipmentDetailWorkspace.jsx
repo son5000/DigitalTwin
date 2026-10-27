@@ -34,7 +34,9 @@ export default function EquipmentDetailWorkspace({
   function selectEquipment(id) { setViewMode("SELECTED"); onSelectEquipment?.(id); }
   useEffect(() => {
     if (!workspaceViewControllerRef) return;
-    const controller = { setView: (mode) => { setViewChoice({ key: viewKey, mode }); setCameraResetVersion((value) => value + 1); }, addEquipment: onAddEquipment, placeRoi: () => setPlacingRoi(true) };
+    const controller = { setView: (mode) => { setViewChoice({ key: viewKey, mode }); setCameraResetVersion((value) => value + 1); }, addEquipment: onAddEquipment,
+      placeRoi: (type = "SPHERE") => setPlacingRoi({ type, equipmentId: viewKey }),
+      placeHeatmap: (sensorId, onPick) => setPlacingRoi({ sensorId, onPick, equipmentId: viewKey }) };
     workspaceViewControllerRef.current = controller;
     return () => { if (workspaceViewControllerRef.current === controller) workspaceViewControllerRef.current = null; };
   }, [workspaceViewControllerRef, viewKey, onAddEquipment]);
@@ -62,7 +64,12 @@ export default function EquipmentDetailWorkspace({
         {worldView && cloneElement(worldView, { cameraMemory, cameraResetVersion, cameraScope: "DETAIL", cameraController, onAlignmentChange,
           ...(viewMode === "ALL" ? { equipment: null, equipmentList } : {}), editorStage: setup.currentStep,
           sensorViewId: sensorStep && comparisonSensorId === selectedSensor?.id ? comparisonSensorId : null,
-          pointOptions: { ...pointOptions, editing: setup.currentStep === "POINT", placing: placingRoi && setup.currentStep === "POINT", onPlaced: () => setPlacingRoi(false) },
+          pointOptions: { ...pointOptions,
+            editing: setup.currentStep === "POINT" || Boolean(sensorStep && placingRoi?.onPick && placingRoi.sensorId === selectedSensor?.id && placingRoi.equipmentId === equipment.id),
+            placing: Boolean(placingRoi && placingRoi.equipmentId === equipment.id && (placingRoi.onPick ? sensorStep && placingRoi.sensorId === selectedSensor?.id : setup.currentStep === "POINT")),
+            placementLabel: placingRoi?.onPick ? "모델 표면을 클릭해 히트맵 샘플 위치를 지정하세요. 실측 데이터가 아닙니다." : undefined,
+            onAdd: (id, position, normal) => placingRoi?.onPick ? placingRoi.onPick(position, normal) : pointOptions?.onAdd?.(id, position, { geometryType: placingRoi?.type, targetNormal: normal }),
+            onPlaced: () => setPlacingRoi(false) },
         })}
       </div>
       {sensorStep && selectedSensor?.equipmentIds?.includes(equipment.id) && <SensorFramePreview key={`${selectedSensor.id}:${selectedSensor.serverSensorId}`} sensor={selectedSensor} sensorView={comparisonSensorId === selectedSensor.id} onSensorViewChange={(active) => { setViewChoice({ key: viewKey, mode: "SENSORS" }); setComparisonSensorId(active ? selectedSensor.id : null); }} />}
