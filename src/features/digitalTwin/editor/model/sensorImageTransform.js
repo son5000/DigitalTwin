@@ -1,4 +1,5 @@
 import { IMAGE_PLANES, normalizeImageSurface } from "./textureSurfaceMapping.js";
+import { activeThermalSample, THERMAL_PALETTES } from "./thermalFrame.js";
 import { DEFAULT_PERSPECTIVE, IDENTITY_3, UNIT_QUAD, homographyFromQuads, inverse3, multiply3, normalizePerspective, projectPoint } from "./imageHomography.js";
 
 export const VISION_SAMPLE_URL = "/samples/cabinet-vision.jpg";
@@ -38,6 +39,7 @@ export function normalizeSensorProjection(source = {}) {
     cropHeight: number(source.cropHeight, 1 - cropY, 1e-6, 1 - cropY),
     temperatureMin: number(source.temperatureMin, 0, -273.15, 10000),
     temperatureMax: number(source.temperatureMax, 100, -273.14, 10001),
+    palette: Object.hasOwn(THERMAL_PALETTES, source.palette) ? source.palette : "SPECTRUM",
   };
 }
 
@@ -65,7 +67,7 @@ export function sensorImageTransform(sensor) {
   const targetUvToCropUv = multiply3(inversePerspective, targetUvToRectifiedUv);
   const targetUvToSourceUv = multiply3(cropToSource, targetUvToCropUv);
   const sourceUvToTargetUv = multiply3(multiply3(rectifiedUvToTargetUv, perspectiveMatrix), sourceToCrop);
-  const sample = p.kind === "VISION" ? activeVisionSample(sensor) : null;
+  const sample = p.kind === "VISION" ? activeVisionSample(sensor) : activeThermalSample(sensor);
   const resolution = sample ?? sensor.resolution;
   const width = number(resolution?.width, null, 1, 100000), height = number(resolution?.height, null, 1, 100000);
   return {

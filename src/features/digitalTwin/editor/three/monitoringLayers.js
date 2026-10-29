@@ -22,17 +22,17 @@ export function bindMonitoringLayers({ renderedEquipment, getOptions, getSensors
       previousSensors = sensors;
       previousOptions = options; previousModel = model; previousSecond = second;
       const representation = entry?.actual?.visible ? "ACTUAL" : "PROXY";
-      const records = (options.textures ?? []).filter((record) => record.kind === options.mode && record.mapping === "UV");
+      const records = (options.textures ?? []).filter((record) => (record.kind === options.mode || (options.continuousVision && record.kind === "VISION")) && record.mapping === "UV");
       const valid = (records ?? []).filter((record) => record.equipmentId === options.equipmentId && isFreshMeasurement(record, options.now)
         && record.modelVersion === options.model?.version && record.representation === representation);
       const mismatched = !valid.length && (records ?? []).some((record) => record.equipmentId === options.equipmentId && isFreshMeasurement(record, options.now) && (record.modelVersion !== options.model?.version || record.representation !== representation));
       const hotspots = (options.hotspots ?? []).filter((record) => record.equipmentId === options.equipmentId && isFreshMeasurement(record, options.now) && record.modelVersion === options.model?.version && record.representation === representation);
-      const next = JSON.stringify([model?.uuid, options.mode, options.opacity, valid, hotspots, sensors.map((sensor) => [sensor.id, sensor.serverSensorId, sensor.heatmap]), options.equipment?.metadata?.coordinateFrame, options.point, mismatched]);
+      const next = JSON.stringify([model?.uuid, options.mode, options.continuousVision, options.opacity, valid, hotspots, sensors.map((sensor) => [sensor.id, sensor.serverSensorId, sensor.heatmap]), options.equipment?.metadata?.coordinateFrame, options.point, mismatched]);
       if (next === identity) return;
       identity = next; clear();
       if (!entry || !model) return;
       options.onLayerError?.("");
-      if (mismatched && options.mode !== "MODEL") options.onLayerError?.("현재 모델·표현과 관측 매핑이 다릅니다. 모델을 확인하고 센서 매핑을 다시 보정하세요.");
+      if (mismatched && (options.continuousVision || options.mode !== "MODEL")) options.onLayerError?.("현재 모델·표현과 관측 매핑이 다릅니다. 모델을 확인하고 센서 매핑을 다시 보정하세요.");
       const sphere = (position, color, radius) => {
         if (!Array.isArray(position) || position.length !== 3 || !position.every(Number.isFinite)) return;
         const object = new THREE.Mesh(new THREE.SphereGeometry(radius, 12, 8), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: .85, depthTest: false }));
@@ -54,9 +54,9 @@ export function bindMonitoringLayers({ renderedEquipment, getOptions, getSensors
           entry.object.add(object); overlays.push(object);
         } catch (error) { options.onLayerError?.(error.message); }
       }
-      if (!["VISION", "THERMAL"].includes(options.mode)) return;
+      if (!options.continuousVision && !["VISION", "THERMAL"].includes(options.mode)) return;
       const version = generation;
-      valid.filter((record) => record.kind === options.mode).slice(0, 8).forEach((record) => {
+      valid.slice(0, 8).forEach((record) => {
         const url = mediaUrl(record.url, options.demo);
         if (!url || record.mapping !== "UV") { options.onLayerError?.("표시 가능한 UV 텍스처가 없습니다. 서버의 매핑 형식을 확인하세요."); return; }
         new THREE.TextureLoader().load(url, (texture) => {
@@ -67,9 +67,9 @@ export function bindMonitoringLayers({ renderedEquipment, getOptions, getSensors
           const walk = (object, path) => {
             if (object.userData.monitoringOverlay) return;
             if (object.isMesh && !object.isInstancedMesh && object.geometry?.attributes.uv && (!record.meshPath || record.meshPath === path)) {
-              const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: options.opacity ?? .7, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+              const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: record.kind === "VISION" && options.continuousVision ? 1 : options.opacity ?? .7, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
               const overlay = new THREE.Mesh(object.geometry, material);
-              overlay.userData.monitoringOverlay = true; overlay.raycast = () => {}; overlay.renderOrder = 2;
+              overlay.userData.monitoringOverlay = true; overlay.raycast = () => {}; overlay.renderOrder = record.kind === "THERMAL" ? 4 : 2;
               object.add(overlay); overlays.push(overlay); applied++;
             }
             [...object.children].forEach((child, index) => walk(child, path ? `${path}/${index}` : String(index)));

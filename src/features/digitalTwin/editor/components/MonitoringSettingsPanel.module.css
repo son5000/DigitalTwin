@@ -1,7 +1,11 @@
 .panel { container-type: inline-size; display: grid; height: 100%; min-width: 0; min-height: 0; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto; overflow: hidden; }
-.panel > header { display: grid; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--color-border); background: var(--color-surface); }
+.panel > header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; padding: 8px 8px 8px 12px; border-bottom: 1px solid var(--color-border); background: var(--color-surface); }
+.panelHeading { display: grid; min-width: 0; gap: 4px; }
 .panel > header span { color: var(--color-accent-strong); font-size: 12px; letter-spacing: .12em; }
 .panel > header h2 { margin: 0; overflow: hidden; color: var(--color-heading); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.panelClose { display: grid; width: 32px; height: 32px; padding: 0; place-items: center; align-self: start; border: 1px solid transparent; border-radius: 4px; color: var(--color-text-muted); background: transparent; }
+.panelClose:hover { border-color: var(--color-border); color: var(--color-heading); background: var(--state-hover); }
+.panelClose:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
 .panel > header p, .help { margin: 0; color: var(--color-text-subtle); font-size: 12px; line-height: 1.5; }
 .content { display: grid; min-height: 0; padding: 12px; align-content: start; gap: 10px; overflow-y: auto; overscroll-behavior: contain; scrollbar-color: var(--color-scrollbar) transparent; scrollbar-width: thin; }
 .field { display: grid; min-width: 0; gap: var(--editor-space-1, 4px); color: var(--color-text-subtle); font-size: var(--editor-font-size-xs, 12px); }
@@ -27,8 +31,10 @@
 .summary div { display: grid; padding: 8px 0; border: 0; border-bottom: 1px solid var(--color-border); border-radius: 0; grid-template-columns: 78px minmax(0, 1fr); gap: 8px; background: var(--color-input); }
 .summary dt { color: var(--color-text-muted); }
 .summary dd { min-width: 0; margin: 0; overflow: hidden; color: var(--color-heading); overflow-wrap: anywhere; }
-.uploadButton { display: grid; min-height: 38px; border: 1px solid rgb(var(--color-accent-rgb) / 45%); border-radius: 4px; place-items: center; color: var(--color-accent-strong); background: rgb(var(--color-accent-rgb) / 9%); font-weight: 700; cursor: pointer; }
-.uploadButton input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+/* Keep the native focus target inside the visible button, not the dock's
+   absolute-positioning context. File-picker focus must not scroll the dock. */
+.uploadButton { position: relative; display: grid; min-height: 38px; border: 1px solid rgb(var(--color-accent-rgb) / 45%); border-radius: 4px; place-items: center; color: var(--color-accent-strong); background: rgb(var(--color-accent-rgb) / 9%); font-weight: 700; cursor: pointer; }
+.uploadButton input { position: absolute; inset: 0; width: 100%; height: 100%; min-width: 0; padding: 0; opacity: 0; cursor: inherit; }
 .vectorGroup { display: grid; gap: 6px; }
 .vectorGroup > strong { color: var(--color-text-muted); font-size: 12px; }
 .checkGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
@@ -63,7 +69,7 @@
   overflow-wrap: anywhere;
 }
 .stepBody :where(button, summary):focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
-.panel progress { width: 100%; height: 5px; accent-color: var(--color-accent); }
+.panel progress { grid-column: 1 / -1; width: 100%; height: 5px; accent-color: var(--color-accent); }
 .stepFooter { display: grid; gap: 8px; padding: 12px; border-top: 1px solid var(--color-border); background: var(--color-surface); }
 .stepFooter p, .stepFooter small { margin: 0; color: var(--color-text-muted); font-size: 12px; line-height: 1.5; }
 .stepFooter > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
@@ -115,7 +121,12 @@ details.settingsGroup[open] > :not(summary) + * { margin-top: 12px; }
 
 .rangeGrid { --inspector-field-columns: minmax(0, 1fr); grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 8px; }
 .rangeGrid > :only-child { grid-column: 1 / -1; }
-.rangeGrid input[type="number"] { text-align: right; }
+.rangeGrid input[type="number"], .axisGrid input[type="number"] { text-align: right; }
+.axisGrid { display: grid; min-width: 0; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 6px; }
+.axisGrid > * { min-width: 0; --inspector-field-columns: minmax(0, 1fr); }
+.modelSetupGroup { display: grid; min-width: 0; gap: 10px; padding-top: 2px; }
+.modelSetupGroup > h3 { margin: 0; padding: 7px 2px 6px; border-bottom: 1px solid var(--color-border-strong); color: var(--color-heading); font-size: 14px; line-height: 1.4; }
+.subsectionTitle { margin: 0; color: var(--color-text-muted); font-size: 12px; font-weight: 700; line-height: 1.4; }
 .numberHint { margin: 0; padding: 6px 12px 0; color: var(--color-text-muted); font-size: 12px; line-height: 1.5; }
 .roiReadout { display: grid; gap: 0; max-height: 190px; overflow-y: auto; font-size: 12px; }
 .roiReadout > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; padding: 8px 0; border-bottom: 1px solid var(--color-border); }
@@ -127,6 +138,7 @@ details.settingsGroup[open] > :not(summary) + * { margin-top: 12px; }
 
 @container editor-inspector (max-width: 260px) {
   .stepBody .actionRow, .stepBody .checkGrid, .stepBody .rangeGrid { grid-template-columns: minmax(0, 1fr); }
+  .stepBody .axisGrid { gap: 4px; }
 }
 
 .stepBody :where(button, select, input, textarea) { font: inherit; font-size: 12px; }

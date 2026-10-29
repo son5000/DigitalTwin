@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { applySensorView } from "./sensorCamera.js";
+import { applySensorView, fitSensorCameraNear } from "./sensorCamera.js";
 import { getEnclosureSurfaces } from "../model/equipmentEnclosure.js";
 import { normalizeSensorProjection, sensorProjectionFrame, temperaturePixels } from "../model/sensorProjection.js";
 import { isFreshMeasurement, mediaUrl } from "../model/monitoringContract.js";
@@ -25,21 +25,37 @@ const vertexShader = `
   uniform mat4 projectorMatrix;
   uniform mat3 worldNormalMatrix;
   varying vec4 projected;
-  varying vec3 worldPosition;
   varying vec3 worldNormal;
   void main() {
     vec4 world = modelMatrix * vec4(position, 1.0);
-    worldPosition = world.xyz;
     worldNormal = normalize(worldNormalMatrix * normal);
     projected = projectorMatrix * world;
     gl_Position = projectionMatrix * viewMatrix * world;
     gl_PointSize = 2.0;
   }`;
+const DEPTH_SIZE = 1024;
+// Store linear camera distance; a fixed tolerance in perspective depth changes
+// by orders of magnitude between a close-up scan and a distant one.
+const depthVertexShader = `
+  varying float cameraDistance;
+  void main() {
+    vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
+    cameraDistance = -viewPosition.z;
+    gl_Position = projectionMatrix * viewPosition;
+    gl_PointSize = 2.0;
+  }`;
+const depthFragmentShader = `
+  #include <packing>
+  uniform float cameraFar;
+  varying float cameraDistance;
+  void main() { gl_FragColor = packDepthToRGBA(clamp(cameraDistance / cameraFar, 0.0, 1.0)); }
+`;
 const fragmentShader = `
   #include <packing>
   uniform sampler2D imageMap;
   uniform sampler2D projectorDepth;
-  uniform vec3 projectorPosition;
+  uniform float projectorFar;
+  uniform vec2 depthTexelSize;
   uniform vec3 faceNormal;
   uniform bool restrictFace;
   uniform bool pointCloud;
@@ -50,16 +66,33 @@ const fragmentShader = `
   uniform vec4 crop;
   uniform float opacity;
   varying vec4 projected;
-  varying vec3 worldPosition;
   varying vec3 worldNormal;
   void main() {
     if (projected.w <= 0.0) discard;
     vec3 projectedUV = surfaceMapped ? vec3(projected.xy, 0.0) : projected.xyz / projected.w * 0.5 + 0.5;
     if (any(lessThan(projectedUV, vec3(0.0))) || any(greaterThan(projectedUV, vec3(1.0)))) discard;
     if (!surfaceMapped) {
-      if (!pointCloud && dot(normalize(worldNormal), normalize(projectorPosition - worldPosition)) <= 0.0) discard;
-      float nearestDepth = unpackRGBAToDepth(texture2D(projectorDepth, projectedUV.xy));
-      if (projectedUV.z > nearestDepth + 0.001) discard;
+      // Scans can have inverted/smoothed vertex normals. The first visible
+      // surface in the depth pass decides occlusion, including double-sided scans.
+      vec2 dx = dFdx(projectedUV.xy), dy = dFdy(projectedUV.xy);
+      float inverseDistance = 1.0 / projected.w;
+      float dzdx = dFdx(inverseDistance), dzdy = dFdy(inverseDistance);
+      float determinant = dx.x * dy.y - dx.y * dy.x;
+      vec2 slope = abs(determinant) > 1e-12
+        ? vec2(dy.y * dzdx - dx.y * dzdy, dx.x * dzdy - dy.x * dzdx) / determinant : vec2(0.0);
+      // Compare at the depth texel's centre on the receiver plane. This avoids
+      // treating a slanted surface as its own occluder at short distances.
+      vec2 base = (floor(projectedUV.xy / depthTexelSize - 0.5) + 0.5) * depthTexelSize;
+      float visibleSamples = 0.0;
+      for (int y = 0; y < 2; y++) for (int x = 0; x < 2; x++) {
+        vec2 sampleUV = clamp(base + vec2(float(x), float(y)) * depthTexelSize, depthTexelSize * 0.5, 1.0 - depthTexelSize * 0.5);
+        float nearestDistance = unpackRGBAToDepth(texture2D(projectorDepth, sampleUV)) * projectorFar;
+        float receiverInverse = inverseDistance + dot(slope, sampleUV - projectedUV.xy);
+        float receiverDistance = 1.0 / max(receiverInverse, 1e-12);
+        // 0.5 mm in model/world metres, plus packed-depth rounding tolerance.
+        if (receiverDistance <= nearestDistance + max(0.0005, projectorFar / 16777216.0)) visibleSamples += 1.0;
+      }
+      if (visibleSamples == 0.0) discard;
     }
     if (!pointCloud && restrictFace && dot(normalize(worldNormal), faceNormal) < 0.9) discard;
     vec3 homogeneous = imageTransform * vec3(projectedUV.xy, 1.0);
@@ -89,22 +122,21 @@ export function bindSensorProjectionLayer({ renderer, renderedEquipment, markers
   function clearState(state) {
     state.generation++;
     for (const { overlay } of state.targets) { overlay.removeFromParent(); overlay.material.dispose(); }
-    state.texture?.dispose(); state.depth?.dispose(); state.depthMaterial?.dispose();
+    state.texture?.dispose(); state.depthLayers.forEach((layer) => layer.target.dispose()); state.depthMaterial?.dispose();
   }
   function createState(sensor) {
     const kind = normalizeSensorProjection(sensor.textureProjection).kind;
-    const depth = kind === "THERMAL" ? new THREE.WebGLRenderTarget(512, 512, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter }) : null;
-    const state = { id: sensor.id, kind, depth, depthScene: new THREE.Scene(), depthMaterial: depth ? new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide }) : null,
-      camera: new THREE.PerspectiveCamera(), targets: [], occluders: [], generation: 0, texture: null };
-    state.depthScene.overrideMaterial = state.depthMaterial;
+    const state = { id: sensor.id, kind, depthLayers: new Map(), depthMaterial: kind === "THERMAL" ? new THREE.ShaderMaterial({
+      vertexShader: depthVertexShader, fragmentShader: depthFragmentShader, uniforms: { cameraFar: { value: 10 } }, side: THREE.DoubleSide,
+    }) : null, camera: new THREE.PerspectiveCamera(), targets: [], generation: 0, texture: null };
     return state;
   }
-  function depthPass(state) {
+  function depthPass(state, layer) {
     const target = renderer.getRenderTarget(), viewport = renderer.getViewport(new THREE.Vector4()), scissor = renderer.getScissor(new THREE.Vector4());
     const scissorTest = renderer.getScissorTest(), color = renderer.getClearColor(new THREE.Color()), alpha = renderer.getClearAlpha();
     try {
-      renderer.setRenderTarget(state.depth); renderer.setViewport(0, 0, 512, 512); renderer.setScissorTest(false);
-      renderer.setClearColor(0xffffff, 1); renderer.clear(); renderer.render(state.depthScene, state.camera);
+      renderer.setRenderTarget(layer.target); renderer.setViewport(0, 0, DEPTH_SIZE, DEPTH_SIZE); renderer.setScissorTest(false);
+      renderer.setClearColor(0xffffff, 1); renderer.clear(); renderer.render(layer.scene, state.camera);
     } finally {
       renderer.setRenderTarget(target); renderer.setViewport(viewport); renderer.setScissor(scissor); renderer.setScissorTest(scissorTest); renderer.setClearColor(color, alpha);
     }
@@ -126,33 +158,40 @@ export function bindSensorProjectionLayer({ renderer, renderedEquipment, markers
         const geometryKey = JSON.stringify([roots.map(([kind, root]) => [kind, root.uuid]), p.surfaceId, p.meshPath]);
         if (geometryKey !== state.geometryKey) {
           state.targets.forEach(({ overlay }) => { overlay.removeFromParent(); overlay.material.dispose(); });
-          state.targets = []; state.occluders = []; state.depthScene.clear(); state.depthKey = ""; state.uniformKey = "";
-          for (const [kind, root] of roots) for (const { object, path } of projectionMeshes(root)) {
-            if (!surfaceMapped) {
-              const depthObject = object.isPoints ? new THREE.Points(object.geometry, state.depthMaterial) : new THREE.Mesh(object.geometry, state.depthMaterial);
-              depthObject.matrixAutoUpdate = false; state.depthScene.add(depthObject); state.occluders.push({ object, depthObject });
+          state.targets = []; state.depthLayers.forEach((layer) => layer.target.dispose()); state.depthLayers.clear(); state.depthKey = ""; state.uniformKey = "";
+          for (const [kind, root] of roots) {
+            // PROXY and ACTUAL describe alternative representations of the same
+            // equipment. Their envelopes must not shadow each other's projection.
+            const depthLayer = surfaceMapped ? null : { target: new THREE.WebGLRenderTarget(DEPTH_SIZE, DEPTH_SIZE, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter }), scene: new THREE.Scene(), occluders: [] };
+            if (depthLayer) state.depthLayers.set(kind, depthLayer);
+            for (const { object, path } of projectionMeshes(root)) {
+              if (!surfaceMapped) {
+                const depthObject = object.isPoints ? new THREE.Points(object.geometry, state.depthMaterial) : new THREE.Mesh(object.geometry, state.depthMaterial);
+                depthObject.matrixAutoUpdate = false; depthLayer.scene.add(depthObject); depthLayer.occluders.push({ object, depthObject });
+              }
+              const panel = object.userData.enclosurePanel;
+              if (kind === "ACTUAL" && p.meshPath !== null && p.meshPath !== path) continue;
+              if (kind === "PROXY" && p.surfaceId && !(p.surfaceId === panel || (panel && p.surfaceId.startsWith(`${panel}-`)))) continue;
+              const uniforms = {
+                imageMap: { value: state.texture }, projectorDepth: { value: depthLayer?.target.texture ?? null }, surfaceMapped: { value: surfaceMapped },
+                projectorFar: { value: 10 }, depthTexelSize: { value: new THREE.Vector2(1 / DEPTH_SIZE, 1 / DEPTH_SIZE) },
+                projectorMatrix: { value: new THREE.Matrix4() }, worldNormalMatrix: { value: new THREE.Matrix3() },
+                faceNormal: { value: new THREE.Vector3() }, restrictFace: { value: false }, pointCloud: { value: Boolean(object.isPoints) },
+                imageTransform: { value: new THREE.Matrix3() }, crop: { value: new THREE.Vector4() }, opacity: { value: 1 },
+                perspectiveEnabled: { value: false }, sourceQuad: { value: Array.from({ length: 4 }, () => new THREE.Vector2()) },
+              };
+              const material = new THREE.ShaderMaterial({ uniforms, vertexShader, fragmentShader, transparent: true, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+              const overlay = object.isPoints ? new THREE.Points(object.geometry, material) : new THREE.Mesh(object.geometry, material);
+              overlay.userData.monitoringOverlay = true; overlay.raycast = () => {}; overlay.renderOrder = surfaceMapped ? 3 : 4; overlay.visible = false;
+              object.add(overlay); state.targets.push({ overlay, object, kind });
             }
-            const panel = object.userData.enclosurePanel;
-            if (kind === "ACTUAL" && p.meshPath !== null && p.meshPath !== path) continue;
-            if (kind === "PROXY" && p.surfaceId && !(p.surfaceId === panel || (panel && p.surfaceId.startsWith(`${panel}-`)))) continue;
-            const uniforms = {
-              imageMap: { value: state.texture }, projectorDepth: { value: state.depth?.texture ?? null }, surfaceMapped: { value: surfaceMapped },
-              projectorMatrix: { value: new THREE.Matrix4() }, projectorPosition: { value: new THREE.Vector3() }, worldNormalMatrix: { value: new THREE.Matrix3() },
-              faceNormal: { value: new THREE.Vector3() }, restrictFace: { value: false }, pointCloud: { value: Boolean(object.isPoints) },
-              imageTransform: { value: new THREE.Matrix3() }, crop: { value: new THREE.Vector4() }, opacity: { value: 1 },
-              perspectiveEnabled: { value: false }, sourceQuad: { value: Array.from({ length: 4 }, () => new THREE.Vector2()) },
-            };
-            const material = new THREE.ShaderMaterial({ uniforms, vertexShader, fragmentShader, transparent: true, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
-            const overlay = object.isPoints ? new THREE.Points(object.geometry, material) : new THREE.Mesh(object.geometry, material);
-            overlay.userData.monitoringOverlay = true; overlay.raycast = () => {}; overlay.renderOrder = 3; overlay.visible = false;
-            object.add(overlay); state.targets.push({ overlay, object, kind });
           }
           state.geometryKey = geometryKey;
         }
         const frame = sensorProjectionFrame(sensor, options.textures, options.now, options.demo);
-        const frameKey = frame ? JSON.stringify([frame.url, frame.measuredAt, frame.loadedAt, p.temperatureMin, p.temperatureMax]) : "";
-        if (frameKey !== state.frameKey) {
-          state.frameKey = frameKey; const generation = ++state.generation;
+        const frameKey = frame ? JSON.stringify([frame.url, frame.measuredAt, frame.loadedAt, p.temperatureMin, p.temperatureMax, p.palette]) : "";
+        if (frameKey !== state.frameKey || frame?.temperatureGrid !== state.temperatureGrid) {
+          state.frameKey = frameKey; state.temperatureGrid = frame?.temperatureGrid; const generation = ++state.generation;
           const accept = (texture) => {
             if (disposed || generation !== state.generation) { texture.dispose(); return; }
             state.texture?.dispose(); state.texture = texture; state.ready = true; state.error = ""; state.displayedFrame = frame;
@@ -161,21 +200,22 @@ export function bindSensorProjectionLayer({ renderer, renderedEquipment, markers
           };
           if (!frame || state.displayedFrame?.kind !== frame.kind || Boolean(state.displayedFrame?.sample) !== Boolean(frame.sample)) state.ready = false;
           if (frame?.temperatureGrid) {
-            const pixels = temperaturePixels(frame.temperatureGrid, p.temperatureMin, p.temperatureMax);
+            const pixels = temperaturePixels(frame.temperatureGrid, p.temperatureMin, p.temperatureMax, p.palette);
             if (pixels) { const texture = new THREE.DataTexture(pixels, frame.temperatureGrid.width, frame.temperatureGrid.height); texture.needsUpdate = true; accept(texture); }
-            else state.error = "온도 범위와 수신한 온도 분포를 확인하세요.";
+            else { state.ready = false; state.error = "온도 범위와 수신한 온도 분포를 확인하세요."; }
           } else if (frame) {
             const url = mediaUrl(frame.url, options.demo || sensor.dataSource === "DEMO");
             new THREE.TextureLoader().load(url, accept, undefined, () => { if (!disposed && generation === state.generation) state.error = "영상을 불러오지 못했습니다. 이미지 주소와 접근 권한을 확인하세요."; });
           }
         }
-        const show = Boolean(frame && state.ready && ((frame.sample && state.displayedFrame?.sample) || isFreshMeasurement(state.displayedFrame, options.now)) && (!options.mode || options.mode === p.kind));
-        if (state.error) errors.push(`${sensor.name}: ${state.error}`);
-        else if (!frame) errors.push(`${sensor.name}: 최신 ${p.kind === "THERMAL" ? "온도 분포·열화상" : "영상"} 수신 대기`);
-        else if (!state.targets.length) errors.push(`${sensor.name}: 적용할 모델이나 면을 다시 선택하세요.`);
+        const enabled = (surfaceMapped && options.continuousVision) || !options.mode || options.mode === p.kind;
+        const show = Boolean(enabled && frame && state.ready && ((frame.sample && state.displayedFrame?.sample) || isFreshMeasurement(state.displayedFrame, options.now)));
+        if (enabled && state.error) errors.push(`${sensor.name}: ${state.error}`);
+        else if (enabled && !frame) errors.push(`${sensor.name}: 최신 ${p.kind === "THERMAL" ? "온도 분포·열화상" : "영상"} 수신 대기`);
+        else if (enabled && !state.targets.length) errors.push(`${sensor.name}: 적용할 모델이나 면을 다시 선택하세요.`);
         entry.object.updateWorldMatrix(true, false);
         const imageSurface = surfaceMapped ? resolveImageSurface(entry.item, p) : null;
-        if (!surfaceMapped) applySensorView(state.camera, marker, sensor);
+        if (!surfaceMapped) { applySensorView(state.camera, marker, sensor); fitSensorCameraNear(state.camera, roots.map(([, root]) => root)); state.depthMaterial.uniforms.cameraFar.value = state.camera.far; }
         const projection = surfaceMapped ? imageSurfaceMatrix(imageSurface, entry.object.matrixWorld)
           : new THREE.Matrix4().multiplyMatrices(state.camera.projectionMatrix, state.camera.matrixWorldInverse);
         const surface = p.surfaceId ? getEnclosureSurfaces(entry.item).find((s) => s.id === p.surfaceId) : null;
@@ -183,13 +223,14 @@ export function bindSensorProjectionLayer({ renderer, renderedEquipment, markers
           ?.applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(entry.object.matrixWorld));
         const depthParts = [projection.elements.join(","), JSON.stringify(entry.item.enclosure), JSON.stringify(entry.layerSource)];
         for (const [, root] of roots) { root.updateWorldMatrix(true, false); depthParts.push(`${root.visible}:${root.matrixWorld.elements.join(",")}`); }
+        for (const [kind, layer] of state.depthLayers) for (const { object, depthObject } of layer.occluders) {
+          object.updateWorldMatrix(true, false); depthObject.matrix.copy(object.matrixWorld);
+          depthObject.visible = visible(object) && (Array.isArray(object.material) ? object.material : [object.material]).some((material) => material?.visible && material.opacity > 0);
+          depthParts.push(`${kind}:${object.uuid}:${depthObject.visible}:${object.matrixWorld.elements.join(",")}`);
+        }
         const depthKey = depthParts.join("|");
         if (show && !surfaceMapped && depthKey !== state.depthKey) {
-          for (const { object, depthObject } of state.occluders) {
-            object.updateWorldMatrix(true, false); depthObject.matrix.copy(object.matrixWorld);
-            depthObject.visible = visible(object) && (Array.isArray(object.material) ? object.material : [object.material]).some((material) => material?.opacity > 0);
-          }
-          depthPass(state); state.depthKey = depthKey;
+          state.depthLayers.forEach((layer) => depthPass(state, layer)); state.depthKey = depthKey;
         }
         const uniformKey = `${depthKey}:${JSON.stringify(p)}:${JSON.stringify(entry.layerSource)}:${show}:${state.texture?.uuid}:${options.opacity}`;
         if (uniformKey === state.uniformKey) continue;
@@ -199,7 +240,8 @@ export function bindSensorProjectionLayer({ renderer, renderedEquipment, markers
           object.updateWorldMatrix(true, false);
           overlay.visible = show && visible(object) && !(kind === "PROXY" && p.surfaceId && !surface);
           const u = overlay.material.uniforms;
-          u.projectorMatrix.value.copy(projection); u.projectorPosition.value.copy(state.camera.position);
+          u.projectorMatrix.value.copy(projection);
+          u.projectorFar.value = state.camera.far;
           u.worldNormalMatrix.value.getNormalMatrix(object.matrixWorld);
           u.restrictFace.value = Boolean(surfaceMapped || (kind === "PROXY" && surfaceNormal));
           if (surfaceNormal) u.faceNormal.value.copy(surfaceNormal);
@@ -207,7 +249,7 @@ export function bindSensorProjectionLayer({ renderer, renderedEquipment, markers
           u.perspectiveEnabled.value = p.perspective.enabled;
           p.perspective.source.forEach((point, index) => u.sourceQuad.value[index].set(...point));
           u.crop.value.set(p.cropX, p.cropY, Math.min(p.cropWidth, 1 - p.cropX), Math.min(p.cropHeight, 1 - p.cropY));
-          u.opacity.value = p.opacity * (options.opacity ?? 1) * (entry.layerSource?.[kind]?.opacity ?? (kind === "PROXY" ? entry.item.enclosure?.opacity ?? entry.item.appearance?.opacity ?? 1 : 1));
+          u.opacity.value = p.opacity * (surfaceMapped && options.continuousVision ? 1 : options.opacity ?? 1) * (entry.layerSource?.[kind]?.opacity ?? (kind === "PROXY" ? entry.item.enclosure?.opacity ?? entry.item.appearance?.opacity ?? 1 : 1));
         }
       }
       const error = [...new Set(errors)].join(" · ");

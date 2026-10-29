@@ -14,6 +14,7 @@ export async function loadMonitoringProject(projectId, signal) {
 
 export function createRoiRepository(projectId, storage = window.localStorage) {
   const path = `/projects/${encodeURIComponent(projectId)}/rois`;
+  const shared = Boolean(monitoringApiBase) && readProjects(storage).projects.find((project) => project.id === projectId)?.storageMode !== "LOCAL";
   function readLocal() {
     const raw = storage.getItem(roiStorageKey(projectId));
     const records = raw ? JSON.parse(raw) : [];
@@ -23,9 +24,9 @@ export function createRoiRepository(projectId, storage = window.localStorage) {
     return [...records.filter((roi) => !spheres.some((sphere) => sphere.id === roi.id)), ...spheres].map(roiFromReferencePayload).map(validateRoi);
   }
   return {
-    shared: Boolean(monitoringApiBase),
+    shared,
     async list(signal) {
-      if (!monitoringApiBase) return readLocal();
+      if (!shared) return readLocal();
       const result = await request(path, { signal });
       if (!Array.isArray(result?.rois)) throw new Error("서버의 ROI 목록 형식을 확인하세요.");
       return result.rois.map(roiFromReferencePayload).map(validateRoi);
@@ -33,7 +34,7 @@ export function createRoiRepository(projectId, storage = window.localStorage) {
     async save(input, equipment) {
       const roi = validateRoi(input);
       const payload = roiToReferencePayload(roi, equipment);
-      if (monitoringApiBase) {
+      if (shared) {
         const result = await request(`${path}/${encodeURIComponent(roi.id)}`, {
           method: "PUT", headers: { "If-Match": String(roi.revision) }, body: JSON.stringify(payload), signal: AbortSignal.timeout(15000),
         });
@@ -53,7 +54,7 @@ export function createRoiRepository(projectId, storage = window.localStorage) {
       return saved;
     },
     async remove(roi) {
-      if (monitoringApiBase) return request(`${path}/${encodeURIComponent(roi.id)}`, { method: "DELETE", headers: { "If-Match": String(roi.revision) }, signal: AbortSignal.timeout(15000) });
+      if (shared) return request(`${path}/${encodeURIComponent(roi.id)}`, { method: "DELETE", headers: { "If-Match": String(roi.revision) }, signal: AbortSignal.timeout(15000) });
       const records = readLocal();
       if (records.find((item) => item.id === roi.id)?.revision !== roi.revision) throw new Error("다른 화면에서 변경했습니다. 목록을 새로고침하세요.");
       if (isObservationRoi(roi)) {
@@ -62,13 +63,13 @@ export function createRoiRepository(projectId, storage = window.localStorage) {
       } else storage.setItem(roiStorageKey(projectId), JSON.stringify(records.filter((item) => !isObservationRoi(item) && item.id !== roi.id)));
     },
     async readings(signal) {
-      if (!monitoringApiBase) return [];
+      if (!shared) return [];
       const result = await request(`${path}/readings`, { signal });
       if (!Array.isArray(result?.readings)) throw new Error("서버의 측정값 형식을 확인하세요.");
       return result.readings;
     },
     async preview(roi, signal, equipment) {
-      if (!monitoringApiBase) return null;
+      if (!shared) return null;
       const query = validateRoi({ ...roi, name: roi.name.trim() || "임시 ROI", rules: [], monitoringEnabled: false });
       const result = await request(`${path}/preview`, { method: "POST", body: JSON.stringify(roiToReferencePayload(query, equipment)), signal });
       return result.reading;

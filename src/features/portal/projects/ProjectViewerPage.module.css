@@ -10,17 +10,19 @@
 .layout[data-sidebar="true"] .sceneTools { left: calc(var(--overlay-left) + 272px); }
 .sceneTools > div { position: static; max-width: none; gap: 8px; justify-content: flex-end; font-size: 12px; }
 .sceneTools button { min-height: 40px; pointer-events: auto; }
-.controlDock { --color-heading: var(--portal-text); --color-input: var(--portal-surface); --color-border: var(--portal-border); --color-border-strong: var(--portal-border); --color-surface-overlay: var(--portal-panel); --color-accent: var(--portal-blue); --state-selected: var(--portal-surface); position: absolute; z-index: 26; left: var(--overlay-left); right: var(--overlay-right); bottom: var(--overlay-bottom); display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; min-width: 0; pointer-events: none; }
+.controlDock { --color-heading: var(--portal-text); --color-input: var(--portal-surface); --color-border: var(--portal-border); --color-border-strong: var(--portal-border); --color-surface-overlay: var(--portal-panel); --color-accent: var(--portal-blue); --state-selected: var(--portal-surface); --viewer-control-height: 32px; position: absolute; z-index: 26; left: var(--overlay-left); right: var(--overlay-right); bottom: var(--overlay-bottom); display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: flex-end; gap: 8px; min-width: 0; pointer-events: none; }
 .controlItems { display: contents; }
 .controlDock [data-viewer-control] { position: relative; inset: auto; min-width: 0; max-width: 100%; margin: 0; border-radius: 6px; font-size: 12px; pointer-events: auto; }
 .controlDock [data-viewer-control="layers"] { order: 0; flex: 0 0 auto; padding: 4px 10px; }
-.controlDock summary { min-height: 40px; gap: 8px; }
+.controlDock summary { min-height: var(--viewer-control-height); gap: 8px; }
 .controlDock summary::after { content: ""; width: 6px; height: 6px; margin-left: 8px; border-top: 1px solid currentColor; border-right: 1px solid currentColor; transform: rotate(-45deg); }
 .controlDock details[open] summary::after { transform: rotate(135deg); }
 .controlDock [data-viewer-control="layers"] > div { width: min(240px, calc(100vw - 126px)); max-height: min(180px, 25dvh); overflow: auto; padding-bottom: 8px; }
 .controlDock [data-viewer-control="doors"] { order: 1; flex: 0 1 auto; gap: 8px; scroll-padding: 4px; scrollbar-width: thin; }
-.controlDock [data-viewer-control="doors"] button { min-height: 40px; flex: 0 0 auto; }
-.controlDock > div:last-child { position: static; order: 2; margin-left: auto; flex-shrink: 0; border-radius: 6px; box-shadow: none; pointer-events: auto; }
+.controlDock [data-viewer-control="doors"] button { min-height: var(--viewer-control-height); flex: 0 0 auto; }
+.controlDock > div:last-child { position: static; order: 2; margin-left: 0; flex-shrink: 0; border-radius: 6px; box-shadow: none; pointer-events: auto; }
+.controlDock > div:last-child button { width: var(--viewer-control-height); height: var(--viewer-control-height); font-size: 18px; }
+.controlDock > div:last-child output { min-width: 52px; font-size: 12px; }
 .panelHost h2 { overflow-wrap: anywhere; }
 
 @media (max-width: 1100px) {
@@ -36,7 +38,8 @@
 }
 
 @media (pointer: coarse) {
-  .sceneTools button, .controlDock summary, .controlDock [data-viewer-control="doors"] button { min-height: 44px; }
+  .controlDock { --viewer-control-height: 44px; }
+  .sceneTools button { min-height: 44px; }
 }
 
 @media (min-width: 600px) and (max-width: 760px) and (max-height: 500px) {
@@ -89,7 +92,8 @@
 @media (max-width: 800px) { .world { height: 100%; } .toolbar { top: 108px; padding-inline: 12px; gap: 8px; } .worldFooter { padding-inline: 12px; } }
 @media (max-width: 460px) { .toolbar button { padding-inline: 8px; font-size: 10px; } .worldFooter span:last-child { display: none; } }
 
-.scanLoading { position: absolute; z-index: 30; top: 50%; left: 50%; transform: translate(-50%, -50%); max-width: calc(100% - 32px); padding: 16px 20px; border: 1px solid var(--portal-border); border-radius: 10px; background: var(--portal-panel); color: var(--portal-text); box-shadow: 0 8px 28px rgb(0 0 0 / 18%); font-size: 13px; pointer-events: none; }
+.scanLoading { position: absolute; z-index: 30; inset: 0; display: grid; place-items: center; padding: 16px; cursor: wait; pointer-events: auto; touch-action: none; overscroll-behavior: contain; }
+.scanLoadingMessage { display: block; max-width: 100%; padding: 16px 20px; border: 1px solid var(--portal-border); border-radius: 10px; background: var(--portal-panel); color: var(--portal-text); box-shadow: 0 8px 28px rgb(0 0 0 / 18%); font-size: 13px; }
 .loadingDots { display: inline-flex; width: 18px; margin-left: 4px; }
 .loadingDots i { font-style: normal; animation: loadingDot 1.2s infinite; }
 .loadingDots i:nth-child(2) { animation-delay: .2s; }

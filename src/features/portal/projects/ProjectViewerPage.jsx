@@ -44,22 +44,23 @@ const METRIC_LABELS = { TEMPERATURE: "온도", PRESSURE: "압력", VIBRATION: "�
 
 export default function ProjectViewerPage({ projectId, requestedEquipmentId = null, operationsSection = null, operationsRecord = null }) {
   const [result, setResult] = useState(() => {
-    if (monitoringApiBase) return { loading: true };
     try {
       const project = readProjects().projects.find((item) => item.id === projectId);
+      if (monitoringApiBase && project?.storageMode !== "LOCAL") return { loading: true };
       return project ? { project } : { error: "프로젝트를 찾을 수 없습니다." };
     } catch (error) { return { error: error.message }; }
   });
+  const localImport = result.project?.storageMode === "LOCAL";
   useEffect(() => {
-    if (!monitoringApiBase) return;
+    if (!monitoringApiBase || localImport) return;
     const controller = new AbortController();
     loadMonitoringProject(projectId, AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]))
       .then((project) => { if (!controller.signal.aborted) setResult({ project }); })
       .catch((error) => { if (!controller.signal.aborted) setResult({ error: error.message }); });
     return () => controller.abort();
-  }, [projectId]);
+  }, [projectId, localImport]);
   useEffect(() => {
-    if (monitoringApiBase) return;
+    if (monitoringApiBase && !localImport) return;
     let timer;
     function refresh(event) {
       if (![LAYOUT_STORAGE_KEY, PROJECT_STORAGE_KEY].includes(event.key)) return;
@@ -73,7 +74,7 @@ export default function ProjectViewerPage({ projectId, requestedEquipmentId = nu
     }
     window.addEventListener("storage", refresh);
     return () => { clearTimeout(timer); window.removeEventListener("storage", refresh); };
-  }, [projectId]);
+  }, [projectId, localImport]);
   if (result.loading) return <main className={styles.page}><p role="status">프로젝트를 불러오는 중입니다.</p></main>;
   return result.project ? <SavedWorldViewer project={result.project} requestedEquipmentId={requestedEquipmentId} operationsSection={operationsSection} operationsRecord={operationsRecord} /> : <main className={styles.page}><div className={styles.main}><p role="alert" className={styles.notice}>{result.error}</p><button className={styles.back} onClick={() => navigateTo("/projects")}>프로젝트 목록</button></div></main>;
 }
@@ -102,6 +103,7 @@ function SavedWorldViewer({ project, requestedEquipmentId, operationsSection, op
   const [equipmentDetail, setEquipmentDetail] = useState(Boolean(linkedNode));
   // Single-equipment viewers already show the complete equipment scene.
   const isolatedEquipmentView = equipmentDetail && tree.scope !== "SINGLE_EQUIPMENT";
+  const startsInSingleEquipmentView = tree.scope === "SINGLE_EQUIPMENT" || Boolean(linkedNode);
   const equipmentOverview = tree.scope === "MULTI_EQUIPMENT" && !equipmentDetail;
   const [theme, setTheme] = useState(preferences.theme === "dark" ? "dark" : "light");
   const snapshotScope = isolatedEquipmentView ? "SINGLE_EQUIPMENT" : tree.scope;
@@ -109,7 +111,7 @@ function SavedWorldViewer({ project, requestedEquipmentId, operationsSection, op
   const snapshotRequest = useMemo(() => ({ scope: snapshotScope, targetId: snapshotTargetId, theme, layout }), [snapshotScope, snapshotTargetId, theme, layout]);
   const [viewerCameraMemory] = useState(() => new Map());
   const [snapshot, setSnapshot] = useState(null);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.matchMedia("(max-width: 1100px)").matches);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => startsInSingleEquipmentView || window.matchMedia("(max-width: 1100px)").matches);
   const [compactLayout, setCompactLayout] = useState(() => window.matchMedia("(max-width: 1100px)").matches);
   useEffect(() => {
     const query = window.matchMedia("(max-width: 1100px)");
@@ -118,9 +120,9 @@ function SavedWorldViewer({ project, requestedEquipmentId, operationsSection, op
     return () => query.removeEventListener("change", update);
   }, []);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [rightPanel, setRightPanel] = useState(linkedNode ? "DETAIL" : null);
+  const [rightPanel, setRightPanel] = useState(startsInSingleEquipmentView ? "ROI" : null);
   const detailOpen = rightPanel === "DETAIL";
-  const panelVisible = detailOpen || ((showEquipment || equipmentDetail) && ["ROI", "DATA"].includes(rightPanel));
+  const panelVisible = detailOpen || ((showEquipment || equipmentDetail) && ["ROI", "AUDIO", "THERMAL", "ALARMS"].includes(rightPanel));
   const sidebarVisible = !sidebarCollapsed && !(compactLayout && panelVisible);
   function setDetailOpen(value) {
     setRightPanel((current) => (typeof value === "function" ? value(current === "DETAIL") : value) ? "DETAIL" : null);
@@ -244,7 +246,9 @@ function SavedWorldViewer({ project, requestedEquipmentId, operationsSection, op
     const context = getViewerEquipmentContext(tree, tree.nodes.get(key));
     setEquipmentId(id); setSelectedPartId(partId); setSelectedSensorId(null);
     setEquipmentDetail((current) => Boolean(id) && (equipmentScope || current));
-    setDetailOpen(Boolean(id)); setViewMode(VIEW_MODES.VIEW_3D); setShowEquipment(equipmentScope);
+    if (id && equipmentScope) { setSidebarCollapsed(true); setRightPanel("ROI"); }
+    else setDetailOpen(Boolean(id));
+    setViewMode(VIEW_MODES.VIEW_3D); setShowEquipment(equipmentScope);
     if (!equipmentScope) {
       setObservedBuildingId(context?.building?.id ?? null);
       setSelectedBuildingId(context?.building?.id ?? null);
@@ -279,6 +283,7 @@ function SavedWorldViewer({ project, requestedEquipmentId, operationsSection, op
       if (equipmentId !== node.equipmentId || !(showEquipment || equipmentDetail)) {
         selectEquipment(node.equipmentId, null, sidebarTree.root.type);
         setEquipmentDetail(true);
+        setSidebarCollapsed(true);
       }
       // A fresh selection request also lets the same ROI be focused again.
       setRoiTarget(structuredClone(node.item)); setRightPanel("ROI");
@@ -335,7 +340,7 @@ function SavedWorldViewer({ project, requestedEquipmentId, operationsSection, op
           <span>워크스페이스</span><strong>{details.name}</strong><small>{sidebarTree.config.label}</small>
         </div>
         {(isolatedEquipmentView || (!equipmentScope && equipmentContext)) && <nav className={viewerStyles.parentNavigation} aria-label="설비 관측 탐색">
-          <button type="button" data-parent={isolatedEquipmentView} onClick={isolatedEquipmentView ? showParentSpace : () => setEquipmentDetail(true)}><ChevronRightIcon size={14} />{isolatedEquipmentView ? tree.scope === "MULTI_EQUIPMENT" ? "전체 설비 보기" : "상위 공간 보기" : "설비 상세 보기"}</button>
+          <button type="button" data-parent={isolatedEquipmentView} onClick={isolatedEquipmentView ? showParentSpace : () => { setEquipmentDetail(true); setSidebarCollapsed(true); setRightPanel("ROI"); }}><ChevronRightIcon size={14} />{isolatedEquipmentView ? tree.scope === "MULTI_EQUIPMENT" ? "전체 설비 보기" : "상위 공간 보기" : "설비 상세 보기"}</button>
         </nav>}
         {(showEquipment || equipmentDetail) && !detailEquipment.length && <p className={viewerStyles.empty} role="status">등록된 설비가 없습니다. 프로젝트 목록에서 편집하기로 설비를 추가하세요.</p>}
         <WorldTreePanel tree={sidebarTree} projectName={getProjectDetails(project).name} snapshot={snapshot?.request === snapshotRequest ? snapshot : null} representativeImage={representativeImage} selectedKey={sidebarSelectedKey} selectionVersion={treeSelection.version} onSelect={selectTreeNode} />

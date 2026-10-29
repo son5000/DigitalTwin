@@ -89,7 +89,7 @@ export default function NumericField({
           onFocus={() => {
             isEditingRef.current = true;
             editedRef.current = false;
-            setDraftValue(Number.isFinite(Number(value)) ? String(Number(value)) : "");
+            setDraftValue(formatValue(value, precision));
           }}
           onChange={handleChange}
           onBlur={handleBlur}

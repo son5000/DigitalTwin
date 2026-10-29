@@ -35,6 +35,7 @@ export default function EquipmentDetailWorkspace({
   useEffect(() => {
     if (!workspaceViewControllerRef) return;
     const controller = { setView: (mode) => { setViewChoice({ key: viewKey, mode }); setCameraResetVersion((value) => value + 1); }, addEquipment: onAddEquipment,
+      setSensorView: (sensorId) => { setViewChoice({ key: viewKey, mode: "SENSORS" }); setComparisonSensorId(sensorId); },
       placeRoi: (type = "SPHERE") => setPlacingRoi({ type, equipmentId: viewKey }),
       placeHeatmap: (sensorId, onPick) => setPlacingRoi({ sensorId, onPick, equipmentId: viewKey }) };
     workspaceViewControllerRef.current = controller;

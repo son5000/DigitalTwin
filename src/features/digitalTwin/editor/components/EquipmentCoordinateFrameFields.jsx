@@ -62,14 +62,14 @@ export default function EquipmentCoordinateFrameFields({ equipment, binding, cam
   }
   const degrees = Math.round(yaw * 180 / Math.PI * 1000) / 1000;
   const preset = [0, 90, 180, -90].includes(degrees) ? String(degrees) : "CUSTOM";
-  return <fieldset className={styles.settingsGroup} data-setup-field="coordinate-frame"><legend>4. 설비 기준좌표 · 필수</legend>
+  return <fieldset className={styles.settingsGroup} data-setup-field="coordinate-frame"><legend>설비 기준좌표 · 필수</legend>
     <p className={styles.help}>위쪽은 +Y입니다. 정면과 원점을 지정한 뒤 적용하세요.</p>
     <label className={styles.field}><span>설비 정면 방향</span><select value={preset} onChange={(event) => { if (event.target.value !== "CUSTOM") changeFront(Number(event.target.value) * Math.PI / 180); }}><option value="0">+Z 방향을 정면으로</option><option value="90">+X 방향을 정면으로</option><option value="180">−Z 방향을 정면으로</option><option value="-90">−X 방향을 정면으로</option><option value="CUSTOM">사용자 지정 각도</option></select></label>
-    <NumericField label="정면 회전각 · Y축" unit="°" step={1} value={degrees} onChange={(value) => changeFront(value * Math.PI / 180)} />
+    <NumericField displayPrecision={2} label="Y축 회전각" unit="°" step={1} value={degrees} onChange={(value) => changeFront(value * Math.PI / 180)} />
     <div className={styles.actionRow}><button type="button" onClick={() => cameraController?.current?.coordinateFront?.(yaw)}>설정한 정면에서 보기</button><button type="button" onClick={resetOrigin}>정면 좌측 하단으로 원점 맞춤</button></div>
     <p className={styles.help}>X 오른쪽 · Y 위쪽 · Z 정면 바깥쪽. 설비 내부는 −Z입니다.</p>
-    <strong>원점 위치 · 모델 기준 m</strong>
-    <div className={styles.rangeGrid}>{["x", "y", "z"].map((axis) => <NumericField key={axis} label={`원점 ${axis.toUpperCase()}`} unit="m" step={.001} value={origin[axis]} onChange={(value) => { setOriginMode("CUSTOM"); setOrigin((current) => ({ ...current, [axis]: value })); }} />)}</div>
+    <h4 className={styles.subsectionTitle}>원점 위치 · 모델 기준</h4>
+    <div className={styles.axisGrid}>{["x", "y", "z"].map((axis) => <NumericField displayPrecision={2} key={axis} label={`${axis.toUpperCase()}축`} unit="m" step={.01} value={origin[axis]} onChange={(value) => { setOriginMode("CUSTOM"); setOrigin((current) => ({ ...current, [axis]: value })); }} />)}</div>
     <div className={styles.actionRow}><button type="button" aria-pressed={picking} onClick={pickOrigin}>{picking ? "원점 선택 취소" : "모델에서 원점 선택"}</button><button type="button" className={styles.primaryAction} onClick={apply}>기준좌표 적용</button></div>
     <p className={styles.help}>{saved ? `적용된 기준 v${saved.version} · ${saved.originMode === "FRONT_LOWER_LEFT" ? "정면 좌측 하단" : "사용자 지정"}` : "미설정 · 기본 원점은 정면 좌측 하단입니다."}</p>
     {notice && <p className={styles.help} role="status">{notice}</p>}

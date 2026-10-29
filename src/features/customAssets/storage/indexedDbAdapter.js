@@ -5,8 +5,9 @@ const STORE_NAME = "assets";
 
 function requestResult(request) {
   return new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error("IndexedDB 요청에 실패했습니다."));
+    const transaction = request.transaction;
+    transaction.oncomplete = () => resolve(request.result);
+    transaction.onabort = transaction.onerror = () => reject(transaction.error ?? request.error ?? new Error("IndexedDB 요청에 실패했습니다."));
   });
 }
 

@@ -9,7 +9,7 @@ import { observationPlane } from "../model/observationGeometry.js";
 const METRICS = { TEMPERATURE: ["온도", "°C"], ...Object.fromEntries(ROI_METRICS.map(({ id, label, unit }) => [id, [label, unit]])), PRESSURE: ["압력", "Pa"], VIBRATION: ["진동", "mm/s"], NOISE: ["소음", "dB"], POWER: ["전력", "W"], FLOW: ["유량", "L/min"], VIDEO: ["영상", ""] };
 const OPERATORS = { gte: "이상", gt: "초과", lte: "이하", lt: "미만" };
 
-export default function ObservationRoiFields({ equipment, points = [], selectedPoint, sensors = [], onSelect, onChange, onRemove, onPlace, compact = false }) {
+export default function ObservationRoiFields({ equipment, points = [], selectedPoint, sensors = [], onSelect, onChange, onRemove, onPlace, compact = false, allowPositionEdit = false }) {
   const frame = getEquipmentCoordinateFrame(equipment);
   const position = selectedPoint ? modelToReference(selectedPoint.localPosition, frame) : null;
   function updateMeasurement(index, changes) {
@@ -50,7 +50,7 @@ export default function ObservationRoiFields({ equipment, points = [], selectedP
         </div>}
         <details className={styles.transformDetails}><summary>정밀 위치·표시 설정</summary>
           <p className={styles.help}>{frame ? `설비 기준좌표 v${frame.version} · 센서와 같은 기준` : "기존 모델 좌표 · 2단계에서 기준좌표를 설정하세요."}</p>
-          {!compact && <div className={styles.rangeGrid}>{["x", "y", "z"].map((axis) => <NumericField key={axis} label={`영역 ${axis.toUpperCase()} 위치`} unit="m" step={.001} value={position[axis]} onChange={(value) => onChange(selectedPoint.id, { localPosition: referenceToModel({ ...position, [axis]: value }, frame) })} />)}</div>}
+          {(!compact || allowPositionEdit) && <div className={styles.rangeGrid}>{["x", "y", "z"].map((axis) => <NumericField key={axis} label={`영역 ${axis.toUpperCase()} 위치`} unit="m" step={.001} value={position[axis]} onChange={(value) => onChange(selectedPoint.id, { localPosition: referenceToModel({ ...position, [axis]: value }, frame) })} />)}</div>}
           <label className={styles.field}><span>영역 불투명도 · {Math.round(selectedPoint.opacity * 100)}%</span><input type="range" min="5" max="80" value={selectedPoint.opacity * 100} onChange={(event) => onChange(selectedPoint.id, { opacity: Number(event.target.value) / 100 })} /></label>
           <p className={styles.help}>화면에는 영역 번호가 표시됩니다. 선택하거나 마우스를 올리면 이름과 상태가 보입니다.</p>
         </details>

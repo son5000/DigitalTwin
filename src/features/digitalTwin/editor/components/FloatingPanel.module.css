@@ -36,6 +36,8 @@
   animation-name: dockedPanelEnter;
 }
 
+.panel.headerless { grid-template-rows: minmax(0, 1fr); }
+
 .header {
   display: flex;
   min-height: 44px;
@@ -51,7 +53,9 @@
 .header button { display: grid; width: 32px; height: 32px; flex: 0 0 auto; place-items: center; border: 1px solid transparent; border-radius: 4px; color: var(--color-text-muted); background: transparent; }
 .header button:hover { border-color: var(--color-border); color: var(--color-heading); background: var(--state-hover); }
 .content { min-width: 0; min-height: 0; overflow: auto; scroll-padding-block: 56px 12px; overscroll-behavior: contain; scrollbar-color: var(--color-scrollbar) transparent; scrollbar-width: thin; }
-.contentContained { overflow: hidden; }
+/* Self-scrolling inspectors own their scroll position. Unlike hidden, clip
+   cannot be scrolled by focus returning from a native file picker. */
+.contentContained { overflow: clip; }
 
 @keyframes panelEnter {
   from { opacity: 0; transform: translateX(10px) scale(.985); }

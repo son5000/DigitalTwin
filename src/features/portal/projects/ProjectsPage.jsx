@@ -3,7 +3,7 @@ import Brand from "../components/Brand";
 import { navigateTo } from "@/features/customAssets/core/customAssetNavigation";
 import { createProject, getProjectDetails, openProject, readProjects } from "./projectRepository";
 import styles from "./ProjectsPage.module.css";
-import { exportProjectBundle, importProjectBundle } from "./projectBundle";
+import { downloadProjectBundle, exportProjectBundle, importProjectBundle } from "./projectBundle";
 
 export default function ProjectsPage() {
   const [result, setResult] = useState({ projects: [], loading: true, error: "" });
@@ -30,11 +30,9 @@ export default function ProjectsPage() {
   async function exportBundle(project) {
     setBundleState({ busy: true, message: "모델·텍스처와 ROI 구성을 묶고 있습니다.", error: false });
     try {
-      const blob = await exportProjectBundle(project);
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a"); link.href = url; link.download = `${project.id}.digital-twin.json`; link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setBundleState({ busy: false, message: "구성을 내보냈습니다. 설치 시 같은 버전의 뷰어 실행 파일과 함께 사용하세요. 외부 센서 주소는 설치 환경에서 연결해야 합니다.", error: false });
+      const blob = await exportProjectBundle(project, { onProgress: (message) => setBundleState({ busy: true, message, error: false }) });
+      downloadProjectBundle(blob, project);
+      setBundleState({ busy: false, message: "설정 JSON과 대표 이미지·스캔·텍스처를 ZIP으로 내보냈습니다. 실시간 센서 데이터는 설치 환경에서 연결하세요.", error: false });
     } catch (error) { setBundleState({ busy: false, message: error.message, error: true }); }
   }
   async function importBundle(event) {
@@ -42,7 +40,7 @@ export default function ProjectsPage() {
     if (!file) return;
     setBundleState({ busy: true, message: "구성과 첨부 파일을 가져오고 있습니다.", error: false });
     try {
-      await importProjectBundle(file);
+      await importProjectBundle(file, window.localStorage, { onProgress: (message) => setBundleState({ busy: true, message, error: false }) });
       setResult({ projects: readProjects().projects, loading: false, error: "" });
       setBundleState({ busy: false, message: "구성을 새 프로젝트로 가져왔습니다. 기존 프로젝트는 유지됩니다.", error: false });
     } catch (error) { setBundleState({ busy: false, message: error.message, error: true }); }
@@ -56,13 +54,13 @@ export default function ProjectsPage() {
         <div className={styles.bundleRow}>
           <div className={styles.bundleCopy}>
             <h2 id="bundle-import-title">설치 구성 가져오기</h2>
-            <p>내보낸 모델·센서·ROI 설정을 새 프로젝트로 가져옵니다.</p>
-            <small id="bundle-import-format">이 서비스에서 내보낸 .digital-twin.json 파일 · 최대 150MB</small>
+            <p>설정 JSON과 대표 이미지·스캔·텍스처가 포함된 ZIP을 새 프로젝트로 가져옵니다.</p>
+            <small id="bundle-import-format">.digital-twin.zip · 최대 1GB · 기존 JSON 구성 파일도 지원</small>
           </div>
           <label className={styles.filePicker} data-disabled={bundleState.busy}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 16V3m-5 5 5-5 5 5M4 15v5a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5" /></svg>
             <span>{bundleState.busy ? "처리 중…" : "구성 파일 선택"}</span>
-            <input className={styles.fileInput} type="file" accept=".json,application/json" aria-label="설치 구성 파일 선택" aria-describedby="bundle-import-format" disabled={bundleState.busy} onChange={importBundle} />
+            <input className={styles.fileInput} type="file" accept=".zip,.json,application/zip,application/json" aria-label="설치 구성 파일 선택" aria-describedby="bundle-import-format" disabled={bundleState.busy} onChange={importBundle} />
           </label>
         </div>
         {bundleState.message && <p className={styles.bundleMessage} data-error={bundleState.error} role={bundleState.error ? "alert" : "status"}>{bundleState.message}</p>}
@@ -79,7 +77,7 @@ export default function ProjectsPage() {
                   {details.isDraft ? <button className={styles.primary} onClick={() => enterProject(project.id)}>이어서 편집</button> : null}
                   {project.layout.observationWorkflow?.configured !== false ? <button className={details.isDraft ? undefined : styles.primary} onClick={() => navigateTo(`/viewer?project=${encodeURIComponent(project.id)}`)}>뷰어 열기</button> : null}
                   {!details.isDraft ? <button onClick={() => enterProject(project.id)}>편집하기</button> : null}
-                  <button disabled={bundleState.busy} onClick={() => exportBundle(project)}>구성 내보내기</button>
+                  <button disabled={bundleState.busy} onClick={() => exportBundle(project)}>ZIP 내보내기</button>
                 </div>
               </div>
             </article>;

@@ -10,6 +10,7 @@ import {
   SENSOR_DEVICE_CAPABILITIES, getSensorCapabilities, sensorCapabilityLabel, sensorHasImaging, getSensorMarkerDiameter, ASSET_SOURCE_TYPES, ASSET_TYPES, ASSET_USAGE_TYPES,
 } from "@/features/digitalTwin/editor/model/equipmentDetailModel";
 import { UNIFIED_EQUIPMENT_TEMPLATE_MAP } from "@/features/digitalTwin/editor/constants/unifiedEquipmentCatalog";
+import { CloseIcon } from "@/components/icons";
 
 import NumericField from "./NumericField";
 import { EQUIPMENT_SETUP_STEPS, SETUP_REQUIREMENTS, getEquipmentSetup, updateEquipmentSetup, getSetupStepValidation } from "../model/equipmentSetup";
@@ -37,7 +38,7 @@ export default function MonitoringSettingsPanel({
   onSelectPoint, onUpdatePoint, onRemovePoint,
   onAddSensor, onSelectSensor, onUpdateSensor, onRemoveSensor,
   onAddServer, onSelectServer, onUpdateServer,
-  workspaceViewControllerRef, cameraController, onUpdateEquipment, onUploadAssetFiles, viewerPreset, onEquipmentRepresentationChange, onViewerPresetChange, uploadNotice,
+  workspaceViewControllerRef, cameraController, onUpdateEquipment, onUploadAssetFiles, viewerPreset, onEquipmentRepresentationChange, onViewerPresetChange, uploadNotice, onClose,
 }) {
   const [sensorCount, setSensorCount] = useState(1);
   const [sensorSection, setSensorSection] = useState("TEXTURE");
@@ -131,7 +132,11 @@ export default function MonitoringSettingsPanel({
   }
 
   return <section ref={panelRef} className={styles.panel} onChangeCapture={() => setStepError(null)}>
-    <header><span>{stepIndex + 1} / 5 단계 · 완료 {setup.completed} · 건너뜀 {setup.skipped}</span><h2>{selectedEquipment.name}</h2><progress aria-label="설비 설정 완료 단계" value={setup.completed} max={5} /></header>
+    <header>
+      <div className={styles.panelHeading}><span>{stepIndex + 1} / 5 단계 · 완료 {setup.completed} · 건너뜀 {setup.skipped}</span><h2>{selectedEquipment.name}</h2></div>
+      {onClose && <button type="button" className={styles.panelClose} aria-label="설비 상세 닫기" onClick={onClose}><CloseIcon size={18} /></button>}
+      <progress aria-label="설비 설정 완료 단계" value={setup.completed} max={5} />
+    </header>
     <label className={styles.stepPicker}>
       <span>설정 단계</span>
       <select value={tab} onChange={(event) => setStep(event.target.value)}>
@@ -195,7 +200,13 @@ export default function MonitoringSettingsPanel({
         {sensorSection === "CONNECTION" && <fieldset className={styles.settingsGroup}><legend>센서 정보·서버 연결</legend>
           <label className={styles.field} data-setup-field="sensor-name"><span>센서 이름 · 필수</span><input required value={selectedSensor.name} onChange={(event) => onUpdateSensor(selectedSensor.id, { name: event.target.value })} /></label>
           <SensorConnectionFields key={selectedSensor.id} section="connection" sensor={selectedSensor} equipment={selectedEquipment} sensors={sensorBindings} assets={scopedAssets} onChange={onUpdateSensor} />
-          <details className={styles.transformDetails}><summary>측정 기능 · 복수 선택</summary><div className={styles.checkGrid}>{Object.entries(SENSOR_DEVICE_CAPABILITIES).map(([key, label]) => <label className={styles.check} key={key}><input type="checkbox" checked={getSensorCapabilities(selectedSensor).includes(key)} onChange={(event) => onUpdateSensor(selectedSensor.id, { capabilities: event.target.checked ? [...getSensorCapabilities(selectedSensor), key] : getSensorCapabilities(selectedSensor).filter((value) => value !== key) })} />{label}</label>)}</div><p className={styles.help}>게이지·스위치 감지는 4단계에서 관측 영역별로 지정하세요.</p></details>
+          <details className={styles.transformDetails}><summary>측정 기능 · 복수 선택</summary><div className={styles.checkGrid}>{Object.entries(SENSOR_DEVICE_CAPABILITIES).map(([key, label]) => <label className={styles.check} key={key}><input type="checkbox" checked={getSensorCapabilities(selectedSensor).includes(key)} onChange={(event) => {
+            const capabilities = getSensorCapabilities(selectedSensor);
+            const thermalAdded = key === "THERMAL" && event.target.checked;
+            onUpdateSensor(selectedSensor.id, { capabilities: event.target.checked ? [...capabilities, key] : capabilities.filter((value) => value !== key),
+              ...(thermalAdded && !sensorHasImaging(selectedSensor) && selectedSensor.appearance === "BOX_SENSOR" ? { appearance: "BULLET_CAMERA" } : {}),
+              ...(thermalAdded && !capabilities.includes("VISION") ? { textureProjection: { ...selectedSensor.textureProjection, kind: "THERMAL" } } : {}) });
+          }} />{label}</label>)}</div><p className={styles.help}>게이지·스위치 감지는 4단계에서 관측 영역별로 지정하세요.</p></details>
         </fieldset>}
         {sensorSection === "PLACEMENT" && <fieldset className={styles.settingsGroup}><legend>월드의 센서 설치 위치</legend>
           <SensorAppearanceFields sensor={selectedSensor} onChange={onUpdateSensor} />
@@ -213,7 +224,7 @@ export default function MonitoringSettingsPanel({
         </fieldset>}
         {sensorSection === "HEATMAP" && (getSensorCapabilities(selectedSensor).includes("ULTRASONIC") ? <SensorHeatmapFields key={selectedSensor.id} sensor={selectedSensor} equipment={selectedEquipment} onChange={onUpdateSensor} controller={workspaceViewControllerRef} /> : <p className={styles.help}>센서 연결에서 초음파 기능을 선택하세요.</p>)}
         {sensorSection === "TEXTURE" && (sensorHasImaging(selectedSensor)
-          ? <SensorProjectionFields key={selectedSensor.id} sensor={selectedSensor} equipment={selectedEquipment} assets={scopedAssets} onChange={onUpdateSensor} />
+          ? <SensorProjectionFields key={selectedSensor.id} sensor={selectedSensor} equipment={selectedEquipment} assets={scopedAssets} onChange={onUpdateSensor} cameraController={cameraController} workspaceController={workspaceViewControllerRef} />
           : <p className={styles.help}>센서 연결에서 비전 또는 열화상 기능을 선택하면 이미지·텍스처를 설정할 수 있습니다.</p>)}
       </>}
     </div> : null}

@@ -16,10 +16,10 @@ function DoorSetFields({ equipment, side, onChange }) {
     <label className={styles.field}><span>문 구성</span><select value={c.doorCount} onChange={(event) => onChange({ doorCount: Number(event.target.value) })}><option value={0}>문 없음</option><option value={1}>한 짝</option><option value={2}>두 짝</option></select></label>
     {c.doorCount === 2 && <><label className={styles.field}><span>문 배치</span><select value={c.doorLayout} onChange={(event) => onChange({ doorLayout: event.target.value })}><option value="SIDE_BY_SIDE">좌우 두 짝</option><option value="STACKED">위아래 두 짝</option></select></label><p className={styles.help}>한쪽 크기를 바꾸면 나머지가 맞춰집니다.</p></>}
     {c.doors.slice(0, c.doorCount).map((door, index) => <fieldset className={styles.settingsGroup} key={index}><legend>{getEnclosureDoorLabel(c, index)}</legend>
-      {c.doorCount === 2 && <NumericField label={stacked ? "높이" : "가로"} unit="m" value={getEnclosureDoor(equipment, index, side)[stacked ? "height" : "width"]} min={.001} step={.001} onChange={(value) => sizeChange(index, value)} />}
+      {c.doorCount === 2 && <NumericField displayPrecision={2} label={stacked ? "높이" : "가로"} unit="m" value={getEnclosureDoor(equipment, index, side)[stacked ? "height" : "width"]} min={.001} step={.01} onChange={(value) => sizeChange(index, value)} />}
       <label className={styles.field}><span>경첩 위치 · 해당 면을 바라본 기준</span><select value={door.hinge} onChange={(event) => doorChange(index, { hinge: event.target.value })}><option value="LEFT">왼쪽</option><option value="RIGHT">오른쪽</option><option value="TOP">위쪽</option><option value="BOTTOM">아래쪽</option></select></label>
       <label className={styles.field}><span>열리는 쪽</span><select value={door.swing} onChange={(event) => doorChange(index, { swing: event.target.value })}><option value="OUTWARD">캐비넷 바깥쪽</option><option value="INWARD">캐비넷 안쪽</option></select></label>
-      <NumericField label="열림 각도" unit="°" value={door.angle} min={0} step={1} onChange={(value) => doorChange(index, { angle: Math.min(180, Math.max(0, value)) })} />
+      <NumericField displayPrecision={2} label="열림 각도" unit="°" value={door.angle} min={0} step={1} onChange={(value) => doorChange(index, { angle: Math.min(180, Math.max(0, value)) })} />
       <div className={styles.actionRow}><button type="button" aria-pressed={!door.open} onClick={() => doorChange(index, { open: false })}>닫힘</button><button type="button" aria-pressed={door.open} onClick={() => doorChange(index, { open: true })}>열림</button></div>
       <label className={styles.check}><input type="checkbox" checked={door.hideWhenOpen} onChange={(event) => doorChange(index, { hideWhenOpen: event.target.checked })} />열었을 때 문 숨기기</label>
     </fieldset>)}
@@ -43,8 +43,9 @@ export default function EquipmentEnclosureFields({ equipment, binding, onUpdateE
     {["BOTH", "SHAPE"].includes(mode) && <>
       <label className={styles.field}><span>외관 형태</span><select value={c.enabled ? "CABINET" : "EXISTING"} onChange={(event) => update({ enabled: event.target.value === "CABINET" })}><option value="EXISTING">기존 설비 도형</option><option value="CABINET">캐비넷 · 벽과 문 구성</option></select></label>
       {c.enabled && <>
-        <div className={styles.rangeGrid}>{[["width", "외관 가로"], ["height", "외관 높이"], ["depth", "외관 깊이"]].map(([key, label]) => <NumericField key={key} label={label} unit="m" value={c[key]} min={.05} step={.001} onChange={(value) => update({ [key]: Math.max(.05, value) })} />)}</div>
-        <NumericField label="판 두께" unit="mm" value={c.thickness * 1000} min={1} step={1} onChange={(value) => update({ thickness: Math.max(.001, value / 1000) })} />
+        <h4 className={styles.subsectionTitle}>외관 크기</h4>
+        <div className={styles.axisGrid}>{[["width", "X축"], ["height", "Y축"], ["depth", "Z축"]].map(([key, label]) => <NumericField displayPrecision={2} key={key} label={label} unit="m" value={c[key]} min={.05} step={.01} onChange={(value) => update({ [key]: Math.max(.05, value) })} />)}</div>
+        <NumericField displayPrecision={2} label="판 두께" unit="mm" value={c.thickness * 1000} min={1} step={1} onChange={(value) => update({ thickness: Math.max(.001, value / 1000) })} />
         <div className={styles.checkGrid}>{Object.entries(ENCLOSURE_WALLS).filter(([id]) => !(id === "front" && c.doorCount) && !(id === "back" && c.rear.doorCount)).map(([id, label]) => <label className={styles.check} key={id}><input type="checkbox" checked={c.walls[id]} onChange={(event) => update({ walls: { ...c.walls, [id]: event.target.checked } })} />{label}</label>)}</div>
         <label className={styles.field}><span>외관 색상</span><input type="color" value={c.color} onChange={(event) => update({ color: event.target.value })} /></label>
         <label className={styles.field}><span>불투명도 · {Math.round(c.opacity * 100)}%</span><input type="range" min=".05" max="1" step=".05" value={c.opacity} onChange={(event) => update({ opacity: Number(event.target.value) })} /></label>

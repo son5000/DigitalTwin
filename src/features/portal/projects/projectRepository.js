@@ -26,7 +26,7 @@ export function readProjects(storage = window.localStorage) {
     const project = { id: registry.activeId, layout: current.layout };
     const index = projects.findIndex((item) => item.id === project.id);
     if (index < 0) projects.push(project);
-    else projects[index] = project;
+    else projects[index] = { ...projects[index], ...project };
   }
   return { ...registry, projects };
 }

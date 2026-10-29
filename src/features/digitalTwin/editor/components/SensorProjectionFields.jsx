@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { getEnclosureSurfaces } from "../model/equipmentEnclosure";
-import { normalizeSensorProjection } from "../model/sensorProjection";
+import { normalizeSensorProjection, sensorProjectionFrame } from "../model/sensorProjection";
 import { activeVisionSample, VISION_SAMPLE_URL } from "../model/sensorImageTransform";
 import { getSensorCapabilities } from "../model/equipmentDetailModel";
 import { calibrationPayload, imageProcessingPayload, downloadMonitoringJson, mediaUrl } from "../model/monitoringContract";
@@ -9,22 +9,30 @@ import { readProjects } from "@/features/portal/projects/projectRepository";
 import NumericField from "./NumericField";
 import ImageTransformEditor from "./ImageTransformEditor";
 import useSensorProjectionFrames from "../store/useSensorProjectionFrames";
+import useThermalImage from "../store/useThermalImage";
+import { activeThermalSample, loadThermalSample, temperatureSummary, THERMAL_SAMPLE_URL, THERMAL_PALETTES } from "../model/thermalFrame";
+import ThermalFramePreview from "./ThermalFramePreview";
+import ThermalCameraPlacement from "./ThermalCameraPlacement";
 import styles from "./MonitoringSettingsPanel.module.css";
 
-export default function SensorProjectionFields({ sensor, equipment, assets = [], onChange }) {
+export default function SensorProjectionFields({ sensor, equipment, assets = [], onChange, cameraController, workspaceController }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const requestRef = useRef(null);
   const sensorRef = useRef(sensor);
-  const frames = useSensorProjectionFrames([sensor]);
-  const frame = frames.find((item) => item.bindingId === sensor.id);
-  const editingSensor = frame?.url ? { ...sensor, frameUrl: frame.url, frameMeasuredAt: frame.measuredAt, resolution: frame.resolution ?? sensor.resolution } : sensor;
+  const vision = getSensorCapabilities(sensor).includes("VISION");
+  const thermal = getSensorCapabilities(sensor).includes("THERMAL");
+  const p = normalizeSensorProjection({ kind: thermal && !vision ? "THERMAL" : "VISION", ...sensor.textureProjection });
+  const frames = useSensorProjectionFrames([{ ...sensor, textureProjection: { ...p, enabled: true } }]);
+  const response = frames.find((item) => item.bindingId === sensor.id);
+  const frame = sensorProjectionFrame({ ...sensor, textureProjection: p }, frames);
+  const editingSensor = frame ? { ...sensor, frameUrl: frame.url, frameMeasuredAt: frame.measuredAt, resolution: frame.resolution ?? sensor.resolution, textureProjection: p } : { ...sensor, textureProjection: p };
+  const thermalImage = useThermalImage(p.kind === "THERMAL" ? frame?.temperatureGrid : null, p);
   useEffect(() => { sensorRef.current = sensor; }, [sensor]);
   useEffect(() => () => requestRef.current?.abort(), []);
-  const p = normalizeSensorProjection(sensor.textureProjection);
   const sample = p.kind === "VISION" ? activeVisionSample(sensor) : null;
-  const vision = getSensorCapabilities(sensor).includes("VISION");
-  const source = mediaUrl(sample?.url ?? editingSensor.frameUrl, sensor.dataSource === "DEMO");
+  const thermalSample = p.kind === "THERMAL" ? activeThermalSample(sensor) : null;
+  const source = p.kind === "THERMAL" ? thermalImage.source || mediaUrl(frame?.url, sensor.dataSource === "DEMO") : mediaUrl(sample?.url ?? editingSensor.frameUrl, sensor.dataSource === "DEMO");
   const surfaces = getEnclosureSurfaces(equipment);
   const imageSurface = resolveImageSurface(equipment, p);
   const update = (changes) => onChange(sensor.id, { textureProjection: normalizeSensorProjection({ ...p, equipmentId: equipment.id, ...changes }) });
@@ -48,6 +56,25 @@ export default function SensorProjectionFields({ sensor, equipment, assets = [],
     } catch (error) { if (!request.signal.aborted) setMessage(error.message || "샘플 이미지를 읽지 못했습니다."); }
     finally { if (!request.signal.aborted) setBusy(false); }
   }
+  async function loadTemperatureSample() {
+    requestRef.current?.abort();
+    const request = new AbortController(); requestRef.current = request;
+    setBusy(true); setMessage("");
+    try {
+      const grid = await loadThermalSample();
+      if (request.signal.aborted) return;
+      const summary = temperatureSummary(grid), current = sensorRef.current;
+      onChange(sensor.id, {
+        thermalSample: { enabled: true, url: THERMAL_SAMPLE_URL, width: grid.width, height: grid.height, loadedAt: new Date().toISOString() },
+        resolution: { width: grid.width, height: grid.height }, aspectRatio: grid.width / grid.height,
+        textureProjection: normalizeSensorProjection({ ...current.textureProjection, enabled: true, kind: "THERMAL", equipmentId: equipment.id,
+          temperatureMin: summary.min, temperatureMax: summary.max > summary.min ? summary.max : summary.min + 1,
+          target: current.textureProjection?.target ?? (assets.some((asset) => ["OBJ", "PLY"].includes(asset.assetType)) ? "ACTUAL" : "PROXY") }),
+      });
+      setMessage("열화상 샘플을 불러왔습니다. 현재 3D 시점에 카메라를 배치한 뒤 이미지와 설비 위치를 맞추세요.");
+    } catch (error) { if (!request.signal.aborted) setMessage(error.message || "온도 CSV를 읽지 못했습니다."); }
+    finally { if (!request.signal.aborted) setBusy(false); }
+  }
   const exportPayload = p.kind === "VISION"
       ? imageProcessingPayload(readProjects().activeId, equipment, editingSensor, assets)
       : calibrationPayload(readProjects().activeId, equipment, editingSensor, assets);
@@ -56,17 +83,35 @@ export default function SensorProjectionFields({ sensor, equipment, assets = [],
   }
   return <div className={styles.content}>
     <fieldset className={styles.settingsGroup}><legend>수신 이미지·테스트 소스</legend>
-      <label className={styles.field}><span>수신 이미지 URL</span><input type="url" placeholder="https://…/frame-123.jpg" value={sensor.frameUrl ?? ""} onChange={(event) => onChange(sensor.id, { frameUrl: event.target.value })} /></label>
-      {!sample && <p className={styles.help}>{editingSensor.frameMeasuredAt ? `최근 영상 · ${editingSensor.frameMeasuredAt}` : "서버 영상 수신 대기"} · 연결된 센서의 활성 영상은 5초 간격으로 조회합니다.</p>}
-    {vision && <div className={styles.sampleSource}>
+      {p.kind === "VISION" && <label className={styles.field}><span>수신 이미지 URL</span><input type="url" placeholder="https://…/frame-123.jpg" value={sensor.frameUrl ?? ""} onChange={(event) => onChange(sensor.id, { frameUrl: event.target.value })} /></label>}
+      {!sample && !thermalSample && <p className={styles.help}>{editingSensor.frameMeasuredAt ? `최근 영상 · ${editingSensor.frameMeasuredAt}` : "서버 영상 수신 대기"} · 연결된 센서의 활성 영상은 5초 간격으로 조회합니다.</p>}
+    {vision && p.kind === "VISION" && <div className={styles.sampleSource}>
       <div className={styles.actionRow}>
         <button type="button" disabled={busy} onClick={loadSample}>{busy ? "샘플 불러오는 중…" : sample ? "샘플 다시 불러오기" : "샘플 불러오기"}</button>
         {sample && <button type="button" onClick={() => { onChange(sensor.id, { projectionSample: null }); setMessage("서버 영상으로 전환했습니다. 수신된 최신 영상이 있을 때 표시됩니다."); }}>샘플 해제</button>}
       </div>
       <p className={styles.help}>{sample ? `샘플 테스트 중 · ${sample.width} × ${sample.height}px · 실시간 수신 아님` : "첨부 사진을 서버 영상 대신 불러와 텍스처 맞춤을 시험합니다."}</p>
-      {message && <p className={styles.help} role="status">{message}</p>}
     </div>}
+    {(thermal || p.kind === "THERMAL") && <div className={styles.sampleSource}>
+      <div className={styles.actionRow}><button type="button" disabled={busy} onClick={loadTemperatureSample}>{busy ? "샘플 불러오는 중…" : thermalSample ? "열화상 CSV 다시 불러오기" : "열화상 CSV 샘플 불러오기"}</button>
+        {thermalSample && <button type="button" onClick={() => { onChange(sensor.id, { thermalSample: null }); setMessage("열화상 샘플을 해제했습니다. 서버의 최신 온도 데이터를 기다립니다."); }}>샘플 해제</button>}</div>
+      <p className={styles.help}>{thermalSample ? `샘플 테스트 중 · ${thermalSample.width} × ${thermalSample.height}px · 실시간 수신 아님` : "thermal_sample.csv를 온도 이미지로 변환합니다. 서버 연결 없이 배치·투영을 시험할 수 있습니다."}</p>
+    </div>}
+    {message && <p className={styles.help} role="status">{message}</p>}
+    {response?.error && <p className={styles.help} role="alert">{response.error}</p>}
     </fieldset>
+    {p.kind === "THERMAL" && <>
+      <fieldset className={styles.settingsGroup}><legend>열화상 원본·색상</legend>
+        <ThermalFramePreview grid={frame?.temperatureGrid} source={thermalImage.source} summary={thermalImage.summary} settings={p} />
+        {!source && <p className={styles.help}>샘플을 불러오거나 서버의 온도 데이터를 연결하세요.</p>}
+        <label className={styles.field}><span>색상 팔레트</span><select value={p.palette} onChange={(event) => update({ palette: event.target.value })}>{Object.entries(THERMAL_PALETTES).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+        <div className={styles.rangeGrid}><NumericField displayPrecision={2} label="낮은 온도" unit="°C" value={p.temperatureMin} onChange={(value) => update({ temperatureMin: value })} /><NumericField displayPrecision={2} label="높은 온도" unit="°C" value={p.temperatureMax} onChange={(value) => update({ temperatureMax: value })} /></div>
+        <button type="button" disabled={!thermalImage.summary} onClick={() => update({ temperatureMin: thermalImage.summary.min, temperatureMax: Math.max(thermalImage.summary.min + .01, thermalImage.summary.max) })}>현재 데이터 범위에 맞춤</button>
+        <p className={styles.help}>색상 범위를 좁히면 작은 온도 차이가 더 뚜렷해집니다. 원본 온도는 바뀌지 않습니다. 이미 색상이 입혀진 서버 이미지는 받은 색상을 사용합니다.</p>
+        {p.temperatureMax <= p.temperatureMin && <p role="alert">높은 온도를 낮은 온도보다 크게 입력하세요.</p>}
+      </fieldset>
+      <ThermalCameraPlacement sensor={sensor} equipment={equipment} onChange={onChange} cameraController={cameraController} workspaceController={workspaceController} />
+    </>}
     <fieldset className={styles.settingsGroup} data-setup-field="sensor-texture"><legend>오브젝트 텍스처</legend>
     <label className={styles.check}><input type="checkbox" checked={p.enabled} onChange={(event) => update({ enabled: event.target.checked })} />영상·온도 분포 입히기</label>
     {p.enabled && <>
@@ -86,7 +131,6 @@ export default function SensorProjectionFields({ sensor, equipment, assets = [],
         <button type="button" onClick={exportImage}>이미지 가공 JSON 내보내기</button>
         <p className={styles.help}>원본 크기·편집 수치·변환 행렬·적용면 기준을 내보냅니다. 비전 이미지 가공값은 센서 설치 좌표와 별개로 보관합니다.</p>
       </details>
-      {p.kind === "THERMAL" && <><div className={styles.rangeGrid}><NumericField label="낮은 온도" unit="°C" value={p.temperatureMin} onChange={(value) => update({ temperatureMin: value })} /><NumericField label="높은 온도" unit="°C" value={p.temperatureMax} onChange={(value) => update({ temperatureMax: value })} /></div><p className={styles.help}>온도 배열을 받으면 낮은 온도는 파랑, 높은 온도는 빨강으로 표시합니다. 열화상 이미지는 받은 색상으로 표시합니다.</p>{p.temperatureMax <= p.temperatureMin && <p role="alert">높은 온도를 낮은 온도보다 크게 입력하세요.</p>}</>}
     </>}
   </fieldset></div>;
 }

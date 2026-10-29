@@ -6,7 +6,8 @@ import { ArrowRightIcon, FloorGapIcon, FloorSelectIcon, MoonIcon, SaveIcon, SunI
 import { navigateTo as navigateToAppRoute } from "@/features/customAssets/core/customAssetNavigation";
 import { getRuntimeCustomAsset } from "@/features/customAssets/core/customAssetRegistry";
 import { CUSTOM_BUILDING_CREATE_ID, CUSTOM_EQUIPMENT_CREATE_ID } from "@/features/customAssets/core/customAssetTypes";
-import { loadLayout, saveLayout } from "@/features/digitalTwin/editor/api/layoutRepository";
+import { loadLayout, saveLayout, serializeLayout } from "@/features/digitalTwin/editor/api/layoutRepository";
+import { readProjects } from "@/features/portal/projects/projectRepository";
 import BuildingDetailNavigator from "@/features/digitalTwin/editor/components/BuildingDetailNavigator";
 import EditorToolbar from "@/features/digitalTwin/editor/components/EditorToolbar";
 import EnvironmentSettingsPanel from "@/features/digitalTwin/editor/components/EnvironmentSettingsPanel";
@@ -162,6 +163,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
   const [terrainBrush, setTerrainBrush] = useState(DEFAULT_TERRAIN_BRUSH);
   const [terrainAreaSelection, setTerrainAreaSelection] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showOnlySelectedBuilding, setShowOnlySelectedBuilding] = useState(false);
   const [showFloorReference, setShowFloorReference] = useState(false);
@@ -956,6 +958,23 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     const saved = loadLayout();
     setSaveStatus(saved && hydrateLayout(saved) ? "저장된 월드를 불러왔습니다" : "저장된 배치가 없습니다");
   }, [hydrateLayout]);
+  const handleExportBundle = async () => {
+    if (pendingAssetUploads > 0 || isExporting) return;
+    setIsExporting(true);
+    setSaveStatus("설정과 업로드 파일을 확인하고 있습니다…");
+    // Capture now, before loading the ZIP code or reading IndexedDB files.
+    try {
+      const project = { id: readProjects().activeId, layout: serializeLayout(editor.layoutDocument) };
+      const { downloadProjectBundle, exportProjectBundle } = await import("@/features/portal/projects/projectBundle");
+      const blob = await exportProjectBundle(project, { onProgress: setSaveStatus });
+      downloadProjectBundle(blob, project);
+      setSaveStatus("현재 설정과 파일을 ZIP으로 내보냈습니다. 프로젝트 목록에서 다시 가져올 수 있습니다.");
+    } catch (error) {
+      setSaveStatus(`ZIP 내보내기 실패 · ${error.message}`);
+    } finally {
+      setIsExporting(false);
+    }
+  };
   const handleRepresentativeSnapshot = useCallback(() => {
     try {
       const image = representativeSnapshotRef.current?.();
@@ -1206,6 +1225,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
             ) : null}
             {isMonitoringStep ? <button type="button" onClick={() => setMonitoringEquipmentPickerOpen(true)}>설비 추가</button> : null}
             <button type="button" className={styles.expandScopeButton} onClick={() => setShowObservationScopeSelector(true)}>관측 범위 변경</button>
+            <button type="button" disabled={pendingAssetUploads > 0 || isSaving || isExporting} onClick={handleExportBundle} title="현재 설정과 대표 이미지·스캔·텍스처를 함께 내보내기">{isExporting ? "ZIP 생성 중…" : "ZIP 내보내기"}</button>
             <button type="button" className={styles.projectBackButton} disabled={pendingAssetUploads > 0 || isSaving} onClick={requestReturnToProjects}>프로젝트 목록으로 돌아가기</button>
           </div>
           <section className={styles.stageGuide} aria-label="현재 화면 작업"><button type="button" disabled={primaryDisabled} title={pendingAssetUploads > 0 ? "3D 파일 저장 중입니다" : primaryDisabled ? "건축물과 층을 먼저 선택하세요" : wizardStep.primaryLabel} onClick={handlePrimaryAction}>{hasNextWizardStep ? <ArrowRightIcon size={16} /> : <SaveIcon size={16} />}<span>{pendingAssetUploads > 0 ? "파일 저장 중…" : hasNextWizardStep ? "다음" : "저장"}</span></button></section>
@@ -1483,7 +1503,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
         </div>
 
         <div className={styles.floatingPanelHost} data-editor-inspector>
-          <FloatingPanel open={panelOpen} title={panelTitle} description={panelDescription} contentKey={`${wizardStepId}:${activeFloatingPanelId}`} docked onClose={handleFloatingPanelClose}>
+          <FloatingPanel open={panelOpen} title={panelTitle} description={panelDescription} contentKey={`${wizardStepId}:${activeFloatingPanelId}`} contentScrollable={!isMonitoringStep} hideHeader={isMonitoringStep} docked onClose={handleFloatingPanelClose}>
             {editingFloorTerrain ? (
               <FloorTerrainPanel key={selectedFloor.id} floor={selectedFloor} floors={buildingFloors}
                 areaSelection={terrainAreaSelection} onAreaSelectionChange={setTerrainAreaSelection}
@@ -1574,6 +1594,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                 onAddServer={addMonitoringBinding} onSelectServer={selectMonitoringBinding} onUpdateServer={updateMonitoringBinding}
                 onUpdateEquipment={handleMonitoringEquipmentChange}
                 onUploadAssetFiles={handleMonitoringAssetFiles}
+                onClose={handleFloatingPanelClose}
               />
             )}
           </FloatingPanel>

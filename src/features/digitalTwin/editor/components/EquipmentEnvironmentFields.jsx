@@ -6,7 +6,7 @@ export default function EquipmentEnvironmentFields({ equipmentId, viewerPreset, 
   const saved = viewerPreset?.equipmentEnvironments?.[equipmentId];
   const value = normalizeEquipmentEnvironment(saved);
   const update = (changes) => onChange({ equipmentEnvironments: { ...viewerPreset?.equipmentEnvironments, [equipmentId]: { ...value, ...changes } } });
-  return <fieldset className={styles.settingsGroup} id="equipment-environment-settings"><legend>6. 배경·지면 · 설비별 설정</legend>
+  return <fieldset className={styles.settingsGroup} id="equipment-environment-settings"><legend>배경·지면 · 설비별 설정</legend>
     <p className={styles.help}>이 설비의 배경과 지면을 설정하세요. 프로젝트 저장 후 관제 화면에도 적용됩니다.</p>
     <div className={styles.rangeGrid}>{[["backgroundColor", "월드 배경색"], ["groundColor", "지면 색상"], ["gridColor", "격자 색상"]].map(([key, label]) => <label key={key} className={styles.field}><span>{label}</span><input type="color" value={value[key]} onChange={(event) => update({ [key]: event.target.value })} /><span>{value[key]}</span></label>)}</div>
     <label className={styles.field}><span>지면 표현 방식</span><select value={value.groundMode} onChange={(event) => update({ groundMode: event.target.value })}><option value="VISIBLE">불투명 지면</option><option value="TRANSLUCENT">반투명 지면</option><option value="SECTION">절반 단면</option><option value="HIDDEN">지면 숨김</option></select></label>

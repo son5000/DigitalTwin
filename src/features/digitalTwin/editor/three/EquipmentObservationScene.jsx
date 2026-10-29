@@ -34,7 +34,7 @@ import { setScanLoadState } from "./scanLoadState";
 import { bindSurfaceRoiInteraction } from "./surfaceRoiInteraction";
 import InteractionGuide from "../components/InteractionGuide";
 import { captureViewerCamera, restoreEquipmentCamera, rememberViewerCamera, restoreViewerCamera } from "./viewerCameraMemory";
-import { applySensorView } from "./sensorCamera";
+import { applySensorView, fitSensorCameraNear, sensorPoseFromCamera } from "./sensorCamera";
 import { bindMonitoringLayers } from "./monitoringLayers";
 import { bindEquipmentCoordinateFrame } from "./equipmentCoordinateFrameLayer.js";
 
@@ -144,7 +144,6 @@ export default function EquipmentObservationScene({
   const [placingSensorId, setPlacingSensorId] = useState(null);
   const [placementNotice, setPlacementNotice] = useState("");
   const [projectionPicking, setProjectionPicking] = useState(null);
-  const [projectionNotice, setProjectionNotice] = useState("");
   const projectionPickingRef = useRef(null);
   useEffect(() => { projectionPickingRef.current = projectionPicking === selectedSensorId ? projectionPicking : null; }, [projectionPicking, selectedSensorId]);
   const placingSensorRef = useRef(null);
@@ -215,9 +214,20 @@ export default function EquipmentObservationScene({
     renderer.domElement.setAttribute("aria-label", "설비와 센서 위치·화각 3D 화면");
     mount.appendChild(renderer.domElement);
     const camera = new THREE.PerspectiveCamera(46, 1, 0.01, 500);
+    const renderedEquipment = new Map();
+    const isDetailedLoading = () => [...renderedEquipment.values()].some((entry) => entry.loading);
+    const blockInputWhileLoading = (event) => {
+      if (!isDetailedLoading()) return;
+      if (event.cancelable) event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    renderer.domElement.addEventListener("pointerdown", blockInputWhileLoading, true);
+    renderer.domElement.addEventListener("pointerup", blockInputWhileLoading, true);
+    renderer.domElement.addEventListener("pointercancel", blockInputWhileLoading, true);
+    renderer.domElement.addEventListener("wheel", blockInputWhileLoading, { capture: true, passive: false });
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    const stopAutomaticFit = () => { allowDetailedFit = false; };
+    const stopAutomaticFit = () => { if (!isDetailedLoading()) allowDetailedFit = false; };
     controls.addEventListener("start", stopAutomaticFit);
     renderer.domElement.addEventListener("pointerdown", stopAutomaticFit, true);
     renderer.domElement.addEventListener("wheel", stopAutomaticFit, { passive: true });
@@ -233,7 +243,6 @@ export default function EquipmentObservationScene({
     const equipmentRoot = new THREE.Group();
     root.add(equipmentRoot);
     scene.add(root);
-    const renderedEquipment = new Map();
     function createProxy(item) {
       return item.siteObject && !item.enclosure?.enabled ? createSiteEnvironmentObject({ ...item.siteObject, position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, visible: true }, { theme, selected: false, selectionColor: SCENE_THEMES[theme].selection, edgeColor: SCENE_THEMES[theme].worldEdge })
         : createEquipmentObject({ ...item, showNameLabel: false, dimensions: { width: 1, height: 1, depth: 1, ...item.dimensions }, appearance: { color: "#6f8f9d", opacity: 1, ...item.appearance }, position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, visible: true }, {
@@ -432,6 +441,14 @@ export default function EquipmentObservationScene({
       else { transform.translate.enabled = false; transform.rotate.enabled = false; }
       return true;
     }
+    function updateSensorCamera() {
+      applySensorView(camera, viewMarker, viewSensor);
+      if (viewSensor.textureProjection?.kind === "THERMAL") {
+        const entry = renderedEquipment.get(viewSensor.textureProjection.equipmentId ?? viewSensor.equipmentIds?.[0]);
+        const target = viewSensor.textureProjection.target ?? "PROXY";
+        if (entry) fitSensorCameraNear(camera, [["ACTUAL", entry.actual], ["PROXY", entry.proxy]].filter(([kind]) => target === "BOTH" || target === kind).map(([, root]) => root));
+      }
+    }
     function syncSensorView() {
       const id = sensorViewRef.current;
       const changed = lastViewId !== id;
@@ -440,7 +457,7 @@ export default function EquipmentObservationScene({
       viewMarker = sensorMarkers.get(id);
       if (viewSensor && viewMarker) {
         detachDualTransformControls(transform);
-        applySensorView(camera, viewMarker, viewSensor); controls.enabled = false;
+        updateSensorCamera(); controls.enabled = false;
         focusRuntime.cameraFocus = null; allowDetailedFit = false;
       } else if (changed && lastViewId) {
         restoreViewerCamera(camera, controls, orbitSnapshot); controls.enabled = true;
@@ -625,6 +642,13 @@ export default function EquipmentObservationScene({
       getEquipment: () => coordinateEquipmentRef.current, getStage: () => editorStageRef.current, getBinding: (id) => detailedBindings.get(id) });
     const cameraApi = {
       equipmentId: focusEquipment?.id,
+      placeSensorFromView: (sensorId) => {
+        const entry = renderedEquipment.get(focusEquipment?.id);
+        if (!entry || isDetailedLoading() || !sensorCallbacksRef.current.onSensorChange) return false;
+        stopFit();
+        sensorCallbacksRef.current.onSensorChange(sensorId, sensorPoseFromCamera(camera, entry.object));
+        return true;
+      },
       coordinateBounds: coordinateLayer.bounds,
       previewCoordinateFrame: coordinateLayer.preview,
       pickCoordinateOrigin: coordinateLayer.pick,
@@ -661,11 +685,11 @@ export default function EquipmentObservationScene({
       fitCamera(camera, controls, scenePartId ? focusObject : viewObject());
       if (animateEquipmentFocus && focusEquipment) focusEquipmentInWorld(focusRuntime, focusObject, focusEquipment);
     }
-    if (viewSensor && viewMarker) applySensorView(camera, viewMarker, viewSensor);
+    if (viewSensor && viewMarker) updateSensorCamera();
     const worldBounds = new THREE.Box3().setFromObject(root).union(new THREE.Box3().setFromObject(floor));
     const monitoringLayers = bindMonitoringLayers({ renderedEquipment, getOptions: () => monitoringOptionsRef.current ?? {}, getSensors: () => sensorStateRef.current?.sensors ?? [] });
     const projectionLayer = bindSensorProjectionLayer({ renderer, renderedEquipment, markers: sensorMarkers,
-      getOptions: () => monitoringOptionsRef.current, getSensors: () => sensorStateRef.current?.sensors, onError: setProjectionNotice });
+      getOptions: () => monitoringOptionsRef.current, getSensors: () => sensorStateRef.current?.sensors });
     const disconnectViewerCamera = bindViewerCamera(controls, (...args) => sceneInputsRef.current.onCameraControlsChange?.(...args), (...args) => sceneInputsRef.current.onZoomChange?.(...args));
     controls.addEventListener("end", syncEquipmentRepresentations);
     syncEquipmentRepresentations();
@@ -746,7 +770,7 @@ export default function EquipmentObservationScene({
       });
       if (doorsMoved) {
         sensorLayer.updateMountedPoses(sensorStateRef.current?.sensors ?? []);
-        if (viewSensor && viewMarker) applySensorView(camera, viewMarker, viewSensor);
+        if (viewSensor && viewMarker) updateSensorCamera();
       }
       const sensorsChanged = syncSensors();
       if (syncSensorView() || sensorsChanged) resize();
@@ -812,6 +836,10 @@ export default function EquipmentObservationScene({
       renderer.domElement.removeEventListener("pointermove", handlePointerMove);
       renderer.domElement.removeEventListener("pointerleave", clearPointHover);
       renderer.domElement.removeEventListener("pointerdown", handlePointerDown);
+      renderer.domElement.removeEventListener("pointerdown", blockInputWhileLoading, true);
+      renderer.domElement.removeEventListener("pointerup", blockInputWhileLoading, true);
+      renderer.domElement.removeEventListener("pointercancel", blockInputWhileLoading, true);
+      renderer.domElement.removeEventListener("wheel", blockInputWhileLoading, true);
       renderer.domElement.removeEventListener("pointerdown", stopAutomaticFit, true);
       renderer.domElement.removeEventListener("wheel", stopAutomaticFit);
       controls.removeEventListener("start", stopAutomaticFit);
@@ -851,7 +879,6 @@ export default function EquipmentObservationScene({
     </div>}
     {pointOptions?.placing && <><InteractionGuide message={pointOptions.placementLabel ?? "모델 표면을 클릭해 관측 영역을 놓으세요."} /><div className={styles.surfacePlacement} data-camera-safe-ui><button type="button" onClick={pointOptions.onPlaced}>영역 지정 취소</button></div></>}
     {(placingSensorId === selectedSensorId || projectionPicking === selectedSensorId) && selectedSensorId && <InteractionGuide key={projectionPicking ? "projection" : "sensor"} message={projectionPicking ? "영상이 표시될 모델 표면을 클릭하세요." : "센서를 부착할 모델 표면을 클릭하세요."} />}
-    {projectionNotice && <div className={styles.projectionNotice} role="status" data-camera-safe-ui>{projectionNotice}</div>}
     {!overview && hasVisibleEnclosure && <EnclosureDoorControls equipment={displayedDoorEquipment} onToggle={(index, open, side) => setDoorOverrides((current) => ({ ...current, [doorEquipment.id]: enclosureDoorOverride(doorEquipment, displayedDoorEquipment, index, open, side) }))} />}
   </section>;
 }

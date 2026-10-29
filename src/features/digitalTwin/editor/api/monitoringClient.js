@@ -1,5 +1,6 @@
 import { validateCalibration, validateTelemetry, mediaUrl } from "../model/monitoringContract.js";
 import { validTemperatureGrid } from "../model/sensorProjection.js";
+import { MAX_THERMAL_CSV_BYTES, parseTemperatureCsv } from "../model/thermalFrame.js";
 
 export const monitoringApiBase = (import.meta.env?.VITE_MONITORING_API_BASE || "").replace(/\/$/, "");
 export async function monitoringRequest(path, options = {}) {
@@ -31,9 +32,23 @@ export async function saveSensorCalibration(payload, revision = 0, signal) {
 }
 export async function getSensorFrame(sensorId, signal, kind) {
   const result = await monitoringRequest(`/sensors/${encodeURIComponent(sensorId)}/frame${kind ? `?kind=${encodeURIComponent(kind)}` : ""}`, { signal });
+  if (result?.sensorId !== sensorId || !Number.isFinite(Date.parse(result.measuredAt))) throw new Error("센서 영상 응답 형식을 확인하세요.");
+  if (result.temperatureCsv != null || result.temperatureCsvUrl != null) {
+    let csv = result.temperatureCsv;
+    if (csv == null) {
+      const url = mediaUrl(result.temperatureCsvUrl);
+      if (!url) throw new Error("온도 CSV 주소를 확인하세요.");
+      const response = await fetch(url, { credentials: "same-origin", signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10000)]) : AbortSignal.timeout(10000) });
+      if (!response.ok) throw new Error(`온도 CSV 요청 실패 (${response.status})`);
+      if (Number(response.headers.get("content-length")) > MAX_THERMAL_CSV_BYTES) throw new Error("온도 CSV는 16MB 이하여야 합니다.");
+      csv = await response.text();
+    }
+    result.temperatureGrid = parseTemperatureCsv(csv);
+    delete result.temperatureCsv;
+  }
   if (result?.sensorId !== sensorId || (!mediaUrl(result.url) && !validTemperatureGrid(result.temperatureGrid)) || !Number.isFinite(Date.parse(result.measuredAt))) throw new Error("센서 영상 응답 형식을 확인하세요.");
   if (kind && (result.kind ?? (result.temperatureGrid ? "THERMAL" : "VISION")) !== kind) throw new Error("선택한 종류의 센서 영상을 기다리고 있습니다.");
-  return result;
+  return { ...result, sample: false, dataSource: "SERVER", ...(result.temperatureGrid ? { resolution: { width: result.temperatureGrid.width, height: result.temperatureGrid.height } } : {}) };
 }
 export const equipmentPath = (projectId, equipmentId) => `/projects/${encodeURIComponent(projectId)}/equipment/${encodeURIComponent(equipmentId)}`;
 export async function loadEquipmentTelemetry(projectId, equipmentId, signal) {

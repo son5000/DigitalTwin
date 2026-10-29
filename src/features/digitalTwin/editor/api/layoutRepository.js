@@ -3,7 +3,7 @@ import { LAYOUT_STORAGE_KEY } from "@/features/digitalTwin/editor/model/layoutIn
 
 const STORAGE_KEY = LAYOUT_STORAGE_KEY;
 
-export function saveLayout(layout) {
+export function serializeLayout(layout) {
   const observationConfig = layout.observationConfig ?? {
     equipmentAssetBindings: layout.equipmentAssetBindings ?? [],
     sensorBindings: layout.sensorBindings ?? [],
@@ -78,6 +78,11 @@ export function saveLayout(layout) {
     serverBindings: observationConfig.serverBindings ?? [],
   };
 
+  return payload;
+}
+
+export function saveLayout(layout) {
+  const payload = serializeLayout(layout);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
   window.dispatchEvent(new Event("digital-twin-layout-saved"));
 

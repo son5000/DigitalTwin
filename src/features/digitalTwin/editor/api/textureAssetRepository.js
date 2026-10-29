@@ -21,8 +21,8 @@ async function transact(mode, callback) {
     return await new Promise((resolve, reject) => {
       const transaction = database.transaction(STORE_NAME, mode);
       const request = callback(transaction.objectStore(STORE_NAME));
-      request.onsuccess = () => resolve(request.result ?? null);
-      request.onerror = () => reject(request.error ?? new Error("텍스처 저장 작업에 실패했습니다"));
+      transaction.oncomplete = () => resolve(request.result ?? null);
+      transaction.onabort = transaction.onerror = () => reject(transaction.error ?? request.error ?? new Error("텍스처 저장 작업에 실패했습니다"));
     });
   } finally {
     database.close();
