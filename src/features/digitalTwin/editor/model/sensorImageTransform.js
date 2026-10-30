@@ -39,7 +39,7 @@ export function normalizeSensorProjection(source = {}) {
     cropHeight: number(source.cropHeight, 1 - cropY, 1e-6, 1 - cropY),
     temperatureMin: number(source.temperatureMin, 0, -273.15, 10000),
     temperatureMax: number(source.temperatureMax, 100, -273.14, 10001),
-    palette: Object.hasOwn(THERMAL_PALETTES, source.palette) ? source.palette : "SPECTRUM",
+    palette: source.palette === "SPECTRUM" ? "JET" : Object.hasOwn(THERMAL_PALETTES, source.palette) ? source.palette : "JET",
   };
 }
 

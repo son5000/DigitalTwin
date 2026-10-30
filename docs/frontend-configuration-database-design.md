@@ -387,7 +387,7 @@ NODE_LOCAL은 target node가 필수다. 위치와 target은 달라야 하고 up 
 
 `draft_calibration_json`은 재개 가능한 편집 초안일 뿐이다. 확정 시 기존 보정 API가 `sensor_pose`/`calibration`을 저장하고, 응답 ID로 연결한 후 초안을 비운다. 자세·화각을 백엔드와 프론트 양쪽에서 독립적으로 “정답”으로 수정하지 않는다. 아직 지원하지 않는 보정 요청은 DRAFT/NEEDS_REVIEW 상태로 남기고 실측 투사를 활성화하지 않는다.
 
-`projection_json`은 현재 `textureProjection`의 `enabled`, `kind`, `target`, `surfaceId`, `meshPath`, `scaleX/Y`, `offsetX/Y`, `rotation`, `cropX/Y/Width/Height`, `opacity`, `temperatureMin/Max`에 대응한다. 영상 회전의 도 단위와 자세 회전의 라디안을 혼동하지 않는다. 크롭 경계, 0–1 opacity, 최솟값 < 최댓값을 검증한다. 실제 프레임 URL·온도 배열은 여기에 넣지 않는다.
+`projection_json`은 현재 `textureProjection`의 `enabled`, `kind`, `target`, `surfaceId`, `meshPath`, `scaleX/Y`, `offsetX/Y`, `rotation`, `cropX/Y/Width/Height`, `opacity`, `palette`에 대응한다. 이전 설정의 `temperatureMin/Max`는 호환을 위해 보존할 수 있으나 CSV 색상화에는 사용하지 않는다. 프론트가 각 온도 프레임의 유효 최저·최고값을 찾아 기본 JET 팔레트에 자동 매핑한다. 영상 회전의 도 단위와 자세 회전의 라디안을 혼동하지 않는다. 크롭 경계와 0–1 opacity를 검증한다. 실제 프레임 URL·온도 배열은 여기에 넣지 않는다.
 
 ### 5.13 `dt_spatial_roi` — 3D 관측 영역
 

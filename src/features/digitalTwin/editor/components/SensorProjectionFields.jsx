@@ -6,7 +6,6 @@ import { getSensorCapabilities } from "../model/equipmentDetailModel";
 import { calibrationPayload, imageProcessingPayload, downloadMonitoringJson, mediaUrl } from "../model/monitoringContract";
 import { IMAGE_PLANES, resolveImageSurface } from "../model/textureSurfaceMapping";
 import { readProjects } from "@/features/portal/projects/projectRepository";
-import NumericField from "./NumericField";
 import ImageTransformEditor from "./ImageTransformEditor";
 import useSensorProjectionFrames from "../store/useSensorProjectionFrames";
 import useThermalImage from "../store/useThermalImage";
@@ -68,6 +67,7 @@ export default function SensorProjectionFields({ sensor, equipment, assets = [],
         thermalSample: { enabled: true, url: THERMAL_SAMPLE_URL, width: grid.width, height: grid.height, loadedAt: new Date().toISOString() },
         resolution: { width: grid.width, height: grid.height }, aspectRatio: grid.width / grid.height,
         textureProjection: normalizeSensorProjection({ ...current.textureProjection, enabled: true, kind: "THERMAL", equipmentId: equipment.id,
+          palette: "JET",
           temperatureMin: summary.min, temperatureMax: summary.max > summary.min ? summary.max : summary.min + 1,
           target: current.textureProjection?.target ?? (assets.some((asset) => ["OBJ", "PLY"].includes(asset.assetType)) ? "ACTUAL" : "PROXY") }),
       });
@@ -105,10 +105,7 @@ export default function SensorProjectionFields({ sensor, equipment, assets = [],
         <ThermalFramePreview grid={frame?.temperatureGrid} source={thermalImage.source} summary={thermalImage.summary} settings={p} />
         {!source && <p className={styles.help}>샘플을 불러오거나 서버의 온도 데이터를 연결하세요.</p>}
         <label className={styles.field}><span>색상 팔레트</span><select value={p.palette} onChange={(event) => update({ palette: event.target.value })}>{Object.entries(THERMAL_PALETTES).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
-        <div className={styles.rangeGrid}><NumericField displayPrecision={2} label="낮은 온도" unit="°C" value={p.temperatureMin} onChange={(value) => update({ temperatureMin: value })} /><NumericField displayPrecision={2} label="높은 온도" unit="°C" value={p.temperatureMax} onChange={(value) => update({ temperatureMax: value })} /></div>
-        <button type="button" disabled={!thermalImage.summary} onClick={() => update({ temperatureMin: thermalImage.summary.min, temperatureMax: Math.max(thermalImage.summary.min + .01, thermalImage.summary.max) })}>현재 데이터 범위에 맞춤</button>
-        <p className={styles.help}>색상 범위를 좁히면 작은 온도 차이가 더 뚜렷해집니다. 원본 온도는 바뀌지 않습니다. 이미 색상이 입혀진 서버 이미지는 받은 색상을 사용합니다.</p>
-        {p.temperatureMax <= p.temperatureMin && <p role="alert">높은 온도를 낮은 온도보다 크게 입력하세요.</p>}
+        <p className={styles.help}>CSV의 유효한 최저·최고 온도를 프레임마다 자동으로 색상 범위에 적용합니다. 원본 온도는 바뀌지 않으며, 이미 색상이 입혀진 서버 이미지는 받은 색상을 사용합니다.</p>
       </fieldset>
       <ThermalCameraPlacement sensor={sensor} equipment={equipment} onChange={onChange} cameraController={cameraController} workspaceController={workspaceController} />
     </>}

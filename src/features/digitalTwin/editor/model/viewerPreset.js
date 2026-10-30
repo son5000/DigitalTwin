@@ -6,15 +6,15 @@ export function normalizeEquipmentEnvironment(source = {}) {
   const color = (value, fallback) => /^#[0-9a-f]{6}$/i.test(value ?? "") ? value : fallback;
   const number = (value, fallback, min, max) => Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback;
   return {
-    backgroundColor: color(source.backgroundColor, "#0b1217"),
-    groundColor: color(source.groundColor, "#17242b"),
-    gridColor: color(source.gridColor, "#456577"),
+    backgroundColor: color(source.backgroundColor, "#f5f5f5"),
+    groundColor: color(source.groundColor, "#a1a1a1"),
+    gridColor: color(source.gridColor, "#1f6c98"),
     groundMode: ["VISIBLE", "TRANSLUCENT", "SECTION", "HIDDEN"].includes(source.groundMode) ? source.groundMode : "VISIBLE",
     groundOpacity: number(source.groundOpacity, 0.28, 0, 1),
     groundSize: number(source.groundSize, 20, 0.1, 10000),
     groundHeight: number(source.groundHeight, 0, -1000, 1000),
     gridVisible: source.gridVisible !== false,
-    gridSpacing: number(source.gridSpacing, 1, 0.01, 1000),
+    gridSpacing: number(source.gridSpacing, 0.5, 0.01, 1000),
   };
 }
 
@@ -23,7 +23,7 @@ export function normalizeEquipmentView(view) {
   if (Math.hypot(...view.up) < 0.001 || Math.hypot(...view.position.map((value, index) => value - view.target[index])) < 0.001) return null;
   return { position: [...view.position], target: [...view.target], up: [...view.up],
     zoom: Number.isFinite(view.zoom) ? Math.max(0.01, Math.min(100, view.zoom)) : 1,
-    fov: Number.isFinite(view.fov) ? Math.max(10, Math.min(100, view.fov)) : 46,
+    fov: Number.isFinite(view.fov) ? Math.max(10, Math.min(100, view.fov)) : 60,
     near: Number.isFinite(view.near) ? Math.max(0.0001, view.near) : 0.01,
     far: Number.isFinite(view.far) ? Math.max((view.near || 0.01) + 1, view.far) : 500 };
 }

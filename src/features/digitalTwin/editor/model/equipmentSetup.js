@@ -105,8 +105,6 @@ export function getSetupStepValidation(step, context) {
       if (sensorHasImaging(sensor) && (![sensor.fieldOfView, sensor.aspectRatio, sensor.near, sensor.far].every(finite) || sensor.fieldOfView < 10 || sensor.fieldOfView > 160 || sensor.aspectRatio <= 0 || sensor.near <= 0 || sensor.far <= sensor.near)) return sensorIssue("sensor-optics", "화각은 10~160도, 관측 거리는 근거리보다 크게 입력하세요.", "PLACEMENT");
       const payload = calibrationPayload(null, equipment, sensor, assets);
       if (!sensor.calibrationConfirmed || sensor.calibrationConfirmationFrame !== referenceFrameKey(payload.coordinateFrame) || (sensor.surfaceMount && sensor.calibrationConfirmationModel !== payload.model.version)) return sensorIssue("sensor-calibration", "실제 설치 위치·방향을 확인한 뒤 보정 확인을 선택하세요.", "PLACEMENT");
-      const projection = sensor.textureProjection;
-      if (projection?.enabled && projection.kind === "THERMAL" && (!finite(projection.temperatureMin) || !finite(projection.temperatureMax) || projection.temperatureMax <= projection.temperatureMin)) return sensorIssue("sensor-texture", "높은 온도를 낮은 온도보다 크게 입력하세요.", "TEXTURE");
     }
   }
   if (step === "POINT") {

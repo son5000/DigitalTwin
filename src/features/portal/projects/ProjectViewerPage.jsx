@@ -105,7 +105,7 @@ function SavedWorldViewer({ project, requestedEquipmentId, operationsSection, op
   const isolatedEquipmentView = equipmentDetail && tree.scope !== "SINGLE_EQUIPMENT";
   const startsInSingleEquipmentView = tree.scope === "SINGLE_EQUIPMENT" || Boolean(linkedNode);
   const equipmentOverview = tree.scope === "MULTI_EQUIPMENT" && !equipmentDetail;
-  const [theme, setTheme] = useState(preferences.theme === "dark" ? "dark" : "light");
+  const [theme, setTheme] = useState(preferences.theme === "light" ? "light" : "dark");
   const snapshotScope = isolatedEquipmentView ? "SINGLE_EQUIPMENT" : tree.scope;
   const snapshotTargetId = isolatedEquipmentView ? equipmentId : tree.root?.id;
   const snapshotRequest = useMemo(() => ({ scope: snapshotScope, targetId: snapshotTargetId, theme, layout }), [snapshotScope, snapshotTargetId, theme, layout]);

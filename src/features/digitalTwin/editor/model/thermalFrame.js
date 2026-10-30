@@ -1,11 +1,11 @@
 export const THERMAL_SAMPLE_URL = "/samples/thermal_sample.csv";
 export const MAX_THERMAL_CSV_BYTES = 16 * 1024 * 1024;
-export const THERMAL_PALETTES = Object.freeze({ SPECTRUM: "파랑 → 빨강", IRON: "검정 → 주황 → 흰색", GRAY: "흑백" });
+export const THERMAL_PALETTES = Object.freeze({ JET: "JET · 파랑 → 빨강", IRON: "검정 → 주황 → 흰색", GRAY: "흑백" });
 const stops = {
-  SPECTRUM: [[0, 0, 255], [128, 128, 128], [255, 255, 0], [255, 128, 0], [255, 0, 0]],
   IRON: [[0, 0, 0], [73, 13, 116], [181, 40, 61], [246, 137, 18], [255, 255, 220]],
   GRAY: [[0, 0, 0], [255, 255, 255]],
 };
+const jetStops = [[0, [0, 0, 128]], [.125, [0, 0, 255]], [.375, [0, 255, 255]], [.625, [255, 255, 0]], [.875, [255, 0, 0]], [1, [128, 0, 0]]];
 
 export function activeThermalSample(sensor) {
   const sample = sensor?.thermalSample;
@@ -21,6 +21,7 @@ export function validTemperatureGrid(grid) {
 
 // Immutable frames can be checked once, instead of scanning every pixel on each animation frame.
 const checkedGrids = new WeakMap();
+const gridSummaries = new WeakMap();
 export function isTemperatureFrame(grid) {
   if (!grid || typeof grid !== "object") return false;
   if (!checkedGrids.has(grid)) checkedGrids.set(grid, validTemperatureGrid(grid));
@@ -29,13 +30,16 @@ export function isTemperatureFrame(grid) {
 
 export function temperatureSummary(grid) {
   if (!isTemperatureFrame(grid)) return null;
+  if (gridSummaries.has(grid)) return gridSummaries.get(grid);
   let min = Infinity, max = -Infinity, sum = 0, count = 0, maxIndex = 0;
   grid.values.forEach((value, index) => {
     if (value === null) return;
     if (value > max) { max = value; maxIndex = index; }
     min = Math.min(min, value); sum += value; count++;
   });
-  return count ? { min, max, average: sum / count, count, maxIndex } : null;
+  const summary = count ? { min, max, average: sum / count, count, maxIndex } : null;
+  gridSummaries.set(grid, summary);
+  return summary;
 }
 
 export function parseTemperatureCsv(text) {
@@ -63,25 +67,46 @@ export function parseTemperatureCsv(text) {
   return grid;
 }
 
-export function thermalColor(t, palette = "SPECTRUM") {
-  const colors = stops[palette] ?? stops.SPECTRUM;
+export function thermalColor(t, palette = "JET") {
+  if (palette === "JET" || palette === "SPECTRUM") {
+    const position = Math.max(0, Math.min(1, t));
+    const end = jetStops.findIndex(([at]) => at >= position);
+    if (end === 0) return jetStops[0][1];
+    const [startAt, startColor] = jetStops[end - 1], [endAt, endColor] = jetStops[end];
+    const ratio = (position - startAt) / (endAt - startAt);
+    return startColor.map((value, channel) => Math.round(value + (endColor[channel] - value) * ratio));
+  }
+  const colors = stops[palette] ?? stops.GRAY;
   const position = Math.max(0, Math.min(1, t)) * (colors.length - 1);
   const index = Math.min(colors.length - 2, Math.floor(position)), ratio = position - index;
   return colors[index].map((value, channel) => Math.round(value + (colors[index + 1][channel] - value) * ratio));
 }
 
 export function thermalGradient(palette) {
-  return `linear-gradient(to right, ${(stops[palette] ?? stops.SPECTRUM).map((color) => `rgb(${color.join(" ")})`).join(", ")})`;
+  if (palette === "JET" || palette === "SPECTRUM") return `linear-gradient(to right, ${jetStops.map(([at, color]) => `rgb(${color.join(" ")}) ${at * 100}%`).join(", ")})`;
+  return `linear-gradient(to right, ${(stops[palette] ?? stops.GRAY).map((color) => `rgb(${color.join(" ")})`).join(", ")})`;
 }
 
-export function temperaturePixels(grid, min, max, palette = "SPECTRUM", flipY = true) {
-  if (!isTemperatureFrame(grid) || !Number.isFinite(min) || !Number.isFinite(max) || max <= min) return null;
+const colorTables = new Map();
+function colorTable(palette) {
+  if (!colorTables.has(palette)) {
+    const table = new Uint8Array(256 * 3);
+    for (let index = 0; index < 256; index++) table.set(thermalColor(index / 255, palette), index * 3);
+    colorTables.set(palette, table);
+  }
+  return colorTables.get(palette);
+}
+
+export function temperaturePixels(grid, min, max, palette = "JET", flipY = true) {
+  if (!isTemperatureFrame(grid) || !Number.isFinite(min) || !Number.isFinite(max) || max < min) return null;
   const pixels = new Uint8Array(grid.width * grid.height * 4);
+  const colors = colorTable(palette), span = max - min;
   // CSV/canvas rows start at the top; DataTexture UV starts at the bottom.
   grid.values.forEach((value, index) => {
     if (value === null) return;
     const target = (flipY ? (grid.height - 1 - Math.floor(index / grid.width)) * grid.width + index % grid.width : index) * 4;
-    pixels.set(thermalColor((value - min) / (max - min), palette), target);
+    const color = Math.round((span === 0 ? .5 : Math.max(0, Math.min(1, (value - min) / span))) * 255) * 3;
+    pixels[target] = colors[color]; pixels[target + 1] = colors[color + 1]; pixels[target + 2] = colors[color + 2];
     pixels[target + 3] = 255;
   });
   return pixels;

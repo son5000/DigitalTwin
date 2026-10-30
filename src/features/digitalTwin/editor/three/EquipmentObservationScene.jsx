@@ -21,7 +21,7 @@ import { ASSET_TYPES } from "@/features/digitalTwin/editor/model/equipmentDetail
 import { GROUND_VIEW_MODES, getGroundViewPresentation } from "@/features/digitalTwin/editor/model/undergroundModel";
 import { createTerrainMesh, createTerrainGrid } from "../terrain/TerrainMeshFactory";
 import { DEFAULT_GRID_SETTINGS } from "../constants/gridSettings";
-import { normalizeScanLighting, EQUIPMENT_REPRESENTATIONS, resolveEquipmentRepresentation } from "@/features/digitalTwin/editor/model/viewerPreset";
+import { normalizeEquipmentEnvironment, normalizeScanLighting, EQUIPMENT_REPRESENTATIONS, resolveEquipmentRepresentation } from "@/features/digitalTwin/editor/model/viewerPreset";
 import { createEquipmentObject, getEquipmentGeometrySignature } from "@/features/digitalTwin/editor/objects/EquipmentFactory";
 import { addEquipmentLabel } from "../generators/generatorHelpers";
 import { normalizeEquipmentPart } from "@/features/digitalTwin/editor/constants/partTemplates";
@@ -206,7 +206,7 @@ export default function EquipmentObservationScene({
     renderer.domElement.setAttribute("role", "img");
     renderer.domElement.setAttribute("aria-label", "설비와 센서 및 관측 영역을 탐색하는 3D 화면. 드래그하여 회전하고 스크롤하여 확대하거나 축소합니다.");
     mount.appendChild(renderer.domElement);
-    const camera = new THREE.PerspectiveCamera(46, 1, 0.01, 500);
+    const camera = new THREE.PerspectiveCamera(60, 1, 0.01, 500);
     const renderedEquipment = new Map();
     const isDetailedLoading = () => [...renderedEquipment.values()].some((entry) => entry.loading);
     const blockInputWhileLoading = (event) => {
@@ -400,7 +400,7 @@ export default function EquipmentObservationScene({
         environmentKey = "terrain";
         return;
       }
-      const environment = focusEquipment ? environmentsRef.current?.[focusEquipment.id] : null;
+      const environment = focusEquipment ? normalizeEquipmentEnvironment(environmentsRef.current?.[focusEquipment.id]) : null;
       const key = JSON.stringify(environment ?? null);
       if (key === environmentKey) return;
       applyEquipmentEnvironment({ scene, renderer, ground: floor, grid }, environment, groundViewMode, theme);
@@ -702,6 +702,48 @@ export default function EquipmentObservationScene({
       getEquipment: () => coordinateEquipmentRef.current, getStage: () => editorStageRef.current, getBinding: (id) => detailedBindings.get(id) });
     const cameraApi = {
       equipmentId: focusEquipment?.id,
+      focusThermal: (sensorIds, equipmentId) => {
+        const entry = renderedEquipment.get(equipmentId);
+        if (!entry || !sensorIds?.length || sensorViewRef.current) return false;
+        const equipmentBounds = new THREE.Box3().setFromObject(entry.proxy ?? entry.actual);
+        if (equipmentBounds.isEmpty() && entry.actual) equipmentBounds.setFromObject(entry.actual);
+        if (equipmentBounds.isEmpty()) return false;
+        const equipmentSphere = equipmentBounds.getBoundingSphere(new THREE.Sphere());
+        const bounds = new THREE.Box3(), directions = new THREE.Vector3();
+        let firstDirection = null;
+        for (const id of sensorIds) {
+          const sensor = sensorStateRef.current?.sensors.find((item) => item.id === id);
+          const marker = sensorMarkers.get(id);
+          if (!sensor || !marker) continue;
+          const sensorCamera = new THREE.PerspectiveCamera();
+          applySensorView(sensorCamera, marker, sensor);
+          const direction = sensorCamera.getWorldDirection(new THREE.Vector3());
+          firstDirection ??= direction.clone();
+          const raycaster = new THREE.Raycaster();
+          for (const y of [-.7, 0, .7]) for (const x of [-.7, 0, .7]) {
+            raycaster.setFromCamera(new THREE.Vector2(x, y), sensorCamera);
+            const point = raycaster.ray.intersectBox(equipmentBounds, new THREE.Vector3());
+            if (point) bounds.expandByPoint(point);
+          }
+          directions.add(direction);
+        }
+        if (!firstDirection) return false;
+        if (bounds.isEmpty()) bounds.expandByPoint(equipmentSphere.center);
+        stopFit(); camera.zoom = 1;
+        const focusSphere = bounds.getBoundingSphere(new THREE.Sphere());
+        const radius = Math.max(focusSphere.radius, equipmentSphere.radius * .18, .15);
+        const halfFov = THREE.MathUtils.degToRad(camera.fov / 2);
+        const narrowHalfFov = Math.atan(Math.tan(halfFov) * Math.min(1, camera.aspect));
+        const distance = Math.max(radius / Math.sin(narrowHalfFov) * 1.7, equipmentSphere.radius * 1.5);
+        const direction = directions.lengthSq() > 1e-6 ? directions.normalize() : firstDirection;
+        camera.position.copy(focusSphere.center).addScaledVector(direction, -distance);
+        camera.up.set(0, Math.abs(direction.y) > .95 ? 0 : 1, Math.abs(direction.y) > .95 ? 1 : 0);
+        controls.target.copy(focusSphere.center);
+        camera.near = Math.max(.001, distance / 1000);
+        camera.far = Math.max(100, distance * 30);
+        camera.updateProjectionMatrix(); controls.update();
+        return true;
+      },
       placeSensorFromView: (sensorId) => {
         const entry = renderedEquipment.get(focusEquipment?.id);
         if (!entry || isDetailedLoading() || !sensorCallbacksRef.current.onSensorChange) return false;

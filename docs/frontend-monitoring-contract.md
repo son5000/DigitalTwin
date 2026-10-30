@@ -8,7 +8,7 @@
 | 3, 4 | 표면 ROI 임시 조회·저장, 온도 최저/최고/평균 표시 선택 | ROI를 센서 측정 영역에 대응시키고 통계 계산 |
 | 5 | 영상 변화율 표시 선택, 변화율 임계치 설정 | 기준 영상 및 변화율 분석 (`vision.changePercent`, %) |
 | 6 | 초음파 표시 모드는 제거. 향후 표시 모드와 독립적인 실시간 표면 히트맵으로 구현 예정 | 위치별 좌표·센서 ID·값·측정 시각 |
-| 7, 8 | 메쉬 지점 선택, 가청/초음파 가청 변환 음원 요청·재생 | 해당 위치의 음원 추출·합성·주파수 변환 |
+| 7, 8 | 메쉬 지점 또는 ROI 선택, 해당 위치의 초음파 음원 요청·연속 재생 | 해당 위치의 음원 추출·가청화 |
 | 9 | 기존 프로젝트/설비별 링크 뷰어에 관측 패널 추가 | 접근권한이 확인된 프로젝트·자산·측정 데이터 |
 | 10 | 이상/초과/미만, 지속 시간, 경고 목록·배지·확인 | 브라우저와 독립적인 판정, 사건 저장, 실시간 전송 |
 | 11, 12 | 장치 조명 제어·물리적 핫스왑은 구현 범위 밖. 웹 센서 연결 변경·재보정만 제공 | 조명/촬영 제어, 장치 교체·재연결·설정 적용 |
@@ -38,8 +38,10 @@
 | PUT `/projects/:projectId/sensors/:sensorId/calibration` | 아래 보정 본문, `If-Match` 숫자 revision. 응답 `{revision}`은 요청 버전보다 커야 함. 신규 0 |
 | GET `/projects/:projectId/equipment/:equipmentId/monitoring` | 아래 관측 스냅샷 |
 | GET `/projects/:projectId/equipment/:equipmentId/events` | SSE 기본 `message` 이벤트의 data에 완전한 관측 스냅샷 JSON. 부분 patch가 아님 |
-| POST `/projects/:projectId/equipment/:equipmentId/audio` | `{selection,processing:"AUDIBLE" 또는 "HETERODYNE"}` → `{equipmentId,url,measuredAt?,expiresAt?}` |
+| POST `/projects/:projectId/equipment/:equipmentId/audio` | `{selection}` → `{equipmentId,url,measuredAt,expiresAt?}`. 새 클립마다 고유 URL |
 | POST `/projects/:projectId/equipment/:equipmentId/alarms/:alarmId/acknowledge` | 서버 확인 처리 완료 후 204 또는 JSON |
+
+초음파 패널은 영역 선택 중 3초 간격으로 새 음원을 요청한다. 백엔드는 새 클립마다 고유한 URL과 측정 시각을 반환해야 한다. 프론트는 URL·측정 시각이 모두 같은 응답을 중복 재생하지 않고, 재생 중 도착한 최신 클립을 다음에 이어 재생한다.
 
 SSE 연결 시 최신 스냅샷을 다시 조회한다. 재연결 시 미확인 사건을 최신 스냅샷에 포함시켜 누락을 복구한다. 프론트는 사건 ID로 중복을 제거하고 최근 100건을 보관한다. 연결 종료·설비 변경 시 EventSource와 요청을 정리한다. 경고 확인은 서버 성공 후 반영하며 단순 화면 닫기는 확인으로 취급하지 않는다.
 
@@ -134,7 +136,7 @@ SSE 연결 시 최신 스냅샷을 다시 조회한다. 재연결 시 미확인 
 
 `{ sensorId, kind, url, measuredAt, quality: "GOOD", staleAfterMs: 15000 }`
 
-온도 배열 응답은 URL 대신 `temperatureGrid: { width, height, values }`를 포함한다. values는 섭씨 온도의 행 우선 배열이며 첫 행이 위쪽이다. 누락 픽셀은 null로 보내면 투명하게 표시한다. 최대 1,048,576개 픽셀, 가로·세로 최대 2048을 받는다. `temperatureMin/Max`는 표시 색상 범위이며 측정값을 변경하지 않는다. 단일 온도 값을 면 전체의 온도 분포로 만들어내지 않는다. 열화상 이미지로 수치 온도를 역산하지 않는다.
+온도 배열 응답은 URL 대신 `temperatureGrid: { width, height, values }`를 포함한다. values는 섭씨 온도의 행 우선 배열이며 첫 행이 위쪽이다. 누락 픽셀은 null로 보내면 투명하게 표시한다. 최대 1,048,576개 픽셀, 가로·세로 최대 2048을 받는다. 프론트는 매 프레임 유효 픽셀의 최저·최고 온도를 계산해 JET 색상 범위에 자동 매핑한다. 기존 설정의 `temperatureMin/Max`는 호환을 위해 유지하지만 CSV 표시 범위에는 사용하지 않는다. 단일 온도 값을 면 전체의 온도 분포로 만들어내지 않는다. 열화상 이미지로 수치 온도를 역산하지 않는다.
 
 캐비넷 앞문은 기존 `enclosure.doorCount/doorLayout/doors`, 뒷문은 같은 구조의 `enclosure.rear`를 사용한다. 표면 ID `door-0-inside` 등은 그대로 유지하며 뒷문은 `rear-door-0-inside` 형태다. 문 설치 시 해당 앞판·뒷판은 제외한다. 센서의 `surfaceMount`는 문 로컬 좌표를 유지하며 문 개폐와 숨김 후에도 위치·방향을 계산한다. 스캔의 개별 문은 별도 가동 부품으로 분리되지 않은 경우 전체 스캔 형상으로 유지한다.
 
@@ -142,11 +144,11 @@ SSE 연결 시 최신 스냅샷을 다시 조회한다. 재연결 시 미확인 
 
 ## 열화상 CSV 샘플과 카메라 정합
 
-- 3단계 **일반 센서 추가 → 측정 기능: 열화상 → 이미지·텍스처 → 열화상 CSV 샘플 불러오기**로 서버 없이 시험한다. 사용자 제공 원본 `/samples/thermal_sample.csv`는 공백 구분 640×480 행렬이며 25.25~112.70°C다. 원본 미리보기에서 픽셀을 클릭하거나 X/Y를 입력해 온도를 확인한다. 색상 범위와 `SPECTRUM | IRON | GRAY` 팔레트는 미리보기와 3D 투영에 동일하게 적용한다. 표시 범위 밖은 양 끝 색상으로 포화되며 원본 값은 유지한다.
+- 3단계 **일반 센서 추가 → 측정 기능: 열화상 → 이미지·텍스처 → 열화상 CSV 샘플 불러오기**로 서버 없이 시험한다. 현재 `/samples/thermal_sample.csv`는 640×480 행렬이며 28.70~38.45°C다. 원본 미리보기에서 픽셀을 클릭하거나 X/Y를 입력해 온도를 확인한다. 프레임별 최저·최고값과 기본 `JET` 팔레트가 미리보기와 3D 투영에 동일하게 적용된다. `IRON | GRAY` 선택도 유지하며, 기존 `SPECTRUM` 설정은 JET로 읽는다. 원본 온도 값은 유지한다.
 - 일반 센서에 열화상을 처음 선택하면 기본 직사각 모형을 산업용 카메라로 전환한다. 자유 시점에서 설비를 바라본 뒤 **현재 3D 시점에 카메라 배치**를 누르면 카메라의 위치·방향을 설비 로컬 좌표로 변환하고 세로 화각을 저장한다. 센서 정면 시점에서 영상과 설비의 모서리를 비교하며 위치·방향·화각을 수동으로 맞춘다. `fieldOfView`는 세로 화각(도), 회전은 XYZ 오일러(라디안), 거리·위치는 m다. 샘플 종횡비는 4:3이다.
 - 실측 치수 보조 기능은 `verticalFov = 2 atan(화면 전체 실제 높이 / (2 × 평면까지 수직 거리))`를 사용한다. 평면을 정면으로 촬영한 조건에서의 초기 추정이며, 한 장의 온도 영상만으로 실제 설치 위치·내부 파라미터를 자동 복원하지 않는다. 장치 사양과 현장 실측으로 확인한다.
 - 스캔/도형/둘 모두를 대상으로 지정할 수 있다. 열화상은 센서 카메라의 절두체·근/원거리·깊이 검사로 보이는 표면에 투영하며 기존 crop·크기·회전·원근 보정과 불투명도 설정을 함께 적용한다. 픽셀 조회는 변환 전 원본 기준(왼쪽 위 (0,0), X 오른쪽, Y 아래쪽)이며 3D GL 텍스처 생성 시 행 방향을 뒤집는다.
-- `thermalSample: {enabled,url,width,height,loadedAt}`는 에디터 테스트 소스다. 프로젝트에 원본 온도 배열이나 생성 PNG를 저장하지 않고 이 참조와 카메라 pose, `textureProjection.temperatureMin/Max/palette` 및 이미지 보정값을 보관한다. 다시 열면 번들에 포함된 샘플을 로드한다. 샘플은 서버 식별자·시리얼·접속 상태·실측 시각을 만들지 않으며 실제 뷰어에서는 비활성화한다. 샘플을 해제하면 서버 프레임 조회로 돌아간다.
+- `thermalSample: {enabled,url,width,height,loadedAt}`는 에디터 테스트 소스다. 프로젝트에 원본 온도 배열이나 생성 PNG를 저장하지 않고 이 참조와 카메라 pose, `textureProjection.palette` 및 이미지 보정값을 보관한다. 기존 `textureProjection.temperatureMin/Max`는 저장된 값이 있어도 CSV 렌더링에 영향을 주지 않는다. 다시 열면 번들에 포함된 샘플을 로드한다. 샘플은 서버 식별자·시리얼·접속 상태·실측 시각을 만들지 않는다. 샘플을 해제하면 서버 프레임 조회로 돌아간다.
 
 ### 서버 프레임 어댑터
 

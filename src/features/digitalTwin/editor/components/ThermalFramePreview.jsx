@@ -18,7 +18,7 @@ export default function ThermalFramePreview({ grid, source, summary, settings })
       <img src={source} alt={`온도 분포 원본 ${grid.width} × ${grid.height}픽셀`} />
       <span className={styles.crosshair} style={{ left: `${(x + .5) / grid.width * 100}%`, top: `${(y + .5) / grid.height * 100}%` }} />
     </button>
-    <div className={styles.legend}><span>{settings.temperatureMin.toFixed(2)}°C</span><i style={{ background: thermalGradient(settings.palette) }} /><span>{settings.temperatureMax.toFixed(2)}°C</span></div>
+    <div className={styles.legend}><span>{summary.min.toFixed(2)}°C</span><i style={{ background: thermalGradient(settings.palette) }} /><span>{summary.max.toFixed(2)}°C</span></div>
     <p>{grid.width} × {grid.height}px · 최저 {summary.min.toFixed(2)} / 최고 {summary.max.toFixed(2)} / 평균 {summary.average.toFixed(2)}°C</p>
     <div className={styles.pixel}>
       <NumericField label="X 픽셀" min={0} step={1} displayPrecision={0} value={x} onChange={(value) => setPixel({ x: Math.min(grid.width - 1, Math.max(0, Math.round(value))), y })} />

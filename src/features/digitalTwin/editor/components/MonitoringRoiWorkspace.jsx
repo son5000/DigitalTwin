@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import EquipmentObservationScene from "../three/EquipmentObservationScene";
 import useSensorProjectionFrames from "../store/useSensorProjectionFrames";
 import useRoiMonitoring from "../store/useRoiMonitoring";
@@ -10,6 +10,7 @@ import useEquipmentTelemetry from "../store/useEquipmentTelemetry";
 import { demoFrame, demoReading } from "../model/monitoringDemo";
 import { isFreshMeasurement, mediaUrl, modelReference } from "../model/monitoringContract";
 import { sensorProjectionFrame } from "../model/sensorProjection.js";
+import { temperatureSummary } from "../model/thermalFrame.js";
 import { observationReadings, observationStatus } from "../model/observationReadings.js";
 import ObservationRoiFields from "./ObservationRoiFields";
 import InteractionGuide from "./InteractionGuide";
@@ -21,6 +22,15 @@ import { imageObservationIssue, resolveImageObservation } from "../model/imageOb
 import ObservationCreationFields from "./ObservationCreationFields.jsx";
 import { normalizeObservationPoint } from "../model/equipmentDetailModel.js";
 import { bindObservationMeasurements, thermalObservationIssue } from "../model/observationSource.js";
+
+const EMPTY_SENSORS = [];
+const thermalSummaryCache = new WeakMap();
+
+function thermalFrameSummary(grid) {
+  if (!grid || typeof grid !== "object") return null;
+  if (!thermalSummaryCache.has(grid)) thermalSummaryCache.set(grid, temperatureSummary(grid));
+  return thermalSummaryCache.get(grid);
+}
 
 function RoiFields({ draft, setDraft }) {
   function updateRule(index, changes) { setDraft((current) => ({ ...current, rules: current.rules.map((rule, i) => i === index ? { ...rule, ...changes } : rule) })); }
@@ -55,10 +65,10 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
   const model = useMemo(() => modelReference(equipment, sceneProps.assetBindings), [equipment, sceneProps.assetBindings]);
   const compatibleRois = useMemo(() => monitoring.rois.filter((roi) => roi.equipmentId !== equipmentId || !roi.surface?.model?.version || roi.surface.model.version === model.version), [monitoring.rois, equipmentId, model.version]);
   const telemetry = useEquipmentTelemetry(projectId, equipmentId, compatibleRois);
-  // Editor samples are calibration aids; viewers always request server frames.
-  const projectionSensors = useMemo(() => editorMode ? sceneProps.sensors : (sceneProps.sensors ?? []).map((sensor) => sensor.projectionSample?.enabled || sensor.thermalSample?.enabled
-    ? { ...sensor, projectionSample: { ...sensor.projectionSample, enabled: false }, thermalSample: { ...sensor.thermalSample, enabled: false } } : sensor), [editorMode, sceneProps.sensors]);
+  const projectionSensors = sceneProps.sensors ?? EMPTY_SENSORS;
   const projectionFrames = useSensorProjectionFrames(projectionSensors);
+  const viewerCamera = useRef(null);
+  const thermalFocused = useRef(false);
   const [localPanel, setLocalPanel] = useState(initialRoi ? "ROI" : null);
   const [audioRoiId, setAudioRoiId] = useState("");
   const panel = activePanel === undefined ? localPanel : activePanel;
@@ -68,8 +78,8 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
     if (busy || (panel === "ROI" && next !== "ROI" && editing && !cancelEditing())) return false;
     if (onPanelChange) onPanelChange(next); else setLocalPanel(next);
     setDrawingFor(null);
-    setPickingFor(next === "AUDIO" && !point && !sceneProps.sensorViewId ? equipmentId : null);
-    if (next === "AUDIO") setAudioRoiId("");
+    setPickingFor(null);
+    if (next === "AUDIO" && panel !== "AUDIO") { setAudioRoiId(""); setPointSelection(null); }
     if (panel === "THERMAL" && next === null) setThermalFor(null);
     return true;
   }
@@ -78,7 +88,6 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
   const [opacity, setOpacity] = useState(1);
   const [pointSelection, setPointSelection] = useState(null);
   const [pickingFor, setPickingFor] = useState(null);
-  const [fps, setFps] = useState(null);
   const [layerError, setLayerError] = useState("");
   const point = pointSelection?.equipmentId === equipmentId && pointSelection.modelVersion === model.version ? pointSelection : null;
   const picking = audioOpen && pickingFor === equipmentId && Boolean(equipmentId) && !sceneProps.sensorViewId;
@@ -118,13 +127,36 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
       hotspots: bases.map((base) => ({ ...base, position: [0, (equipment.dimensions?.height ?? 1) * .55, (equipment.dimensions?.depth ?? 1) * .5], db: 65.4, radius: .08 })) };
   }, [telemetry.demo, telemetry.textures, telemetry.hotspots, equipment, equipmentId, model.version, demoFrameTime]);
   const textures = useMemo(() => [...layerData.textures, ...projectionFrames], [layerData.textures, projectionFrames]);
+  const thermalReadouts = useMemo(() => projectionSensors.filter((sensor) => sensor.textureProjection?.enabled
+    && sensor.textureProjection.kind === "THERMAL"
+    && (sensor.textureProjection.equipmentId ?? sensor.equipmentIds?.[0]) === equipmentId)
+    .map((sensor) => ({ sensor, frame: sensorProjectionFrame(sensor, textures, telemetry.now, telemetry.demo) }))
+    .filter(({ frame }) => frame)
+    .map(({ sensor, frame }) => ({ id: sensor.id,
+      identifier: sensor.serialNumber ? `시리얼 번호 ${sensor.serialNumber}` : `식별 번호 ${sensor.serverSensorId || sensor.id}`,
+      measuredAt: frame.measuredAt, summary: thermalFrameSummary(frame.temperatureGrid) })),
+  [projectionSensors, textures, telemetry.now, telemetry.demo, equipmentId]);
+  const thermalFocusIds = JSON.stringify(projectionSensors.filter((sensor) => sensor.textureProjection?.enabled
+    && sensor.textureProjection.kind === "THERMAL"
+    && (sensor.textureProjection.equipmentId ?? sensor.equipmentIds?.[0]) === equipmentId).map((sensor) => sensor.id));
   const availability = Object.fromEntries(["VISION", "THERMAL"].map((kind) => [kind,
     textures.some((item) => item.kind === kind && item.mapping === "UV" && item.equipmentId === equipmentId && item.modelVersion === model.version && mediaUrl(item.url, telemetry.demo) && isFreshMeasurement(item, telemetry.now))
     || (projectionSensors ?? []).some((sensor) => sensor.textureProjection?.enabled && (sensor.textureProjection.kind ?? "VISION") === kind
-      && (sceneProps.equipment ? sensor.equipmentIds?.includes(sceneProps.equipment.id) : sceneProps.equipmentList?.some((item) => sensor.equipmentIds?.includes(item.id)))
+      && (sensor.textureProjection.equipmentId ?? sensor.equipmentIds?.[0]) === equipmentId
       && sensorProjectionFrame(sensor, textures, telemetry.now, telemetry.demo)),
   ]));
   const mode = thermalActive ? "THERMAL" : "MODEL";
+  useEffect(() => {
+    if (!thermalActive) { thermalFocused.current = false; return; }
+    if (thermalFocused.current || thermalFocusIds === "[]") return;
+    let attempts = 0, timer;
+    const focus = () => {
+      if (viewerCamera.current?.focusThermal(JSON.parse(thermalFocusIds), equipmentId)) { thermalFocused.current = true; return; }
+      if (++attempts < 12) timer = setTimeout(focus, 300);
+    };
+    timer = setTimeout(focus, 0);
+    return () => clearTimeout(timer);
+  }, [thermalActive, thermalFocusIds, equipmentId]);
   function toggleThermal() {
     if (thermalActive) {
       if (panel === "THERMAL") selectPanel(null);
@@ -198,7 +230,7 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
     finally { setBusy(false); }
   }
   return <section className={styles.workspace} aria-label="설비 ROI 관측">
-    <EquipmentObservationScene {...sceneProps} focusEquipmentId={equipmentId} sensors={projectionSensors} observationPoints={displayPoints} pointOptions={sceneProps.pointOptions ?? {
+    <EquipmentObservationScene {...sceneProps} cameraController={viewerCamera} focusEquipmentId={equipmentId} sensors={projectionSensors} observationPoints={displayPoints} pointOptions={sceneProps.pointOptions ?? {
       selectedId: audioOpen ? audioRoiId : currentDraft?.id,
       editing:drawing, placing:drawing, textureKind:creation?.textureKind, placementId:creation?.placementId,
       placementLabel:creation?.textureKind ? `${creation.textureKind === "VISION" ? "비전" : "열화상"} 텍스처 위에 관측 영역을 지정하세요. 원본 카메라가 자동 연결됩니다.` : "모델 표면을 클릭해 관측 영역을 지정하세요.",
@@ -212,12 +244,12 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
       onPlaced:()=>{ setDrawingFor(null); setCreation(null); },
       onSelect: (id) => { const selected = rois.find((roi) => roi.id === id); if (selected && replaceDraft(structuredClone(selected))) selectPanel("ROI"); },
     }}
-      monitoringOptions={{ equipmentId, equipment, model, mode: editorMode ? undefined : drawing && creation?.textureKind === "THERMAL" ? "THERMAL" : mode, continuousVision: !editorMode, opacity, point: audioOpen ? point : null, ...layerData, readings, textures, demo: telemetry.demo, now: telemetry.now, onFps: setFps, onLayerError: setLayerError }} roiOptions={{ equipmentId, rois: editorMode ? [] : rois, statuses, selectedId: audioOpen ? audioRoiId : currentDraft?.id, drawing:false, radius, pointPicking: picking, focusVersion,
-      onPoint: (selection) => { setPointSelection({ ...selection, equipmentId, modelVersion: model.version }); setPickingFor(null); },
+      monitoringOptions={{ equipmentId, equipment, model, mode: editorMode ? undefined : drawing && creation?.textureKind === "THERMAL" ? "THERMAL" : mode, continuousVision: !editorMode, opacity, point: audioOpen ? point : null, ...layerData, readings, textures, demo: telemetry.demo, now: telemetry.now, onLayerError: setLayerError }} roiOptions={{ equipmentId, rois: editorMode ? [] : rois, statuses, selectedId: audioOpen ? audioRoiId : currentDraft?.id, drawing:false, radius, pointPicking: picking, focusVersion,
+      onPoint: (selection) => { setPointSelection({ ...selection, equipmentId, modelVersion: model.version }); setError(""); },
       onError: setError, onCancel: () => { setDrawingFor(null); setPickingFor(null); },
     }} />
     {!editorMode && <ViewerOverlaySlot name="tools"><MonitoringQuickTools panel={panel} thermalActive={thermalActive} alarmCount={activeAlarms.length} disabled={busy} onPanelChange={selectPanel} onThermalToggle={toggleThermal} /></ViewerOverlaySlot>}
-    {dataOpen && <ViewerOverlaySlot name="panel"><aside className={`${styles.panel} ${styles.dataPanel} ${sharedPanelLayout ? styles.viewerPanel : ""}`} aria-label={{ AUDIO: "소리 듣기", THERMAL: "열화상", ALARMS: "경고 이벤트" }[panel]} data-camera-safe-ui="right"><MonitoringDataPanel section={panel} equipment={equipment} key={`${equipmentId}:${panel}`} projectId={projectId} equipmentId={equipmentId} telemetry={telemetry} opacity={opacity} setOpacity={setOpacity} point={point} picking={picking} setPicking={(active) => { setPickingFor(active ? equipmentId : null); setDrawingFor(null); setError(""); }} fps={fps} layerError={layerError || error} model={model} sensorView={Boolean(sceneProps.sensorViewId)} availability={availability} rois={compatibleRois.filter((roi) => roi.equipmentId === equipmentId)} onRoiSelect={setAudioRoiId} onClose={() => selectPanel(null)} /></aside></ViewerOverlaySlot>}
+    {dataOpen && <ViewerOverlaySlot name="panel"><aside className={`${styles.panel} ${styles.dataPanel} ${sharedPanelLayout ? styles.viewerPanel : ""}`} data-section={panel} aria-label={{ AUDIO: "소리 듣기", THERMAL: "열화상", ALARMS: "경고 이벤트" }[panel]} data-camera-safe-ui="right"><MonitoringDataPanel section={panel} equipment={equipment} key={`${equipmentId}:${panel}`} projectId={projectId} equipmentId={equipmentId} telemetry={telemetry} opacity={opacity} setOpacity={setOpacity} point={point} picking={picking} setPicking={(active) => { setPickingFor(active ? equipmentId : null); setDrawingFor(null); setError(""); }} layerError={layerError || error} model={model} sensorView={Boolean(sceneProps.sensorViewId)} availability={availability} thermalReadouts={thermalReadouts} rois={compatibleRois.filter((roi) => roi.equipmentId === equipmentId)} onRoiSelect={setAudioRoiId} onClose={() => selectPanel(null)} /></aside></ViewerOverlaySlot>}
     {picking && <InteractionGuide message="소리를 들을 모델 표면을 클릭하세요. Esc로 취소합니다." />}
     {open && <ViewerOverlaySlot name="panel"><aside className={`${styles.panel} ${sharedPanelLayout ? styles.viewerPanel : ""}`} aria-label="ROI 조회 및 설정" data-camera-safe-ui="right">
       <header className={styles.panelHeader}>

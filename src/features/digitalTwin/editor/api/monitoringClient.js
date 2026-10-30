@@ -4,7 +4,7 @@ import { MAX_THERMAL_CSV_BYTES, parseTemperatureCsv } from "../model/thermalFram
 
 export const monitoringApiBase = (import.meta.env?.VITE_MONITORING_API_BASE || "").replace(/\/$/, "");
 export async function monitoringRequest(path, options = {}) {
-  if (!monitoringApiBase) throw new Error("관측 서버가 연결되지 않았습니다. 예시 모드로 화면을 확인하거나 연결 구성을 내보낼 수 있습니다.");
+  if (!monitoringApiBase) throw new Error("관측 서버가 연결되지 않았습니다.");
   const response = await fetch(`${monitoringApiBase}${path}`, {
     credentials: "same-origin", ...options,
     signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(10000)]) : AbortSignal.timeout(10000),
@@ -54,8 +54,8 @@ export const equipmentPath = (projectId, equipmentId) => `/projects/${encodeURIC
 export async function loadEquipmentTelemetry(projectId, equipmentId, signal) {
   return validateTelemetry(await monitoringRequest(`${equipmentPath(projectId, equipmentId)}/monitoring`, { signal }), equipmentId);
 }
-export async function requestPointAudio(projectId, equipmentId, selection, processing, signal) {
-  const result = await monitoringRequest(`${equipmentPath(projectId, equipmentId)}/audio`, { method: "POST", body: JSON.stringify({ selection, processing }), signal });
+export async function requestPointAudio(projectId, equipmentId, selection, signal) {
+  const result = await monitoringRequest(`${equipmentPath(projectId, equipmentId)}/audio`, { method: "POST", body: JSON.stringify({ selection }), signal });
   if (result?.equipmentId !== equipmentId || !mediaUrl(result.url)) throw new Error("위치별 음원 응답 형식을 확인하세요.");
   return result;
 }

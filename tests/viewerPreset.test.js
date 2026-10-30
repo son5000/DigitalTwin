@@ -11,6 +11,8 @@ import {
   EQUIPMENT_REPRESENTATIONS,
   resolveEquipmentRepresentation,
   setEquipmentDisplayOverride,
+  normalizeEquipmentEnvironment,
+  normalizeEquipmentView,
 } from "../src/features/digitalTwin/editor/model/viewerPreset.js";
 
 test("설비별 배경·지면은 독립적으로 저장되고 잘못된 값은 보정된다", () => {
@@ -25,8 +27,17 @@ test("설비별 배경·지면은 독립적으로 저장되고 잘못된 값은 
   assert.equal(restored.B.groundMode, "HIDDEN");
   assert.equal(restored.B.gridSpacing, 0.01);
   assert.equal(restored.B.groundSize, 10000);
-  assert.equal(restored.B.backgroundColor, "#0b1217");
+  assert.equal(restored.B.backgroundColor, "#f5f5f5");
   assert.equal(restored.C, undefined);
+});
+
+test("모델 관제 화면의 환경과 카메라 기본값을 사용한다", () => {
+  assert.deepEqual(normalizeEquipmentEnvironment(), {
+    backgroundColor: "#f5f5f5", groundColor: "#a1a1a1", gridColor: "#1f6c98",
+    groundMode: "VISIBLE", groundOpacity: 0.28, groundSize: 20, groundHeight: 0,
+    gridVisible: true, gridSpacing: 0.5,
+  });
+  assert.equal(normalizeEquipmentView({ position: [0, 1, 3], target: [0, 1, 0], up: [0, 1, 0] }).fov, 60);
 });
 
 test("환경 변경은 지면·격자에 적용되고 전용 설정 해제 시 기본 화면으로 복원한다", () => {

@@ -12,7 +12,7 @@ export function bindSurfaceRoiInteraction({ renderer, camera, controls, rendered
   const raycaster = new THREE.Raycaster();
   const overlays = [];
   let start = null, capturedPointer = null, previousRois, previousStatuses, previousSelected, previousFocus;
-  let previousEquipmentId, previousDrawing = false, controlsWereEnabled = true;
+  let previousEquipmentId, previousDrawing = false, previousInteracting = false, controlsWereEnabled = true;
 
   function entryFor(options) { return renderedEquipment.get(options.equipmentId); }
   function visibleModel(entry) { return entry?.actual?.visible ? entry.actual : entry?.proxy; }
@@ -34,16 +34,19 @@ export function bindSurfaceRoiInteraction({ renderer, camera, controls, rendered
   }
 
   function down(event) {
-    if (!(getOptions().drawing || getOptions().pointPicking) || event.button !== 0) return;
-    event.stopImmediatePropagation(); event.preventDefault();
+    const options = getOptions();
+    if (!(options.drawing || options.pointPicking) || event.button !== 0) return;
     start = { x: event.clientX, y: event.clientY };
-    capturedPointer = event.pointerId;
-    canvas.setPointerCapture(event.pointerId);
+    if (options.drawing) {
+      event.stopImmediatePropagation(); event.preventDefault();
+      capturedPointer = event.pointerId;
+      canvas.setPointerCapture(event.pointerId);
+    }
   }
   function up(event) {
     if (!(getOptions().drawing || getOptions().pointPicking) || !start) return;
-    event.stopImmediatePropagation(); event.preventDefault();
     const options = getOptions(), entry = entryFor(options);
+    if (options.drawing) { event.stopImmediatePropagation(); event.preventDefault(); }
     try {
       if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 6) return;
       if (entry?.loading) { options.onError?.("모델을 불러온 뒤 표면을 선택하세요."); return; }
@@ -74,13 +77,16 @@ export function bindSurfaceRoiInteraction({ renderer, camera, controls, rendered
     update() {
       const options = getOptions();
       const interacting = Boolean(options.drawing || options.pointPicking);
-      if (previousDrawing !== interacting || previousEquipmentId !== options.equipmentId) {
+      if (previousDrawing !== Boolean(options.drawing)) {
+        if (options.drawing) { controlsWereEnabled = controls.enabled; controls.enabled = false; }
+        else controls.enabled = controlsWereEnabled;
+        previousDrawing = Boolean(options.drawing);
+      }
+      if (previousInteracting !== interacting || previousEquipmentId !== options.equipmentId) {
         cancel();
-        if (interacting && !previousDrawing) { controlsWereEnabled = controls.enabled; controls.enabled = false; }
-        else if (!interacting && previousDrawing) controls.enabled = controlsWereEnabled;
         canvas.style.cursor = interacting ? "crosshair" : "";
         if (interacting) cancelFocus?.();
-        previousDrawing = interacting; previousEquipmentId = options.equipmentId;
+        previousInteracting = interacting; previousEquipmentId = options.equipmentId;
       }
       if (previousRois !== options.rois || previousStatuses !== options.statuses || previousSelected !== options.selectedId) {
         clearOverlays();

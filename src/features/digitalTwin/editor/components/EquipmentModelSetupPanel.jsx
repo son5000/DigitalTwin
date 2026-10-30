@@ -79,7 +79,7 @@ export default function EquipmentModelSetupPanel({ equipment, binding, onUpdateE
       <p className={styles.help}>원하는 각도와 배율로 맞춘 뒤 관제 시작 화면으로 저장하세요.</p>
       <div className={styles.actionRow}>{[["front", "정면"], ["back", "후면"], ["left", "좌측"], ["right", "우측"], ["top", "위에서"]].map(([value, label]) => <button type="button" key={value} onClick={() => cameraAction("direction", value)}>{label}</button>)}<button type="button" onClick={() => cameraAction("fit")}>모델 전체 맞춤</button><button type="button" onClick={() => cameraAction("zoom", 1.2)}>확대 +</button><button type="button" onClick={() => cameraAction("zoom", 1 / 1.2)}>축소 −</button></div>
       <NumericField displayPrecision={2} label="화면 배율" unit="배" min={0.1} step={0.1} value={cameraInfo?.zoom ?? savedView?.zoom ?? 1} onChange={(value) => cameraAction("zoomLevel", value)} />
-      <NumericField displayPrecision={2} label="카메라 화각" unit="°" min={10} value={cameraInfo?.fov ?? savedView?.fov ?? 45} onChange={(value) => cameraAction("fov", Math.max(10, Math.min(100, value)))} />
+      <NumericField displayPrecision={2} label="카메라 화각" unit="°" min={10} value={cameraInfo?.fov ?? savedView?.fov ?? 60} onChange={(value) => cameraAction("fov", Math.max(10, Math.min(100, value)))} />
       <button type="button" className={styles.primaryAction} onClick={() => cameraAction("save")}>현재 화면을 최초 관제 화면으로 저장</button>
       <button type="button" disabled={!savedView} onClick={() => cameraAction("preview", savedView)}>저장한 최초 화면 미리보기</button>
       <button type="button" disabled={!savedView} onClick={() => { onViewerPresetChange({ equipmentViews: { ...viewerPreset?.equipmentViews, [equipment.id]: null } }); setNotice("최초 화면 지정을 해제했습니다. 다음 접속부터 자동 맞춤을 사용합니다."); }}>최초 화면 지정 해제</button>

@@ -3,9 +3,10 @@ import { temperaturePixels, temperatureSummary } from "../model/thermalFrame";
 
 export default function useThermalImage(grid, settings) {
   const summary = useMemo(() => temperatureSummary(grid), [grid]);
-  const { temperatureMin, temperatureMax, palette } = settings;
+  const { palette } = settings;
   const source = useMemo(() => {
-    const pixels = temperaturePixels(grid, temperatureMin, temperatureMax, palette, false);
+    if (!summary) return "";
+    const pixels = temperaturePixels(grid, summary.min, summary.max, palette, false);
     if (!pixels) return "";
     const canvas = document.createElement("canvas");
     canvas.width = grid.width; canvas.height = grid.height;
@@ -13,6 +14,6 @@ export default function useThermalImage(grid, settings) {
     if (!context) return "";
     context.putImageData(new ImageData(new Uint8ClampedArray(pixels.buffer), grid.width, grid.height), 0, 0);
     return canvas.toDataURL("image/png");
-  }, [grid, temperatureMin, temperatureMax, palette]);
+  }, [grid, summary, palette]);
   return { source, summary };
 }

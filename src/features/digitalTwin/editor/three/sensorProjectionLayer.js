@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { applySensorView, fitSensorCameraNear } from "./sensorCamera.js";
 import { getEnclosureSurfaces } from "../model/equipmentEnclosure.js";
 import { normalizeSensorProjection, sensorProjectionFrame, temperaturePixels } from "../model/sensorProjection.js";
+import { temperatureSummary } from "../model/thermalFrame.js";
 import { isFreshMeasurement, mediaUrl } from "../model/monitoringContract.js";
 import { sensorImageTransform } from "../model/sensorImageTransform.js";
 import { imageSurfaceMatrix, resolveImageSurface } from "../model/textureSurfaceMapping.js";
@@ -190,7 +191,7 @@ export function bindSensorProjectionLayer({ renderer, renderedEquipment, markers
           state.geometryKey = geometryKey;
         }
         const frame = sensorProjectionFrame(sensor, options.textures, options.now, options.demo);
-        const frameKey = frame ? JSON.stringify([frame.url, frame.measuredAt, frame.loadedAt, p.temperatureMin, p.temperatureMax, p.palette]) : "";
+        const frameKey = frame ? JSON.stringify([frame.url, frame.measuredAt, frame.loadedAt, p.palette]) : "";
         if (frameKey !== state.frameKey || frame?.temperatureGrid !== state.temperatureGrid) {
           state.frameKey = frameKey; state.temperatureGrid = frame?.temperatureGrid; const generation = ++state.generation;
           const accept = (texture) => {
@@ -201,9 +202,10 @@ export function bindSensorProjectionLayer({ renderer, renderedEquipment, markers
           };
           if (!frame || state.displayedFrame?.kind !== frame.kind || Boolean(state.displayedFrame?.sample) !== Boolean(frame.sample)) state.ready = false;
           if (frame?.temperatureGrid) {
-            const pixels = temperaturePixels(frame.temperatureGrid, p.temperatureMin, p.temperatureMax, p.palette);
+            const summary = temperatureSummary(frame.temperatureGrid);
+            const pixels = summary && temperaturePixels(frame.temperatureGrid, summary.min, summary.max, p.palette);
             if (pixels) { const texture = new THREE.DataTexture(pixels, frame.temperatureGrid.width, frame.temperatureGrid.height); texture.needsUpdate = true; accept(texture); }
-            else { state.ready = false; state.error = "온도 범위와 수신한 온도 분포를 확인하세요."; }
+            else { state.ready = false; state.error = "수신한 온도 분포의 유효한 픽셀을 확인하세요."; }
           } else if (frame) {
             const url = mediaUrl(frame.url, options.demo || sensor.dataSource === "DEMO");
             new THREE.TextureLoader().load(url, accept, undefined, () => { if (!disposed && generation === state.generation) state.error = "영상을 불러오지 못했습니다. 이미지 주소와 접근 권한을 확인하세요."; });

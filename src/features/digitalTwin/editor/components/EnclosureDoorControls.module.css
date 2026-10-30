@@ -1,4 +1,4 @@
-.controls { position: absolute; z-index: 6; bottom: 12px; right: 12px; display: flex; flex-wrap: nowrap; overflow-x: auto; max-width: calc(100% - 108px); gap: 6px; padding: 4px; border: 1px solid var(--color-border-strong); border-radius: 6px; background: var(--color-surface-overlay); }
+.controls { position: absolute; z-index: 6; bottom: 12px; right: 12px; display: flex; flex-wrap: nowrap; overflow-x: auto; max-width: calc(100% - 108px); gap: 6px; padding: 4px; border: 1px solid var(--color-border-strong); border-radius: 6px; background: transparent; }
 .controls[data-single="true"] { overflow: visible; padding: 0; border: 0; background: transparent; }
 .controls button { min-height: 32px; padding: 4px 12px; white-space: nowrap; border: 1px solid var(--color-border); border-radius: 4px; color: var(--color-heading); background: var(--color-input); cursor: pointer; font-size: 12px; }
 .controls button:hover, .controls button[aria-pressed="true"] { border-color: var(--color-accent); background: var(--state-selected); }
