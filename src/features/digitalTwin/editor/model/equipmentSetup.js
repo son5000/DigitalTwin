@@ -3,11 +3,13 @@ import { getSensorMountPose } from "./equipmentEnclosure.js";
 import { sensorHasImaging } from "./equipmentDetailModel.js";
 import { calibrationPayload } from "./monitoringContract.js";
 import { referenceFrameKey } from "./equipmentCoordinateFrame.js";
+import { imageObservationIssue } from "./imageObservation.js";
+import { thermalObservationIssue } from "./observationSource.js";
 export const EQUIPMENT_SETUP_STEPS = Object.freeze([
   { id: "BASIC", label: "기본 정보", description: "설비 정보와 모델·재질·텍스처 파일을 등록합니다." },
   { id: "ASSET", label: "모델·관제 화면", description: "설비의 크기·정면·기준좌표와 관제 시작 화면을 설정하세요." },
   { id: "SENSOR", label: "센서 배치·연결", description: "센서 기능과 연결 정보를 등록하고, 위치·촬영 방향을 맞추세요." },
-  { id: "POINT", label: "관측 영역·임계치", description: "구체 또는 평면으로 관측 범위를 지정하고, 영역별 측정 항목과 경보 기준을 설정하세요." },
+  { id: "POINT", label: "관측 영역·임계치", description: "관측할 항목을 먼저 선택한 뒤 영역 형태와 경보 기준을 설정하세요. 영상 분석은 비전 텍스처에 연결합니다." },
   { id: "REVIEW", label: "최종 확인", description: "모델, 센서 연결, 관측 영역을 확인하고 프로젝트를 저장하세요." },
 ]);
 
@@ -113,17 +115,21 @@ export function getSetupStepValidation(step, context) {
       const pointIssue = (target, message) => issue(target, `${point.name || "관측 영역"}: ${message}`, { pointId: point.id });
       if (point.name !== undefined && !point.name.trim()) return pointIssue("roi-name", "영역 이름을 입력하세요.");
       if (point.measurements && !point.measurements.length) return pointIssue("roi-measurements", "관측 항목을 하나 이상 추가하세요.");
+      const imageIssue = imageObservationIssue(point,equipment,sensors);
+      if (imageIssue) return pointIssue("roi-image-binding",imageIssue);
+      const thermalIssue = thermalObservationIssue(point, equipment, sensors);
+      if (thermalIssue) return pointIssue("roi-thermal-binding", thermalIssue);
       for (const item of point.measurements ?? []) {
         if (!item.name?.trim()) return pointIssue(`measurement-${item.id}-name`, "관측 항목의 표시 이름을 입력하세요.");
         if (["vision.gaugeValue", "vision.switchState"].includes(item.metric) && point.geometryType !== "PLANE") return pointIssue("roi-geometry-type", "게이지·스위치 영상 분석에는 평면 영역을 선택하세요.");
-        if (!sensors.some((sensor) => sensor.id === item.sensorId)) return pointIssue(`measurement-${item.id}-sensor`, "관측 항목에 측정 센서를 선택하세요.");
+        if (item.metric !== "ultrasound.db" && !sensors.some((sensor) => sensor.id === item.sensorId)) return pointIssue("roi-measurements", "텍스처 위에 영역을 다시 지정해 원본 카메라를 연결하세요.");
         if (["vision.gaugeValue", "vision.switchState"].includes(item.metric) && !sensorHasImaging(sensors.find((sensor) => sensor.id === item.sensorId))) return pointIssue(`measurement-${item.id}-sensor`, "게이지·스위치 감지에는 영상 센서를 선택하세요.");
         for (const [index, rule] of (item.rules ?? []).entries()) {
           if (!finite(rule.threshold)) return pointIssue(`measurement-${item.id}-rule-${index}`, "경보 조건의 기준값을 입력하세요.");
         }
       }
       if (!point.measurements?.length) {
-        if (!point.sensorIds?.some((id) => sensors.some((sensor) => sensor.id === id))) return pointIssue("roi-measurements", "각 관측 항목에 측정 센서를 선택하세요.");
+        if (point.metric !== "ultrasound.db" && !point.sensorIds?.some((id) => sensors.some((sensor) => sensor.id === id))) return pointIssue("roi-measurements", "텍스처 위에 영역을 다시 지정하세요.");
         const limits = [point.normalRange?.max, point.warningRange?.max, point.dangerRange?.max];
         if (limits.some((value) => !finite(value)) || Number(limits[0]) >= Number(limits[1]) || Number(limits[1]) >= Number(limits[2])) return pointIssue("roi-measurements", "임계치를 정상 < 주의 < 위험 순서로 입력하세요.");
       }

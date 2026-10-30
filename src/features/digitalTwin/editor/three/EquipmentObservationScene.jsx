@@ -2,6 +2,7 @@ import { updateEnclosureDoors } from "../generators/EnclosureGenerator";
 import EnclosureDoorControls from "../components/EnclosureDoorControls";
 import { advanceEnclosureDoors, enclosureDoorOverride, getEnclosure, getEnclosureSurfaces, getSensorMountPose, projectSensorMount, withDoorOverrides } from "../model/equipmentEnclosure";
 import { createSensorSceneLayer } from "./sensorSceneLayer";
+import { createSensorFrustumLayer } from "./sensorFrustumLayer.js";
 import ModelLayerControls from "../components/ModelLayerControls";
 import { applyModelLayerAppearance } from "./modelLayerAppearance";
 import { bindSensorProjectionLayer, projectionMeshes } from "./sensorProjectionLayer";
@@ -14,7 +15,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { planeOrientation } from "../model/observationGeometry.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { createDualTransformControls, attachDualTransformControls, disposeDualTransformControls, detachDualTransformControls, setDualTransformDragging, dualTransformIsActive } from "./dualTransformControls";
+import { createDualTransformControls, attachDualTransformControls, disposeDualTransformControls, detachDualTransformControls, setDualTransformDragging } from "./dualTransformControls";
 
 import { ASSET_TYPES } from "@/features/digitalTwin/editor/model/equipmentDetailModel";
 import { GROUND_VIEW_MODES, getGroundViewPresentation } from "@/features/digitalTwin/editor/model/undergroundModel";
@@ -37,6 +38,9 @@ import { captureViewerCamera, restoreEquipmentCamera, rememberViewerCamera, rest
 import { applySensorView, fitSensorCameraNear, sensorPoseFromCamera } from "./sensorCamera";
 import { bindMonitoringLayers } from "./monitoringLayers";
 import { bindEquipmentCoordinateFrame } from "./equipmentCoordinateFrameLayer.js";
+import { createImageObservationBinding, moveImageObservation } from "../model/imageObservation.js";
+import { createThermalObservationBinding, thermalCalibrationKey } from "../model/observationSource.js";
+import { captureObservationImage } from "../api/imageObservationAsset.js";
 
 import styles from "./EquipmentAssetViewer.module.css";
 function fitCamera(camera, controls, object) {
@@ -49,18 +53,6 @@ function fitCamera(camera, controls, object) {
   camera.updateProjectionMatrix();
   controls.target.copy(sphere.center);
   controls.update();
-}
-
-function addCameraFrustum(marker, sensor) {
-  const length = Math.max(1, Number(sensor.far) || 10);
-  const fov = THREE.MathUtils.clamp(Number(sensor.fieldOfView) || 50, 10, 160);
-  const radius = Math.tan(THREE.MathUtils.degToRad(fov / 2)) * length;
-  const width = radius * Math.max(.2, Number(sensor.aspectRatio) || 1);
-  const corners = [[-width, -length, -radius], [width, -length, -radius], [width, -length, radius], [-width, -length, radius]].map((point) => new THREE.Vector3(...point));
-  const points = [];
-  corners.forEach((point, index) => points.push(new THREE.Vector3(), point, point, corners[(index + 1) % 4]));
-  const frustum = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineBasicMaterial({ color: 0x4da8ff, transparent: true, opacity: .3 }));
-  marker.add(frustum);
 }
 
 function pointer(event, element) {
@@ -211,7 +203,8 @@ export default function EquipmentObservationScene({
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.shadowMap.enabled = true;
-    renderer.domElement.setAttribute("aria-label", "설비와 센서 위치·화각 3D 화면");
+    renderer.domElement.setAttribute("role", "img");
+    renderer.domElement.setAttribute("aria-label", "설비와 센서 및 관측 영역을 탐색하는 3D 화면. 드래그하여 회전하고 스크롤하여 확대하거나 축소합니다.");
     mount.appendChild(renderer.domElement);
     const camera = new THREE.PerspectiveCamera(46, 1, 0.01, 500);
     const renderedEquipment = new Map();
@@ -415,7 +408,8 @@ export default function EquipmentObservationScene({
     }
     syncEnvironment();
 
-    const sensorLayer = createSensorSceneLayer({ root, renderedEquipment, origin, addCameraFrustum });
+    const frustumLayer = createSensorFrustumLayer({ renderer, renderedEquipment });
+    const sensorLayer = createSensorSceneLayer({ root, renderedEquipment, origin, theme, addCameraFrustum: frustumLayer.addCameraFrustum });
     const sensorMarkers = sensorLayer.markers;
     let sensorState = null;
     let lastDoorOverrides = doorOverridesRef.current;
@@ -437,7 +431,7 @@ export default function EquipmentObservationScene({
       detachDualTransformControls(transform);
       sensorLayer.update({ ...next, readings, now: monitoringOptionsRef.current?.now });
       selectedMarker = pointOptionsRef.current?.editing && next.selectedPointId ? sensorLayer.pointMarkers.get(next.selectedPointId) : sensorMarkers.get(selectedSensorId);
-      if ((!editorStageRef.current || editorStageRef.current === "SENSOR" || (editorStageRef.current === "POINT" && selectedMarker?.userData.observationPointId)) && !placingSensorRef.current && !projectionPickingRef.current && !sensorViewRef.current && selectedMarker && sensorCallbacksRef.current.onSensorChange) attachDualTransformControls(transform, selectedMarker, transformTools, { camera });
+      if ((!editorStageRef.current || editorStageRef.current === "SENSOR" || (editorStageRef.current === "POINT" && selectedMarker?.userData.observationPointId)) && !pointOptionsRef.current?.placing && !placingSensorRef.current && !projectionPickingRef.current && !sensorViewRef.current && selectedMarker && sensorCallbacksRef.current.onSensorChange) attachDualTransformControls(transform, selectedMarker, transformTools, { camera });
       else { transform.translate.enabled = false; transform.rotate.enabled = false; }
       return true;
     }
@@ -481,6 +475,31 @@ export default function EquipmentObservationScene({
       if (event.value) pointerStart = null;
       if (event.value || !selectedMarker) return;
       if (selectedMarker.userData.observationPointId) {
+        const thermalPoint = sensorStateRef.current.observationPoints.find((p) => p.id === selectedMarker.userData.observationPointId && p.thermalBinding);
+        if (thermalPoint) {
+          const host = renderedEquipment.get(thermalPoint.equipmentId);
+          const world = host.object.localToWorld(selectedMarker.position.clone());
+          const origin = camera.getWorldPosition(new THREE.Vector3());
+          const probe = new THREE.Raycaster(origin, world.clone().sub(origin).normalize());
+          const hit = projectionLayer.pickObservationSurface("THERMAL", thermalPoint.equipmentId, probe, thermalPoint.thermalBinding.sensorId);
+          if (hit) {
+            const position = host.object.worldToLocal(hit.point.clone());
+            pointOptionsRef.current?.onChange?.(thermalPoint.id, { localPosition: { x: position.x, y: position.y, z: position.z },
+              thermalBinding: createThermalObservationBinding(hit, host.item, position) });
+            setPlacementNotice("");
+          } else { selectedMarker.position.copy(thermalPoint.localPosition); setPlacementNotice("연결된 열화상 텍스처 안에서 영역을 이동하세요."); }
+          return;
+        }
+        const imagePoint = selectedMarker.userData.imagePoint;
+        if (imagePoint) {
+          const host = renderedEquipment.get(imagePoint.equipmentId);
+          const imageBinding = moveImageObservation(imagePoint, selectedMarker.position, host?.item, sensorStateRef.current.sensors);
+          if (imageBinding) { pointOptionsRef.current?.onChange?.(imagePoint.id, { imageBinding }); setPlacementNotice(""); }
+          else setPlacementNotice("이미지의 표시 범위 안에서 영역을 이동하세요.");
+          sensorLayer.updateMountedPoses(sensorStateRef.current.sensors);
+          return;
+        }
+
         const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(selectedMarker.quaternion);
         const xAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(selectedMarker.quaternion).applyQuaternion(planeOrientation(normal).invert());
         pointOptionsRef.current?.onChange?.(selectedMarker.userData.observationPointId, {
@@ -515,39 +534,80 @@ export default function EquipmentObservationScene({
     let pointerStart = null;
     let hoveredPointId = null, lastHoverAt = 0;
     function pointHit() {
-      const hit = raycaster.intersectObjects([...sensorLayer.pointMarkers.values()].filter((object) => object.visible), true).find((hit) => hit.object.visible);
-      let object = hit?.object;
-      while (object && !object.userData.observationPointId) object = object.parent;
-      return object?.userData.observationPointId ?? null;
+      // Decorative borders have a world-unit line tolerance and used to steal
+      // clicks from nearby ROIs. Only surfaces and screen-sized labels are pickable.
+      const candidates = [...sensorLayer.pointMarkers.values()].filter((marker) => marker.visible && marker.parent?.visible);
+      const hits = candidates.flatMap((marker) => {
+        marker.updateWorldMatrix(true, true);
+        const targets = [marker];
+        marker.traverseVisible((child) => { if (child.isSprite) targets.push(child); });
+        return raycaster.intersectObjects(targets, false).map((hit) => ({ ...hit, marker }));
+      }).sort((a, b) => a.distance - b.distance);
+      if (hits.length) return hits[0].marker.userData.observationPointId;
+      const bounds = renderer.domElement.getBoundingClientRect();
+      const cursor = raycaster.ray.origin.clone().add(raycaster.ray.direction).project(camera);
+      let closest = null, distance = 14;
+      for (const marker of candidates) {
+        const center = marker.getWorldPosition(new THREE.Vector3()).project(camera);
+        if (center.z < -1 || center.z > 1) continue;
+        const pixels = Math.hypot((center.x - cursor.x) * bounds.width / 2, (center.y - cursor.y) * bounds.height / 2);
+        if (pixels < distance) { distance = pixels; closest = marker.userData.observationPointId; }
+      }
+      return closest;
     }
     function handlePointerMove(event) {
-      if (event.buttons || dragging || sensorViewRef.current) { hoveredPointId = null; return; }
+      if (event.buttons || dragging || sensorViewRef.current) { hoveredPointId = null; renderer.domElement.style.cursor = ""; return; }
       if (performance.now() - lastHoverAt < 50) return;
       lastHoverAt = performance.now();
       raycaster.setFromCamera(pointer(event, renderer.domElement), camera); hoveredPointId = pointHit();
+      renderer.domElement.style.cursor = hoveredPointId ? "pointer" : "";
     }
-    function clearPointHover() { hoveredPointId = null; }
+    function clearPointHover() { hoveredPointId = null; renderer.domElement.style.cursor = ""; }
     function handlePointerDown(event) { pointerStart = { x: event.clientX, y: event.clientY }; }
-    function handlePointerUp(event) {
-      if (roiOptionsRef.current?.drawing || roiOptionsRef.current?.pointPicking || sensorViewRef.current || dragging || dualTransformIsActive(transform) || !pointerStart || event.button !== 0 || Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 5) return;
+    let placingBusy = false;
+    async function handlePointerUp(event) {
+      if (placingBusy) return;
+      if (roiOptionsRef.current?.drawing || roiOptionsRef.current?.pointPicking || sensorViewRef.current || dragging || !pointerStart || event.button !== 0 || Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 5) return;
       pointerStart = null;
       raycaster.setFromCamera(pointer(event, renderer.domElement), camera);
       const pointOptions = pointOptionsRef.current;
       if (pointOptions?.editing) {
         if (pointOptions.placing) {
           const entry = renderedEquipment.get(selectedScanRef.current);
-          if (!entry) return;
+          if (!entry || entry.loading) return;
           const candidates = [entry.actual, entry.proxy].filter((object) => object?.visible);
-          const hit = raycaster.intersectObjects(candidates, true).find((hit) => {
+          const hit = pointOptions.textureKind ? projectionLayer.pickObservationSurface(pointOptions.textureKind, entry.item.id, raycaster)
+            : raycaster.intersectObjects(candidates, true).find((hit) => {
             if (!hit.object.isMesh && !hit.object.isPoints) return false;
             for (let object = hit.object; object; object = object.parent) if (!object.visible || object.userData.monitoringOverlay || object.userData.sensorId) return false;
             return true;
           });
-          if (!hit) return;
+          if (!hit) {
+            if (pointOptions.textureKind) setPlacementNotice(`${pointOptions.textureKind === "VISION" ? "비전" : "열화상"} 텍스처가 실제 표시된 부분을 클릭하세요. 수신 대기·가려진 표면에는 지정할 수 없습니다.`);
+            return;
+          }
           const position = entry.object.worldToLocal(hit.point.clone());
           const localMatrix = entry.object.matrixWorld.clone().invert().multiply(hit.object.matrixWorld);
           const normal = (hit.face?.normal?.clone() ?? new THREE.Vector3(0, 0, 1)).applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(localMatrix));
-          pointOptions.onAdd?.(entry.item.id, { x: position.x, y: position.y, z: position.z }, { x: normal.x, y: normal.y, z: normal.z }); pointOptions.onPlaced?.(); return;
+          let imageBinding, thermalBinding;
+          if (pointOptions.textureKind === "VISION") {
+            const key = thermalCalibrationKey(hit.sensor, entry.item);
+            placingBusy = true; setPlacementNotice("선택한 텍스처의 원본 이미지를 보관하고 있습니다…");
+            try {
+              const originalImage = await captureObservationImage(hit.sensor, hit.frame);
+              if (disposed || !pointOptionsRef.current?.placing || pointOptionsRef.current.placementId !== pointOptions.placementId
+                || selectedScanRef.current !== entry.item.id) return;
+              const currentSensor = sensorStateRef.current.sensors.find((s) => s.id === hit.sensor.id);
+              if (!currentSensor || thermalCalibrationKey(currentSensor, entry.item) !== key) throw new Error("텍스처 설정이 변경되었습니다. 영역을 다시 지정하세요.");
+              imageBinding = createImageObservationBinding(position, entry.item, currentSensor, originalImage);
+            } catch (error) { if (!disposed) setPlacementNotice(error.message); return; }
+            finally { placingBusy = false; }
+          } else if (pointOptions.textureKind === "THERMAL") {
+            thermalBinding = createThermalObservationBinding(hit, entry.item, position);
+          }
+          const createdId = pointOptions.onAdd?.(entry.item.id, { x: position.x, y: position.y, z: position.z }, { x: normal.x, y: normal.y, z: normal.z }, imageBinding, thermalBinding);
+          if (createdId) pointOptions.onSelect?.(createdId);
+          setPlacementNotice(""); pointOptions.onPlaced?.(); return;
         }
         const id = pointHit();
         if (id) pointOptions.onSelect?.(id);
@@ -638,7 +698,7 @@ export default function EquipmentObservationScene({
       return bounds.isEmpty() ? new THREE.Box3().setFromObject(focusObject) : bounds;
     };
     const stopFit = () => { allowDetailedFit = false; focusRuntime.cameraFocus = null; };
-    const coordinateLayer = bindEquipmentCoordinateFrame({ renderer, camera, controls, renderedEquipment,
+    const coordinateLayer = bindEquipmentCoordinateFrame({ renderer, camera, controls, renderedEquipment, theme,
       getEquipment: () => coordinateEquipmentRef.current, getStage: () => editorStageRef.current, getBinding: (id) => detailedBindings.get(id) });
     const cameraApi = {
       equipmentId: focusEquipment?.id,
@@ -777,7 +837,8 @@ export default function EquipmentObservationScene({
       if (!viewSensor) updateCameraFocus(focusRuntime);
       syncEquipmentRepresentations();
       sensorLayer.updateVisibility(sensorViewRef.current);
-      if ((!editorStageRef.current || editorStageRef.current === "SENSOR" || (editorStageRef.current === "POINT" && selectedMarker?.userData.observationPointId)) && !sensorViewRef.current && !placingSensorRef.current && !projectionPickingRef.current && selectedMarker && sensorCallbacksRef.current.onSensorChange) {
+      frustumLayer.update(sensorStateRef.current?.sensors ?? []);
+      if ((!editorStageRef.current || editorStageRef.current === "SENSOR" || (editorStageRef.current === "POINT" && selectedMarker?.userData.observationPointId)) && !pointOptionsRef.current?.placing && !sensorViewRef.current && !placingSensorRef.current && !projectionPickingRef.current && selectedMarker && sensorCallbacksRef.current.onSensorChange) {
         if (selectedMarker.visible && !transform.translate.object) attachDualTransformControls(transform, selectedMarker, sensorStateRef.current?.transformTools, { camera });
         else if (!selectedMarker.visible && transform.translate.object) detachDualTransformControls(transform);
       }
@@ -786,6 +847,7 @@ export default function EquipmentObservationScene({
       coordinateLayer.update();
       monitoringLayers.update();
       projectionLayer.update();
+      sensorLayer.updateVisibility(sensorViewRef.current, projectionLayer.isVisible);
       if (!viewSensor) { controls.update(); updateViewerCameraRange(camera, worldBounds); }
       else { controls.enabled = false; renderer.setScissorTest(false); renderer.clear(); renderer.setScissorTest(true); }
       syncEnvironment();
@@ -846,6 +908,7 @@ export default function EquipmentObservationScene({
       controls.removeEventListener("end", syncEquipmentRepresentations);
       disposeDualTransformControls(transform);
       sensorLayer.dispose();
+      frustumLayer.dispose();
       controls.dispose();
       root.traverse((object) => object.userData.releaseAssetSources?.());
       disposeObject3D(root);
@@ -878,6 +941,7 @@ export default function EquipmentObservationScene({
       {(placingSensorId === selectedSensorId || projectionPicking === selectedSensorId) && <span role="status">{placementNotice || (projectionPicking ? "영상이 표시될 부분을 클릭하세요." : "벽이나 문의 부착 위치를 클릭하세요.")}</span>}
     </div>}
     {pointOptions?.placing && <><InteractionGuide message={pointOptions.placementLabel ?? "모델 표면을 클릭해 관측 영역을 놓으세요."} /><div className={styles.surfacePlacement} data-camera-safe-ui><button type="button" onClick={pointOptions.onPlaced}>영역 지정 취소</button></div></>}
+    {pointOptions?.editing && !pointOptions.placing && placementNotice && <div className={styles.surfacePlacement} data-camera-safe-ui role="status">{placementNotice}</div>}
     {(placingSensorId === selectedSensorId || projectionPicking === selectedSensorId) && selectedSensorId && <InteractionGuide key={projectionPicking ? "projection" : "sensor"} message={projectionPicking ? "영상이 표시될 모델 표면을 클릭하세요." : "센서를 부착할 모델 표면을 클릭하세요."} />}
     {!overview && hasVisibleEnclosure && <EnclosureDoorControls equipment={displayedDoorEquipment} onToggle={(index, open, side) => setDoorOverrides((current) => ({ ...current, [doorEquipment.id]: enclosureDoorOverride(doorEquipment, displayedDoorEquipment, index, open, side) }))} />}
   </section>;

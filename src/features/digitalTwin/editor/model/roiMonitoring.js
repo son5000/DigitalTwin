@@ -55,6 +55,8 @@ export function observationPointToRoi(point) {
       coordinateSpace: "EQUIPMENT_LOCAL", representation: point.representation ?? "BOTH",
       ...(point.model ? { model: point.model } : {}) },
     opacity: point.opacity ?? .25, measurements: point.measurements ?? [], observationPoint: point,
+    ...(point.imageBinding ? { imageBinding:point.imageBinding, imageAnalysis:point.imageAnalysis } : {}),
+    ...(point.thermalBinding ? { thermalBinding: point.thermalBinding } : {}),
     displayMetrics: [], rules: [], monitoringEnabled: false,
   };
 }
@@ -62,6 +64,8 @@ export function observationPointToRoi(point) {
 export function roiToObservationPoint(roi) {
   const [x, y, z] = roi.surface.center;
   return { ...roi.observationPoint, id: roi.id, equipmentId: roi.equipmentId, name: roi.name, revision: roi.revision,
+    ...(roi.imageBinding ? { imageBinding:roi.imageBinding, imageAnalysis:roi.imageAnalysis } : {}),
+    ...(roi.thermalBinding ? { thermalBinding: roi.thermalBinding } : {}),
     geometryType: roi.surface.type === "PLANE" ? "PLANE" : "SPHERE", localPosition: { x, y, z }, radius: roi.surface.radius, opacity: roi.opacity ?? .25,
     ...(roi.surface.type === "PLANE" ? planeFields(roi.surface) : {}),
     representation: roi.surface.representation, ...(roi.surface.model ? { model: roi.surface.model } : {}), measurements: roi.measurements ?? [],
@@ -75,8 +79,14 @@ export function roiAudioSelection(roi, equipment) {
     representation: roi.surface.representation, surface: payload.surface };
 }
 
-function validPlane(surface) {
+function validPlane(surface, imageBinding) {
   if (!Array.isArray(surface.vertices) || surface.vertices.length !== 4 || surface.vertices.some((v) => !Array.isArray(v) || v.length !== 3 || !v.every(Number.isFinite))) return false;
+  if (imageBinding) {
+    const r = imageBinding.sourceRect;
+    return Boolean(imageBinding.sensorId && r && [r.x,r.y,r.width,r.height].every(Number.isFinite)
+      && r.width > 0 && r.height > 0 && r.x >= 0 && r.y >= 0 && r.x+r.width <= 1+1e-7 && r.y+r.height <= 1+1e-7
+      && JSON.stringify(surface.outline) === "[0,1,2,3]" && JSON.stringify(surface.triangles) === "[0,1,2,0,2,3]");
+  }
   const fields = planeFields(surface);
   if (![fields.planeWidth, fields.planeHeight].every((n) => Number.isFinite(n) && n >= .01 && n <= 100)) return false;
   const expected = observationPlane({ ...fields, localPosition: { x: surface.center[0], y: surface.center[1], z: surface.center[2] } });
@@ -92,7 +102,7 @@ export function validateRoi(roi) {
     if (surface.coordinateSpace !== "EQUIPMENT_LOCAL" || !["ACTUAL", "PROXY", "BOTH"].includes(surface.representation)
       || !Array.isArray(surface.center) || surface.center.length !== 3 || !surface.center.every(Number.isFinite)
       || (isSphereRoi(roi) && (!Number.isFinite(surface.radius) || surface.radius < .01 || surface.radius > 100))
-      || (surface.type === "PLANE" && !validPlane(surface))
+      || (surface.type === "PLANE" && !validPlane(surface,roi.imageBinding))
       || !Array.isArray(roi.measurements) || roi.measurements.some((item) => !item.id || !item.metric || !Array.isArray(item.rules)
         || item.rules.some((rule) => !["gt", "gte", "lt", "lte"].includes(rule.operator) || !Number.isFinite(rule.threshold) || !["WARNING", "DANGER"].includes(rule.severity)))) {
       throw new Error("관측 영역의 위치, 크기와 측정 항목을 확인하세요.");

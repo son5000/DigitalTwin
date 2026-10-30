@@ -14,7 +14,7 @@ function doorSet(source, width, height, defaultCount) {
       hinge: ["LEFT", "RIGHT", "TOP", "BOTTOM"].includes(source.doors?.[index]?.hinge) ? source.doors[index].hinge : index === 0 ? "LEFT" : "RIGHT",
       swing: source.doors?.[index]?.swing === "INWARD" ? "INWARD" : "OUTWARD",
       open: source.doors?.[index]?.open === true,
-      angle: clamp(source.doors?.[index]?.angle, 0, 180, 100),
+      angle: clamp(source.doors?.[index]?.angle, 0, 180, 150),
       hideWhenOpen: source.doors?.[index]?.hideWhenOpen === true,
     })),
   };

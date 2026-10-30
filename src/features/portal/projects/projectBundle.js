@@ -44,6 +44,8 @@ export async function exportProjectBundle(project, { onProgress = () => {}, stor
     });
   }
   collect(project.layout);
+  const rois = await createRoiRepository(project.id, storage).list(AbortSignal.timeout(15000));
+  collect(rois);
   const assets = { equipment: [], textures: [], custom: [] };
   for (const id of customIds) {
     const asset = await customAssetRepository.get(id);
@@ -60,7 +62,6 @@ export async function exportProjectBundle(project, { onProgress = () => {}, stor
     if (!(asset?.blob instanceof Blob)) throw new Error(`등록된 텍스처를 찾을 수 없습니다: ${id}`);
     assets.textures.push(asset);
   }
-  const rois = await createRoiRepository(project.id, storage).list(AbortSignal.timeout(15000));
   return encodeProjectZip({ format: "digital-twin-project", version: 2, createdAt: new Date().toISOString(), project, rois, assets,
     externalReferences: [...references], requires: ["동일 버전의 뷰어 빌드와 기본 제공 리소스", "실시간 데이터 사용 시 센서 서버 연결"] }, onProgress);
 }
@@ -91,7 +92,7 @@ export async function importProjectBundle(file, storage = window.localStorage, {
   }
   const bundle = rewrite(source);
   const ids = Object.fromEntries(Object.entries(bundle.assets).map(([kind, assets]) => [kind, new Set(assets.map((asset) => asset.id))]));
-  visit([bundle.project.layout, ...bundle.assets.custom], (node) => {
+  visit([bundle.project.layout, bundle.rois, ...bundle.assets.custom], (node) => {
     if ((node.sourceType === "UPLOAD" && !ids.equipment.has(node.assetId)) || (node.textureAssetId && !ids.textures.has(node.textureAssetId))
       || (node.customAssetId && !ids.custom.has(node.customAssetId)) || Object.values(node).some((value) => {
         const id = typeof value === "string" && getCustomAssetIdFromTemplate(value);

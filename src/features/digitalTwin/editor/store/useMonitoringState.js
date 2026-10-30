@@ -2,6 +2,7 @@ import { getEnclosureSurfaces } from "../model/equipmentEnclosure";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { readProjects } from "../../../portal/projects/projectRepository.js";
 import { LAYOUT_STORAGE_KEY } from "../model/layoutInitialization.js";
+import { resolveImageObservation } from "../model/imageObservation.js";
 
 import {
   ASSET_SOURCE_TYPES, ASSET_TYPES, ASSET_USAGE_TYPES,
@@ -52,7 +53,8 @@ export default function useMonitoringState({ equipment }) {
 
   const equipmentIdKey = JSON.stringify(equipment.map((item) => item.id).sort());
   const equipmentIds = useMemo(() => new Set(JSON.parse(equipmentIdKey)), [equipmentIdKey]);
-  const activeObservationPoints = useMemo(() => observationPoints.filter((item) => equipmentIds.has(item.equipmentId)), [observationPoints, equipmentIds]);
+  const activeObservationPoints = useMemo(() => observationPoints.filter((item) => equipmentIds.has(item.equipmentId))
+    .map((point) => resolveImageObservation(point, equipment.find((item) => item.id === point.equipmentId), sensorBindings)), [observationPoints, equipmentIds, equipment, sensorBindings]);
   const activeSensorBindings = useMemo(() => sensorBindings.filter((item) => item.equipmentIds.some((id) => equipmentIds.has(id))), [sensorBindings, equipmentIds]);
   const activeServerBindings = useMemo(() => serverBindings.filter((item) => equipmentIds.has(item.equipmentId)), [serverBindings, equipmentIds]);
   const activeAssetBindings = useMemo(() => equipmentAssetBindings.filter((item) => equipmentIds.has(item.equipmentId)), [equipmentAssetBindings, equipmentIds]);
@@ -104,6 +106,7 @@ export default function useMonitoringState({ equipment }) {
       id, equipmentId, targetPartId: null, name: `관측 영역 ${items.filter((item) => item.equipmentId === equipmentId).length + 1}`,
       description: "", localPosition, targetNormal: geometry.targetNormal ?? { x: 0, y: 0, z: 1 }, geometryType: geometry.geometryType, sensorIds: [], metric: "TEMPERATURE", unit: "°C",
       normalRange: { min: 0, max: 60 }, warningRange: { min: 60, max: 80 }, dangerRange: { min: 80, max: 120 },
+      ...geometry,
     })]);
     setSelectedObservationPointId(id);
     return id;

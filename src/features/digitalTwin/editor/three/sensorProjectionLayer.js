@@ -5,6 +5,7 @@ import { normalizeSensorProjection, sensorProjectionFrame, temperaturePixels } f
 import { isFreshMeasurement, mediaUrl } from "../model/monitoringContract.js";
 import { sensorImageTransform } from "../model/sensorImageTransform.js";
 import { imageSurfaceMatrix, resolveImageSurface } from "../model/textureSurfaceMapping.js";
+import { isProjectionVisible, pickVisionProjection } from "./visionProjectionPicking.js";
 
 export function projectionMeshes(root) {
   const result = [];
@@ -254,6 +255,44 @@ export function bindSensorProjectionLayer({ renderer, renderedEquipment, markers
       }
       const error = [...new Set(errors)].join(" · ");
       if (error !== lastError) { lastError = error; onError(error); }
+    },
+    isVisible(sensorId) { return states.get(sensorId)?.targets.some(({overlay})=>isProjectionVisible(overlay)) ?? false; },
+    pickVisionSurface(sensorId, raycaster) { return pickVisionProjection(states.get(sensorId)?.targets ?? [],raycaster); },
+    pickObservationSurface(kind, equipmentId, raycaster, sensorId = null) {
+      const hits = [], entry = renderedEquipment.get(equipmentId);
+      if (!entry) return null;
+      for (const sensor of getSensors() ?? []) {
+        const p = normalizeSensorProjection(sensor.textureProjection), state = states.get(sensor.id);
+        if (!state?.ready || p.kind !== kind || (sensorId && sensor.id !== sensorId)
+          || (p.equipmentId ?? sensor.equipmentIds?.[0]) !== equipmentId) continue;
+        const hit = pickVisionProjection(state.targets, raycaster, (candidate) => {
+          if (kind !== "THERMAL") return true;
+          const grid = state.displayedFrame?.temperatureGrid;
+          if (grid) {
+            const [u, v] = candidate.sourceUv;
+            const index = Math.min(grid.height - 1, Math.floor(v * grid.height)) * grid.width + Math.min(grid.width - 1, Math.floor(u * grid.width));
+            if (!Number.isFinite(grid.values[index])) return false;
+          }
+          // Same representation and first-surface rule as the thermal depth pass.
+          const origin = state.camera.getWorldPosition(new THREE.Vector3());
+          const direction = candidate.point.clone().sub(origin), distance = direction.length();
+          const probe = new THREE.Raycaster(origin, direction.normalize(), 0, Math.max(0, distance - .0005));
+          const layer = state.depthLayers.get(candidate.representation);
+          layer?.scene.updateMatrixWorld(true);
+          return !probe.intersectObjects(layer?.scene.children.filter((o) => o.visible) ?? [], false).length;
+        });
+        if (hit) {
+          entry.object.updateWorldMatrix(true, false);
+          hits.push({ ...hit, sensor, frame: state.displayedFrame,
+            projectorMatrix: new THREE.Matrix4().multiplyMatrices(hit.target.overlay.material.uniforms.projectorMatrix.value, entry.object.matrixWorld).toArray() });
+        }
+      }
+      hits.sort((a,b) => Math.abs(a.distance-b.distance) < 1e-5 ? b.target.overlay.id-a.target.overlay.id : a.distance-b.distance);
+      const hit = hits[0];
+      if (!hit) return null;
+      const foreground = raycaster.intersectObjects([entry.actual, entry.proxy].filter((o) => o?.visible), true)
+        .find((h) => !h.object.userData.monitoringOverlay && visible(h.object) && (h.object.isMesh || h.object.isPoints));
+      return foreground && foreground.distance < hit.distance - .001 ? null : hit;
     },
     dispose() { disposed = true; states.forEach(clearState); states.clear(); },
   };

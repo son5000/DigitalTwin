@@ -191,6 +191,10 @@ details.settingsGroup[open] > :not(summary) + * { margin-top: 12px; }
 .roiEditor .primaryAction { color: var(--color-accent-strong); border-color: var(--color-accent); background: var(--state-selected); }
 .roiEditor .removeAction { color: var(--color-text-muted); justify-self: start; }
 .sensorRemoveAction { justify-self: end; min-height: 36px; border: 1px solid var(--color-border); background: var(--color-input); color: var(--color-danger, var(--color-heading)); }
+.metricChoices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 8px; min-width: 0; margin: 0; padding: 8px; border: 1px solid var(--color-border); border-radius: 4px; }
+.metricChoices legend { color: var(--color-text-muted); font-size: 12px; }
+.metricChoices .check { min-width: 0; min-height: 32px; margin: 0; }
+.metricChoices label:has(input:disabled) { opacity: .55; }
 [data-validation-error="true"] { outline: 2px solid var(--color-accent); outline-offset: 3px; scroll-margin-block: 64px; }
 .stepFooter p[role="alert"] { color: var(--color-heading); border-left: 3px solid var(--color-accent); padding-left: 8px; }
 @container (max-width: 280px) {

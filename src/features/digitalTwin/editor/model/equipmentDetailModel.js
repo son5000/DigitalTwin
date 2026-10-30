@@ -95,7 +95,9 @@ export function normalizeObservationPoint(point = {}) {
     id: `${point.id ?? "roi"}-value`, name: point.name ?? "온도", metric: point.metric ?? "TEMPERATURE", unit: point.unit ?? "°C",
     sensorId: point.sensorIds?.[0] ?? point.sourceDeviceId ?? "", visible: true, previewValue: point.previewValue,
     rules: [{ operator: "gte", threshold: point.warningRange?.min ?? 60, severity: "WARNING" }, { operator: "gte", threshold: point.dangerRange?.min ?? 80, severity: "DANGER" }],
-  }]).map((item) => ({ ...item, id: item.id ?? createId("ROI_VALUE"), visible: item.visible !== false, rules: item.rules ?? [] }));
+  }]).map((item) => ({ ...item, ...(item.metric === "ultrasound.db" ? { sensorId: "", sourceMode: "EQUIPMENT_REGION" }
+    : item.metric === "TEMPERATURE" ? { sourceMode: "THERMAL_TEXTURE" } : item.metric?.startsWith("vision.") ? { sourceMode: "VISION_TEXTURE" } : {}),
+    id: item.id ?? createId("ROI_VALUE"), visible: item.visible !== false, rules: item.rules ?? [] }));
   return {
     ...point,
     id: point.id ?? createId("OBSERVATION_POINT"),
@@ -109,6 +111,7 @@ export function normalizeObservationPoint(point = {}) {
     radius: Math.max(.01, Math.min(100, Number(point.radius) || .15)),
     opacity: Math.max(.05, Math.min(.8, Number.isFinite(Number(point.opacity)) ? Number(point.opacity) : .25)),
     measurements,
+    ...(measurements.length && measurements.every((item) => item.metric === "ultrasound.db") ? { sourceDeviceId: null } : {}),
     localPosition: { x: 0, y: 0.5, z: 0, ...point.localPosition },
     targetNormal: { x: 0, y: 0, z: 1, ...point.targetNormal },
     sensorIds: [...new Set(measurements.map((item) => item.sensorId).filter(Boolean))],

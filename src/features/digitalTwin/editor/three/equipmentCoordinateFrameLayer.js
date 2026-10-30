@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { equipmentBounds, frontLowerLeft, getEquipmentCoordinateFrame } from "../model/equipmentCoordinateFrame.js";
 import { disposeObject3D } from "./disposeObject3D.js";
 
-export function bindEquipmentCoordinateFrame({ renderer, camera, controls, renderedEquipment, getEquipment, getStage, getBinding }) {
+export function bindEquipmentCoordinateFrame({ renderer, camera, controls, renderedEquipment, getEquipment, getStage, getBinding, theme = "dark" }) {
   let preview = null, picker = null, down = null, previousKey = "", helper = null;
   const canvas = renderer.domElement;
   const raycaster = new THREE.Raycaster();
@@ -49,15 +49,31 @@ export function bindEquipmentCoordinateFrame({ renderer, camera, controls, rende
   window.addEventListener("keydown", keydown);
   window.addEventListener("blur", cancel);
   function clear() { if (helper) { helper.removeFromParent(); disposeObject3D(helper); helper = null; } }
-  function label(text, color, position, size) {
-    const image = document.createElement("canvas"); image.width = 512; image.height = 96;
+  function label(axis, text, color, position) {
+    const image = document.createElement("canvas"); image.width = 320; image.height = 64;
     const context = image.getContext("2d");
-    context.font = "600 38px sans-serif"; context.textAlign = "center"; context.textBaseline = "middle";
-    context.fillStyle = "rgba(8,18,25,.88)"; context.fillRect(0, 0, image.width, image.height);
-    context.fillStyle = color; context.fillText(text, 256, 48);
+    const light = theme === "light";
+    const width = axis === "O" ? 154 : 116;
+    context.scale(2, 2);
+    context.fillStyle = light ? "rgba(247,250,251,.96)" : "rgba(9,18,25,.94)";
+    context.strokeStyle = light ? "rgba(50,72,84,.30)" : "rgba(205,225,234,.24)";
+    context.lineWidth = 1;
+    context.beginPath(); context.roundRect(.5, .5, width - 1, 27, 4); context.fill(); context.stroke();
+    context.fillStyle = color;
+    context.beginPath(); context.roundRect(1.5, 1.5, 27, 25, [3, 0, 0, 3]); context.fill();
+    context.fillStyle = light ? "#10242e" : "#071116";
+    context.font = "800 12px ui-monospace, SFMono-Regular, Consolas, monospace";
+    context.textAlign = "center"; context.textBaseline = "middle";
+    context.fillText(axis, 15, 14.5);
+    context.fillStyle = light ? "#18313d" : "#eef5f7";
+    context.font = "650 11px system-ui, sans-serif";
+    context.textAlign = "left";
+    context.fillText(text, 37, 14.5);
     const texture = new THREE.CanvasTexture(image); texture.colorSpace = THREE.SRGBColorSpace;
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false, depthWrite: false }));
-    sprite.position.copy(position); sprite.scale.set(size * 1.8, size * .34, 1); sprite.userData.coordinateLabel = true; helper.add(sprite);
+    texture.generateMipmaps = false; texture.minFilter = THREE.LinearFilter; texture.magFilter = THREE.LinearFilter;
+    texture.repeat.set(width / 160, 1);
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false, depthWrite: false, toneMapped: false, fog: false }));
+    sprite.position.copy(position); sprite.userData.coordinateLabel = true; sprite.userData.pixelWidth = width; sprite.userData.pixelHeight = 28; helper.add(sprite);
   }
   return {
     bounds,
@@ -82,10 +98,10 @@ export function bindEquipmentCoordinateFrame({ renderer, camera, controls, rende
         helper.position.fromArray(frame?.origin ?? [fallback.x, fallback.y, fallback.z]); helper.rotation.fromArray([...(frame?.rotation ?? [0, 0, 0]), "XYZ"]);
         const size = Math.max(.15, Math.min(1, (equipment.dimensions?.height ?? 1) * .24));
         const axes = new THREE.AxesHelper(size); helper.add(axes);
-        label("X · 오른쪽", "#ff9696", new THREE.Vector3(size * 1.5, 0, 0), size * .55);
-        label("Y · 위", "#a5e99d", new THREE.Vector3(0, size * 1.25, 0), size * .55);
-        label("Z · 정면", "#91c6ff", new THREE.Vector3(0, 0, size * 1.5), size * .55);
-        label("0, 0, 0", "#ffffff", new THREE.Vector3(0, -size * .18, 0), size * .45);
+        label("X", "오른쪽", "#f08b8b", new THREE.Vector3(size * 1.5, 0, 0));
+        label("Y", "위", "#85cf8e", new THREE.Vector3(0, size * 1.25, 0));
+        label("Z", "정면", "#79b8ef", new THREE.Vector3(0, 0, size * 1.5));
+        label("O", "기준점 · 0, 0, 0", theme === "light" ? "#78909c" : "#a8bac3", new THREE.Vector3(0, -size * .18, 0));
         helper.traverse((object) => { object.userData.monitoringOverlay = true; object.raycast = () => {}; object.renderOrder = 1000; if (object.material) { object.material.depthTest = false; object.material.depthWrite = false; } });
         entry.object.add(helper);
       }
@@ -96,7 +112,7 @@ export function bindEquipmentCoordinateFrame({ renderer, camera, controls, rende
       helper.children.filter((object) => object.userData.coordinateLabel).forEach((sprite) => {
         const distance = camera.position.distanceTo(sprite.getWorldPosition(new THREE.Vector3()));
         const height = 2 * distance * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / camera.zoom * 22 / viewportHeight;
-        sprite.scale.set(height * 512 / 96, height, 1);
+        sprite.scale.set(height * sprite.userData.pixelWidth / sprite.userData.pixelHeight, height, 1);
       });
     },
     dispose() { cancel(); clear(); canvas.removeEventListener("pointerdown", pointerDown, true); canvas.removeEventListener("pointerup", pointerUp, true); canvas.removeEventListener("pointercancel", cancel); window.removeEventListener("keydown", keydown); window.removeEventListener("blur", cancel); },

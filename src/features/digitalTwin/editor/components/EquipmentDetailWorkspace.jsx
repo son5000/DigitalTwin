@@ -4,6 +4,7 @@ import { cloneElement, useEffect, useState } from "react";
 
 import { EQUIPMENT_SETUP_STEPS, getEquipmentSetup, updateEquipmentSetup } from "../model/equipmentSetup";
 import SensorFramePreview from "./SensorFramePreview";
+import { bindObservationMeasurements } from "../model/observationSource.js";
 
 import styles from "./EquipmentDetailWorkspace.module.css";
 
@@ -36,7 +37,7 @@ export default function EquipmentDetailWorkspace({
     if (!workspaceViewControllerRef) return;
     const controller = { setView: (mode) => { setViewChoice({ key: viewKey, mode }); setCameraResetVersion((value) => value + 1); }, addEquipment: onAddEquipment,
       setSensorView: (sensorId) => { setViewChoice({ key: viewKey, mode: "SENSORS" }); setComparisonSensorId(sensorId); },
-      placeRoi: (type = "SPHERE") => setPlacingRoi({ type, equipmentId: viewKey }),
+      placeRoi: (configuration = "SPHERE") => setPlacingRoi({ ...(typeof configuration === "string" ? { geometryType:configuration } : configuration), placementId: crypto.randomUUID(), equipmentId: viewKey }),
       placeHeatmap: (sensorId, onPick) => setPlacingRoi({ sensorId, onPick, equipmentId: viewKey }) };
     workspaceViewControllerRef.current = controller;
     return () => { if (workspaceViewControllerRef.current === controller) workspaceViewControllerRef.current = null; };
@@ -68,8 +69,16 @@ export default function EquipmentDetailWorkspace({
           pointOptions: { ...pointOptions,
             editing: setup.currentStep === "POINT" || Boolean(sensorStep && placingRoi?.onPick && placingRoi.sensorId === selectedSensor?.id && placingRoi.equipmentId === equipment.id),
             placing: Boolean(placingRoi && placingRoi.equipmentId === equipment.id && (placingRoi.onPick ? sensorStep && placingRoi.sensorId === selectedSensor?.id : setup.currentStep === "POINT")),
-            placementLabel: placingRoi?.onPick ? "모델 표면을 클릭해 히트맵 샘플 위치를 지정하세요. 실측 데이터가 아닙니다." : undefined,
-            onAdd: (id, position, normal) => placingRoi?.onPick ? placingRoi.onPick(position, normal) : pointOptions?.onAdd?.(id, position, { geometryType: placingRoi?.type, targetNormal: normal }),
+            textureKind: placingRoi?.textureKind,
+            placementId: placingRoi?.placementId,
+            placementLabel: placingRoi?.onPick ? "모델 표면을 클릭해 히트맵 샘플 위치를 지정하세요. 실측 데이터가 아닙니다." : placingRoi?.textureKind ? `${placingRoi.textureKind === "VISION" ? "비전" : "열화상"} 텍스처 위를 클릭하세요. 원본 카메라가 자동 연결됩니다.` : undefined,
+            onAdd: (id, position, normal, imageBinding, thermalBinding) => {
+              if (placingRoi?.onPick) return placingRoi.onPick(position, normal);
+              const changes = { geometryType: placingRoi?.geometryType, measurements: bindObservationMeasurements(placingRoi?.measurements, { imageBinding, thermalBinding }), targetNormal: normal,
+                imageBinding: imageBinding ?? null, imageAnalysis: null, thermalBinding: thermalBinding ?? null };
+              if (placingRoi?.pointId) { pointOptions?.onChange?.(placingRoi.pointId, { ...changes, localPosition: position }); return placingRoi.pointId; }
+              return pointOptions?.onAdd?.(id, position, changes);
+            },
             onPlaced: () => setPlacingRoi(false) },
         })}
       </div>

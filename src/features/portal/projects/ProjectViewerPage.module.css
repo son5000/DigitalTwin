@@ -13,15 +13,17 @@
 .controlDock { --color-heading: var(--portal-text); --color-input: var(--portal-surface); --color-border: var(--portal-border); --color-border-strong: var(--portal-border); --color-surface-overlay: var(--portal-panel); --color-accent: var(--portal-blue); --state-selected: var(--portal-surface); --viewer-control-height: 32px; position: absolute; z-index: 26; left: var(--overlay-left); right: var(--overlay-right); bottom: var(--overlay-bottom); display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: flex-end; gap: 8px; min-width: 0; pointer-events: none; }
 .controlItems { display: contents; }
 .controlDock [data-viewer-control] { position: relative; inset: auto; min-width: 0; max-width: 100%; margin: 0; border-radius: 6px; font-size: 12px; pointer-events: auto; }
-.controlDock [data-viewer-control="layers"] { order: 0; flex: 0 0 auto; padding: 4px 10px; }
-.controlDock summary { min-height: var(--viewer-control-height); gap: 8px; }
+.controlDock [data-viewer-control="layers"] { order: 0; flex: 0 0 auto; padding: 0 10px; }
+.controlDock [data-viewer-control="layers"]:not([open]) { height: var(--viewer-control-height); }
+.controlDock summary { min-height: calc(var(--viewer-control-height) - 2px); gap: 8px; }
 .controlDock summary::after { content: ""; width: 6px; height: 6px; margin-left: 8px; border-top: 1px solid currentColor; border-right: 1px solid currentColor; transform: rotate(-45deg); }
 .controlDock details[open] summary::after { transform: rotate(135deg); }
 .controlDock [data-viewer-control="layers"] > div { width: min(240px, calc(100vw - 126px)); max-height: min(180px, 25dvh); overflow: auto; padding-bottom: 8px; }
-.controlDock [data-viewer-control="doors"] { order: 1; flex: 0 1 auto; gap: 8px; scroll-padding: 4px; scrollbar-width: thin; }
-.controlDock [data-viewer-control="doors"] button { min-height: var(--viewer-control-height); flex: 0 0 auto; }
-.controlDock > div:last-child { position: static; order: 2; margin-left: 0; flex-shrink: 0; border-radius: 6px; box-shadow: none; pointer-events: auto; }
-.controlDock > div:last-child button { width: var(--viewer-control-height); height: var(--viewer-control-height); font-size: 18px; }
+.controlDock [data-viewer-control="doors"] { order: 1; flex: 0 1 auto; height: var(--viewer-control-height); gap: 8px; padding: 0; scroll-padding: 0; scrollbar-width: thin; }
+.controlDock [data-viewer-control="doors"] button { min-height: 0; height: calc(var(--viewer-control-height) - 2px); flex: 0 0 auto; }
+.controlDock [data-viewer-control="doors"][data-single="true"] button { height: var(--viewer-control-height); }
+.controlDock > div:last-child { position: static; order: 2; height: var(--viewer-control-height); margin-left: 0; padding: 0; flex-shrink: 0; border-radius: 6px; box-shadow: none; pointer-events: auto; }
+.controlDock > div:last-child button { width: calc(var(--viewer-control-height) - 2px); height: calc(var(--viewer-control-height) - 2px); font-size: 18px; }
 .controlDock > div:last-child output { min-width: 52px; font-size: 12px; }
 .panelHost h2 { overflow-wrap: anywhere; }
 

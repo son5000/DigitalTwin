@@ -6,7 +6,7 @@ import EquipmentCoordinateFrameFields from "./EquipmentCoordinateFrameFields";
 import { DEFAULT_SCAN_LIGHTING, normalizeScanLighting } from "../model/viewerPreset";
 import styles from "./MonitoringSettingsPanel.module.css";
 
-export default function EquipmentModelSetupPanel({ workspaceViewControllerRef, equipmentCount, equipment, binding, onUpdateEquipment, onUpdateAsset, viewerPreset, onViewerPresetChange, onEquipmentRepresentationChange, cameraController }) {
+export default function EquipmentModelSetupPanel({ equipment, binding, onUpdateEquipment, onUpdateAsset, viewerPreset, onViewerPresetChange, onEquipmentRepresentationChange, cameraController }) {
   const [notice, setNotice] = useState("");
   const [cameraInfo, setCameraInfo] = useState(null);
   const alignment = binding?.alignmentTransform;
@@ -15,7 +15,7 @@ export default function EquipmentModelSetupPanel({ workspaceViewControllerRef, e
   function align(changes) { onUpdateAsset(binding.id, { alignmentTransform: changes }); }
   function cameraAction(action, value) {
     const controller = cameraController?.current;
-    if (!controller || controller.equipmentId !== equipment.id) { setNotice("아래 ‘선택 설비 작업’ 화면에서 모델 로딩을 완료한 뒤 설정하세요."); return; }
+    if (!controller || controller.equipmentId !== equipment.id) { setNotice("모델 로딩을 완료한 뒤 설정하세요."); return; }
     if (binding && !controller.ready()) { setNotice("스캔 모델 표시를 선택하고 로딩이 완료된 뒤 설정하세요."); return; }
     if (action === "save") {
       onViewerPresetChange({ equipmentViews: { ...viewerPreset?.equipmentViews, [equipment.id]: controller.capture() } });
@@ -24,10 +24,6 @@ export default function EquipmentModelSetupPanel({ workspaceViewControllerRef, e
     setCameraInfo(controller.capture());
   }
   return <>
-    <fieldset className={styles.settingsGroup}><legend>관리자 작업 화면 · 현재 편집용</legend>
-      <p className={styles.help}>작업할 화면을 선택하세요. 관제 시작 화면은 아래에서 따로 저장할 수 있습니다.</p>
-      <div className={styles.actionRow}><button type="button" onClick={() => workspaceViewControllerRef?.current?.setView("SELECTED")}>선택 설비 작업</button><button type="button" disabled={equipmentCount < 2} onClick={() => workspaceViewControllerRef?.current?.setView("ALL")}>전체 설비 배치 확인</button><button type="button" onClick={() => workspaceViewControllerRef?.current?.setView("SENSORS")}>센서 배치 확인</button><button type="button" onClick={() => workspaceViewControllerRef?.current?.addEquipment()}>설비 추가</button></div>
-    </fieldset>
 
     <section className={styles.modelSetupGroup} aria-labelledby="model-shape-settings-title">
     <h3 id="model-shape-settings-title">모델 구성·정합</h3>

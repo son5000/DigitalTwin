@@ -7,7 +7,7 @@ import { flipSensorRotation } from "../three/sensorCamera";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import {
-  SENSOR_DEVICE_CAPABILITIES, getSensorCapabilities, sensorCapabilityLabel, sensorHasImaging, getSensorMarkerDiameter, ASSET_SOURCE_TYPES, ASSET_TYPES, ASSET_USAGE_TYPES,
+  SENSOR_DEVICE_CAPABILITIES, getSensorCapabilities, sensorCapabilityLabel, sensorHasImaging, getSensorMarkerDiameter,
 } from "@/features/digitalTwin/editor/model/equipmentDetailModel";
 import { UNIFIED_EQUIPMENT_TEMPLATE_MAP } from "@/features/digitalTwin/editor/constants/unifiedEquipmentCatalog";
 import { CloseIcon } from "@/components/icons";
@@ -21,23 +21,13 @@ import EquipmentModelSetupPanel from "./EquipmentModelSetupPanel";
 
 const STATUS_TEXT = { DONE: "완료", SKIPPED: "건너뜀", PENDING: "미완료" };
 
-const PROTOCOLS = ["MQTT", "HTTP", "WEBSOCKET", "RTSP", "MANUAL"];
-const ASSET_USAGE_LABELS = Object.freeze({ MODEL: "실제 모델", POINT_CLOUD: "포인트클라우드", REFERENCE_IMAGE: "참조 이미지", TEXTURE: "텍스처", CAMERA_FRAME: "카메라 관측 이미지" });
-const STATUS_LABELS = Object.freeze({ READY: "준비됨", PENDING: "대기 중", LOADING: "불러오는 중", ERROR: "오류", MISSING: "파일 없음" });
-const METRIC_LABELS = Object.freeze({ TEMPERATURE: "온도", PRESSURE: "압력", VIBRATION: "진동", NOISE: "소음", POWER: "전력", FLOW: "유량", VIDEO: "영상" });
-const PROTOCOL_LABELS = Object.freeze({ MQTT: "MQTT", HTTP: "HTTP", WEBSOCKET: "웹소켓", RTSP: "RTSP", MANUAL: "수동 입력" });
-
-function VectorFields({ label, value, onChange, step = 0.01 }) {
-  return <div className={styles.vectorGroup}><strong>{label}</strong><div className={styles.rangeGrid}>{["x", "y", "z"].map((axis) => <NumericField displayPrecision={2} key={axis} label={axis.toUpperCase()} value={value?.[axis] ?? 0} step={step} onChange={(next) => onChange({ [axis]: next })} />)}</div></div>;
-}
 
 export default function MonitoringSettingsPanel({
-  equipment, selectedEquipmentId, assetBindings, sensorBindings, observationPoints, serverBindings,
-  selectedAsset: assetSelection, selectedPoint: pointSelection, selectedSensor: sensorSelection, selectedServer: serverSelection,
-  onAddAsset, onSelectAsset, onUpdateAsset,
+  equipment, selectedEquipmentId, assetBindings, sensorBindings, observationPoints,
+  selectedAsset: assetSelection, selectedPoint: pointSelection, selectedSensor: sensorSelection,
+  onUpdateAsset,
   onSelectPoint, onUpdatePoint, onRemovePoint,
   onAddSensor, onSelectSensor, onUpdateSensor, onRemoveSensor,
-  onAddServer, onSelectServer, onUpdateServer,
   workspaceViewControllerRef, cameraController, onUpdateEquipment, onUploadAssetFiles, viewerPreset, onEquipmentRepresentationChange, onViewerPresetChange, uploadNotice, onClose,
 }) {
   const [sensorCount, setSensorCount] = useState(1);
@@ -53,7 +43,6 @@ export default function MonitoringSettingsPanel({
   const scopedAssets = useMemo(() => assetBindings.filter((item) => item.equipmentId === selectedEquipment?.id), [assetBindings, selectedEquipment?.id]);
   const scopedSensors = useMemo(() => sensorBindings.filter((item) => item.equipmentIds.includes(selectedEquipment?.id)), [selectedEquipment?.id, sensorBindings]);
   const scopedPoints = useMemo(() => observationPoints.filter((item) => item.equipmentId === selectedEquipment?.id), [observationPoints, selectedEquipment?.id]);
-  const scopedServers = useMemo(() => serverBindings.filter((item) => item.equipmentId === selectedEquipment?.id), [selectedEquipment?.id, serverBindings]);
 
   useEffect(() => {
     if (!stepError || stepError.equipmentId !== selectedEquipment?.id
@@ -95,7 +84,6 @@ export default function MonitoringSettingsPanel({
   const modelAsset = ["OBJ", "PLY"].includes(selectedAsset?.assetType) ? selectedAsset : scopedAssets.filter((item) => ["OBJ", "PLY"].includes(item.assetType)).at(-1);
   const selectedSensor = scopedSensors.find((item) => item.id === sensorSelection?.id);
   const selectedPoint = scopedPoints.find((item) => item.id === pointSelection?.id);
-  const selectedServer = scopedServers.find((item) => item.id === serverSelection?.id);
   const setup = getEquipmentSetup(selectedEquipment);
   const tab = setup.currentStep;
   const stepIndex = EQUIPMENT_SETUP_STEPS.findIndex((step) => step.id === tab);
@@ -157,17 +145,8 @@ export default function MonitoringSettingsPanel({
       {selectedEquipment.metadata?.representativeImage && <div className={styles.photo}><img src={selectedEquipment.metadata.representativeImage} alt={`${selectedEquipment.name} 대표 사진`} /><button type="button" onClick={() => onUpdateEquipment?.({ metadata: { representativeImage: null } })}>사진 제거</button></div>}
       <dl className={styles.summary}><div><dt>설비 ID</dt><dd>{selectedEquipment.id}</dd></div><div><dt>템플릿</dt><dd>{UNIFIED_EQUIPMENT_TEMPLATE_MAP[selectedEquipment.shapeTemplateId]?.nameKo ?? selectedEquipment.shapeTemplateId}</dd></div><div><dt>층</dt><dd>{selectedEquipment.floorId}</dd></div><div><dt>연결 현황</dt><dd>자산 {scopedAssets.length} · 센서 {scopedSensors.length} · 관측 영역 {scopedPoints.length}</dd></div></dl>
       </fieldset>
-      <details className={styles.settingsGroup}><summary>설비 식별·좌표 정보</summary>
-      <label className={styles.field}><span>현실 좌표계</span><select value={selectedEquipment.metadata?.coordinateSystem ?? "LOCAL_METERS"} onChange={(event) => onUpdateEquipment?.({ metadata: { coordinateSystem: event.target.value } })}><option value="LOCAL_METERS">로컬 미터 좌표</option><option value="SITE_METERS">부지 기준 미터 좌표</option><option value="CUSTOM">사용자 정의 좌표</option></select></label>
-      <label className={styles.check}><input type="checkbox" checked={selectedEquipment.showNameLabel === true} onChange={(event) => onUpdateEquipment?.({ showNameLabel: event.target.checked })} /><span>이름표 표시</span></label>
-      <VectorFields label="현실세계 기준 위치 (m)" value={selectedEquipment.position} onChange={(position) => onUpdateEquipment?.({ position })} />
-      <p className={styles.help}>스캔 모델의 위치와 크기를 맞춰도 설비의 배치 기준은 유지됩니다.</p>
-      </details>
-      <details className={styles.settingsGroup}><summary>고급 파일 연결·서버 자산</summary>
-      <button type="button" onClick={() => onAddAsset(selectedEquipment.id, { name: "서버 자산", sourceType: ASSET_SOURCE_TYPES.SERVER_KEY, sourceKey: "asset/cabinet/latest", assetType: ASSET_TYPES.OBJ, usageType: ASSET_USAGE_TYPES.MODEL, status: "PENDING" })}>서버 자산 추가</button>
-      <div className={styles.itemList}>{scopedAssets.map((asset) => <button type="button" key={asset.id} aria-pressed={selectedAsset?.id === asset.id} onClick={() => onSelectAsset(asset.id)}><span>{asset.name}</span><small>{asset.assetType} · {ASSET_USAGE_LABELS[asset.usageType] ?? asset.usageType} · {STATUS_LABELS[asset.status] ?? asset.status}</small></button>)}</div>
-      {selectedAsset ? <><label className={styles.field}><span>사용 용도</span><select value={selectedAsset.usageType} onChange={(event) => onUpdateAsset(selectedAsset.id, { usageType: event.target.value })}>{Object.values(ASSET_USAGE_TYPES).map((value) => <option key={value} value={value}>{ASSET_USAGE_LABELS[value] ?? value}</option>)}</select></label><label className={styles.field}><span>소스 키 / 주소</span><input value={selectedAsset.sourceKey} onChange={(event) => onUpdateAsset(selectedAsset.id, { sourceKey: event.target.value })} /></label></> : <p className={styles.help}>연결된 자산을 선택하세요.</p>}
-      </details>
+
+
     </div> : null}
 
     {tab === "ASSET" ? <div className={styles.content}><EquipmentModelSetupPanel workspaceViewControllerRef={workspaceViewControllerRef} equipmentCount={equipment.length} equipment={selectedEquipment} binding={modelAsset} onUpdateEquipment={onUpdateEquipment} onUpdateAsset={onUpdateAsset} viewerPreset={viewerPreset} onViewerPresetChange={onViewerPresetChange} onEquipmentRepresentationChange={onEquipmentRepresentationChange} cameraController={cameraController} /></div> : null}
@@ -228,11 +207,7 @@ export default function MonitoringSettingsPanel({
           : <p className={styles.help}>센서 연결에서 비전 또는 열화상 기능을 선택하면 이미지·텍스처를 설정할 수 있습니다.</p>)}
       </>}
     </div> : null}
-    {tab === "SENSOR" && selectedSensor && sensorSection === "CONNECTION" && <details className={styles.settingsGroup}><summary>고급 데이터 경로·프로토콜</summary>
-      <button type="button" className={styles.primaryAction} disabled={!selectedSensor} onClick={() => onAddServer({ equipmentId: selectedEquipment.id, sourceDeviceId: selectedSensor.id })}>센서 데이터 연결 추가</button>
-      <div className={styles.itemList}>{scopedServers.filter((binding) => binding.sourceDeviceId === selectedSensor?.id).map((binding) => <button type="button" key={binding.id} aria-pressed={selectedServer?.id === binding.id} onClick={() => onSelectServer(binding.id)}><span>{METRIC_LABELS[binding.metric] ?? binding.metric}</span><small>{PROTOCOL_LABELS[binding.protocol] ?? binding.protocol} · {binding.serverKey || "키 미지정"}</small></button>)}</div>
-      {selectedServer?.sourceDeviceId === selectedSensor?.id ? <><label className={styles.field}><span>연결 센서</span><select value={selectedServer.sourceDeviceId ?? ""} onChange={(event) => onUpdateServer(selectedServer.id, { sourceDeviceId: event.target.value })}>{scopedSensors.map((sensor) => <option key={sensor.id} value={sensor.id}>{sensor.name}</option>)}</select></label><label className={styles.field}><span>값 경로</span><input value={selectedServer.valuePath ?? "$.value"} onChange={(event) => onUpdateServer(selectedServer.id, { valuePath: event.target.value })} /></label><label className={styles.field}><span>서버 키</span><input value={selectedServer.serverKey ?? ""} onChange={(event) => onUpdateServer(selectedServer.id, { serverKey: event.target.value })} /></label><label className={styles.field}><span>프로토콜</span><select value={selectedServer.protocol} onChange={(event) => onUpdateServer(selectedServer.id, { protocol: event.target.value })}>{PROTOCOLS.map((value) => <option key={value} value={value}>{PROTOCOL_LABELS[value] ?? value}</option>)}</select></label><label className={styles.field}><span>연결 주소</span><input value={selectedServer.endpoint} onChange={(event) => onUpdateServer(selectedServer.id, { endpoint: event.target.value })} /></label><label className={styles.field}><span>토픽 / 경로</span><input value={selectedServer.topicOrPath} onChange={(event) => onUpdateServer(selectedServer.id, { topicOrPath: event.target.value })} /></label><p className={styles.help}>연결 대기 · 실시간 수신값 없음</p></> : null}
-</details>}
+
 
     {tab === "POINT" && <ObservationRoiFields equipment={selectedEquipment} points={scopedPoints} selectedPoint={selectedPoint} sensors={scopedSensors} onSelect={onSelectPoint} onChange={onUpdatePoint} onRemove={onRemovePoint} onPlace={(type) => workspaceViewControllerRef?.current?.placeRoi(type)} />}
 

@@ -1,7 +1,8 @@
 import { getSensorMountPose } from "./equipmentEnclosure.js";
 import { getSensorCapabilities } from "./equipmentDetailModel.js";
 import { getEquipmentCoordinateFrame, sensorReferencePose, validateCoordinateFrame } from "./equipmentCoordinateFrame.js";
-import { normalizeSensorProjection, sensorImageTransform } from "./sensorImageTransform.js";
+import { normalizeSensorProjection } from "./sensorImageTransform.js";
+import { imageAnalysisTransform } from "./imageAnalysisContract.js";
 import { resolveImageSurface } from "./textureSurfaceMapping.js";
 
 export const MONITORING_MODES = { MODEL: "모델", VISION: "비전", THERMAL: "열화상" };
@@ -36,7 +37,7 @@ export function calibrationPayload(projectId, equipment, sensor, assets = []) {
     coordinateSystem: { unit: "m", handedness: "RIGHT", up: "+Y", rotationUnit: "rad", rotationOrder: "XYZ", sensorForward: "-Y", sensorUp: "-Z" },
     pose: { space: coordinateFrame || sensor.mountMode === "EQUIPMENT" ? "EQUIPMENT_LOCAL" : "WORLD", position: vector(referencePose.position), rotation: vector(referencePose.rotation) },
     ...(sensor.surfaceMount ? { surfaceMount: sensor.surfaceMount, mountingIssue } : {}),
-    ...(sensor.textureProjection ? { textureProjection: normalizeSensorProjection(sensor.textureProjection), imageTransform: sensorImageTransform(sensor),
+    ...(sensor.textureProjection ? { textureProjection: normalizeSensorProjection(sensor.textureProjection), imageTransform: imageAnalysisTransform(sensor),
       ...(normalizeSensorProjection(sensor.textureProjection).kind === "VISION" ? { imageProcessing: imageProcessingPayload(projectId, equipment, sensor, assets) } : {}) } : {}),
     equipmentTransform: { position: vector(equipment.position), rotation: vector(equipment.rotation) },
     camera: { fieldOfView: Number(sensor.fieldOfView), aspectRatio: Number(sensor.aspectRatio), near: Number(sensor.near), far: Number(sensor.far),
@@ -49,8 +50,8 @@ export function calibrationPayload(projectId, equipment, sensor, assets = []) {
 // frame, but physical pose, lens/FOV and viewer state do not affect this payload.
 export function imageProcessingPayload(projectId, equipment, sensor, assets = []) {
   const p = normalizeSensorProjection(sensor.textureProjection);
-  return { schemaVersion: 3, projectId, sensorId: sensor.serverSensorId ?? null, bindingId: sensor.id, serialNumber: sensor.serialNumber ?? "",
-    imageTransform: sensorImageTransform(sensor),
+  return { schemaVersion: 4, projectId, sensorId: sensor.serverSensorId ?? null, bindingId: sensor.id, serialNumber: sensor.serialNumber ?? "",
+    imageTransform: imageAnalysisTransform(sensor),
     target: { equipmentId: p.equipmentId ?? equipment.id, model: modelReference(equipment, assets), representation: p.target,
       surfaceId: p.surfaceId, meshPath: p.meshPath, meshName: p.meshName, mapping: "OBJECT_SURFACE_PLANAR",
       surface: resolveImageSurface(equipment, p), enabled: p.enabled, opacity: p.opacity },

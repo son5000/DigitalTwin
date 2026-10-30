@@ -28,16 +28,16 @@ function DoorSetFields({ equipment, side, onChange }) {
 
 export default function EquipmentEnclosureFields({ equipment, binding, onUpdateEquipment, onUpdateAsset, onEquipmentRepresentationChange }) {
   const c = getEnclosure(equipment);
-  const mode = !binding || binding.displayMode === "PROXY" ? "SHAPE" : binding.displayMode === "POINT_CLOUD" ? "POINT_CLOUD" : binding.includeProxy || binding.displayMode === "COMPARE" ? "BOTH" : "SCAN";
+  const mode = !binding || binding.displayMode === "PROXY" ? "SHAPE" : binding.includeProxy || binding.displayMode === "COMPARE" ? "BOTH" : "SCAN";
   function update(changes) { onUpdateEquipment({ enclosure: { ...equipment.enclosure, ...changes } }); }
   function composition(value) {
-    if (binding) onUpdateAsset(binding.id, { displayMode: value === "SHAPE" ? "PROXY" : value === "BOTH" ? "COMPARE" : value === "POINT_CLOUD" ? "POINT_CLOUD" : "ACTUAL", includeProxy: value === "BOTH" });
+    if (binding) onUpdateAsset(binding.id, { displayMode: value === "SHAPE" ? "PROXY" : value === "BOTH" ? "COMPARE" : "ACTUAL", includeProxy: value === "BOTH" });
     onEquipmentRepresentationChange(equipment.id, value === "SHAPE" ? "SIMPLIFIED" : "DETAILED");
   }
   return <fieldset className={styles.settingsGroup}>
     <legend>모델 구성·외관</legend>
     <label className={styles.field}><span>표시할 모델</span><select value={mode} onChange={(event) => composition(event.target.value)}>
-      <option value="SCAN" disabled={!binding}>스캔만</option><option value="POINT_CLOUD" disabled={!binding}>점군만</option><option value="BOTH" disabled={!binding}>스캔 + 외관 도형</option><option value="SHAPE">외관 도형만</option>
+      <option value="SCAN" disabled={!binding}>스캔</option><option value="SHAPE">외관 도형</option><option value="BOTH" disabled={!binding}>스캔 + 외관 도형</option>
     </select></label>
     <p className={styles.help}>내부만 스캔했다면 외관 도형을 함께 사용하세요. 관제 화면에도 적용됩니다.</p>
     {["BOTH", "SHAPE"].includes(mode) && <>
@@ -45,7 +45,7 @@ export default function EquipmentEnclosureFields({ equipment, binding, onUpdateE
       {c.enabled && <>
         <h4 className={styles.subsectionTitle}>외관 크기</h4>
         <div className={styles.axisGrid}>{[["width", "X축"], ["height", "Y축"], ["depth", "Z축"]].map(([key, label]) => <NumericField displayPrecision={2} key={key} label={label} unit="m" value={c[key]} min={.05} step={.01} onChange={(value) => update({ [key]: Math.max(.05, value) })} />)}</div>
-        <NumericField displayPrecision={2} label="판 두께" unit="mm" value={c.thickness * 1000} min={1} step={1} onChange={(value) => update({ thickness: Math.max(.001, value / 1000) })} />
+        <NumericField displayPrecision={2} label="판 두께" unit="cm" value={c.thickness * 100} min={.1} step={.1} onChange={(value) => update({ thickness: Math.max(.001, value / 100) })} />
         <div className={styles.checkGrid}>{Object.entries(ENCLOSURE_WALLS).filter(([id]) => !(id === "front" && c.doorCount) && !(id === "back" && c.rear.doorCount)).map(([id, label]) => <label className={styles.check} key={id}><input type="checkbox" checked={c.walls[id]} onChange={(event) => update({ walls: { ...c.walls, [id]: event.target.checked } })} />{label}</label>)}</div>
         <label className={styles.field}><span>외관 색상</span><input type="color" value={c.color} onChange={(event) => update({ color: event.target.value })} /></label>
         <label className={styles.field}><span>불투명도 · {Math.round(c.opacity * 100)}%</span><input type="range" min=".05" max="1" step=".05" value={c.opacity} onChange={(event) => update({ opacity: Number(event.target.value) })} /></label>
