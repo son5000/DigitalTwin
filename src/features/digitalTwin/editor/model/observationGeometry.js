@@ -8,6 +8,11 @@ export function planeOrientation(normal = { x: 0, y: 0, z: 1 }, rotation = 0) {
 }
 
 export function observationPlane(point) {
+  if (point.virtualCameraRegion?.vertices?.length === 4 && !point.imageBinding) {
+    return { type: "PLANE", center: [point.localPosition.x, point.localPosition.y, point.localPosition.z],
+      width: point.planeWidth, height: point.planeHeight, vertices: point.virtualCameraRegion.vertices,
+      outline: [0, 1, 2, 3], triangles: [0, 1, 2, 0, 2, 3] };
+  }
   if (point.imageBinding && point.imageAnalysis?.world?.vertices) {
     return { type:"PLANE", center:[point.localPosition.x, point.localPosition.y, point.localPosition.z],
       width:point.planeWidth, height:point.planeHeight, vertices:point.imageAnalysis.world.vertices,

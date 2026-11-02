@@ -5,6 +5,7 @@ import { cloneElement, useEffect, useState } from "react";
 import { EQUIPMENT_SETUP_STEPS, getEquipmentSetup, updateEquipmentSetup } from "../model/equipmentSetup";
 import SensorFramePreview from "./SensorFramePreview";
 import { bindObservationMeasurements } from "../model/observationSource.js";
+import VirtualCameraViewport from "./VirtualCameraViewport.jsx";
 
 import styles from "./EquipmentDetailWorkspace.module.css";
 
@@ -12,12 +13,13 @@ export default function EquipmentDetailWorkspace({
   workspaceViewControllerRef, cameraController, equipment, assetBindings = [], equipmentPicker, singleEquipment = false,
   equipmentList = [], onSelectEquipment, sensorBindings = [], observationPoints = [],
   listOpen, onCloseList, onSetupStepChange, worldView, selectedSensor,
-  onAddEquipment, onAlignmentChange, pointOptions,
+  onAddEquipment, onAlignmentChange, pointOptions, viewerPreset,
 }) {
   const [viewChoice, setViewChoice] = useState(null);
   const [cameraMemory] = useState(() => new Map());
   const [cameraResetVersion, setCameraResetVersion] = useState(0);
   const [comparisonSensorId, setComparisonSensorId] = useState(null);
+  const [activeVirtualCameraId, setActiveVirtualCameraId] = useState(null);
   const setup = getEquipmentSetup(equipment);
   const sensorStep = setup.currentStep === "SENSOR";
   const [placingRoi, setPlacingRoi] = useState(false);
@@ -38,7 +40,8 @@ export default function EquipmentDetailWorkspace({
     const controller = { setView: (mode) => { setViewChoice({ key: viewKey, mode }); setCameraResetVersion((value) => value + 1); }, addEquipment: onAddEquipment,
       setSensorView: (sensorId) => { setViewChoice({ key: viewKey, mode: "SENSORS" }); setComparisonSensorId(sensorId); },
       placeRoi: (configuration = "SPHERE") => setPlacingRoi({ ...(typeof configuration === "string" ? { geometryType:configuration } : configuration), placementId: crypto.randomUUID(), equipmentId: viewKey }),
-      placeHeatmap: (sensorId, onPick) => setPlacingRoi({ sensorId, onPick, equipmentId: viewKey }) };
+      placeHeatmap: (sensorId, onPick) => setPlacingRoi({ sensorId, onPick, equipmentId: viewKey }),
+      openVirtualCamera: (id) => setActiveVirtualCameraId(id) };
     workspaceViewControllerRef.current = controller;
     return () => { if (workspaceViewControllerRef.current === controller) workspaceViewControllerRef.current = null; };
   }, [workspaceViewControllerRef, viewKey, onAddEquipment]);
@@ -59,7 +62,7 @@ export default function EquipmentDetailWorkspace({
           const sensors = sensorBindings.filter((binding) => binding.equipmentIds?.includes(item.id)).length;
           const points = observationPoints.filter((point) => point.equipmentId === item.id).length;
           const progress = getEquipmentSetup(item);
-          return <button key={item.id} type="button" aria-current={item.id === equipment.id ? "true" : undefined} onClick={() => selectEquipment(item.id)}><strong>{item.name}</strong><small>{item.locationLabel}</small><span>완료 {progress.completed}/5 · 건너뜀 {progress.skipped}</span><span>자산 {assets} · 센서 {sensors} · 관측 영역 {points}</span></button>;
+          return <button key={item.id} type="button" aria-current={item.id === equipment.id ? "true" : undefined} onClick={() => selectEquipment(item.id)}><strong>{item.name}</strong><small>{item.locationLabel}</small><span>완료 {progress.completed}/{EQUIPMENT_SETUP_STEPS.length} · 건너뜀 {progress.skipped}</span><span>자산 {assets} · 센서 {sensors} · 관측 영역 {points}</span></button>;
         })}{!filteredEquipment.length && <p>검색 결과가 없습니다.</p>}</div>
       </aside>}
       <div className={styles.viewer} aria-label="실제 설비 3D 뷰어">
@@ -81,6 +84,11 @@ export default function EquipmentDetailWorkspace({
             },
             onPlaced: () => setPlacingRoi(false) },
         })}
+        {activeVirtualCameraId && <VirtualCameraViewport equipment={equipment} cameras={viewerPreset?.virtualCameras?.[equipment.id] ?? []}
+          cameraController={cameraController} activeId={activeVirtualCameraId} onActiveChange={setActiveVirtualCameraId}
+          editor={setup.currentStep === "POINT"} sensors={sensorBindings.filter((sensor) => sensor.equipmentIds?.includes(equipment.id))}
+          points={observationPoints.filter((point) => point.equipmentId === equipment.id)}
+          onAdd={(position, changes) => { const id = pointOptions?.onAdd?.(equipment.id, position, changes); if (id) pointOptions?.onSelect?.(id); return id; }} />}
       </div>
       {sensorStep && selectedSensor?.equipmentIds?.includes(equipment.id) && <SensorFramePreview key={`${selectedSensor.id}:${selectedSensor.serverSensorId}`} sensor={selectedSensor} sensorView={comparisonSensorId === selectedSensor.id} onSensorViewChange={(active) => { setViewChoice({ key: viewKey, mode: "SENSORS" }); setComparisonSensorId(active ? selectedSensor.id : null); }} />}
       {equipmentPicker}

@@ -133,10 +133,14 @@ export function createSensorSceneLayer({ root, renderedEquipment, origin, theme 
       objects.push(line);
     });
   }
-  function updateVisibility(hiddenSensorId = null, imageVisible = () => true) {
+  function updateVisibility(hiddenSensorId = null, imageVisible = () => true, displayLayers = {}) {
     for (const object of objects) {
       const entry = renderedEquipment.get(object.userData.sensorEquipmentId);
+      const layers = displayLayers[object.userData.sensorEquipmentId];
       object.visible = Boolean(entry && !entry.loading)
+        && !(object.userData.sensorId && layers?.SENSORS?.visible === false)
+        && !(object.userData.sourceDeviceId && layers?.SENSORS?.visible === false)
+        && !(object.userData.observationPointId && layers?.OBSERVATIONS?.visible === false)
         && !pointMarkers.get(object.userData.observationPointId)?.userData.imageBindingIssue
         && (!object.userData.imagePoint || imageVisible(object.userData.imagePoint.imageBinding.sensorId))
         && (!object.userData.observationPointId || !object.userData.representation || object.userData.representation === "BOTH"
@@ -149,9 +153,9 @@ export function createSensorSceneLayer({ root, renderedEquipment, origin, theme 
       if (object.isGroup && object.userData.observationPointId) pointMarkers.get(object.userData.observationPointId).visible = object.visible;
     }
   }
-  function updateObservationLabels(camera, renderer, selectedId, hoveredId, hidden) {
+  function updateObservationLabels(camera, renderer, selectedId, hoveredId, hidden, displayLayers = {}) {
     for (const [id, badge] of pointBadges) {
-      if (hidden) { badge.visible = false; continue; }
+      if (hidden || displayLayers[pointMarkers.get(id)?.userData.sensorEquipmentId]?.OBSERVATIONS?.visible === false) { badge.visible = false; continue; }
       updateObservationBadge(badge, camera, renderer, id === selectedId || id === hoveredId);
     }
   }

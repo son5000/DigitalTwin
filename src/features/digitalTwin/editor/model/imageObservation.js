@@ -46,7 +46,10 @@ export function resolveImageObservation(point, equipment, sensors) {
   if (binding.originalImage?.serverSensorId && binding.originalImage.serverSensorId !== sensor.serverSensorId) return invalid("비전 카메라가 변경되었습니다. 기준 이미지를 다시 등록하세요.");
   const r = binding.sourceRect;
   if (!r || ![r.x, r.y, r.width, r.height].every(Number.isFinite) || r.width <= 0 || r.height <= 0) return invalid("원본 이미지의 영역 좌표와 크기를 확인하세요.");
-  const sourceUv = [[r.x, 1-r.y], [r.x+r.width, 1-r.y], [r.x+r.width, 1-r.y-r.height], [r.x, 1-r.y-r.height]];
+  if (binding.sourceQuad && (binding.sourceQuad.length !== 4 || !binding.sourceQuad.every((corner) => inUnit(corner)))) return invalid("원본 이미지의 네 꼭짓점 좌표를 확인하세요.");
+  const sourceUv = binding.sourceQuad?.length === 4 && binding.sourceQuad.every((corner) => inUnit(corner))
+    ? binding.sourceQuad.map(([x, y]) => [x, 1 - y])
+    : [[r.x, 1-r.y], [r.x+r.width, 1-r.y], [r.x+r.width, 1-r.y-r.height], [r.x, 1-r.y-r.height]];
   const transform = sensorImageTransform({ ...sensor, resolution:binding.originalImage ?? sensor.resolution });
   if (binding.originalImage) transform.source = { ...transform.source, url:binding.originalImage.sourceUrl,
     textureAssetId:binding.originalImage.textureAssetId, width:binding.originalImage.width, height:binding.originalImage.height,
@@ -74,8 +77,11 @@ export function resolveImageObservation(point, equipment, sensors) {
     } };
 }
 
-export function createImageObservationBinding(position, equipment, sensor, originalImage) {
-  const uv = imagePointUv(position, equipment, sensor);
+export function createImageObservationBinding(position, equipment, sensor, originalImage, sourceUvTopLeft = null) {
+  // A projected texture can occupy only part of a face. The picked pixel belongs
+  // to the selected camera, whereas a planar world-to-UV estimate may not.
+  if (sourceUvTopLeft && !inUnit(sourceUvTopLeft)) throw new Error("선택한 비전 이미지의 원본 좌표를 확인하세요.");
+  const uv = sourceUvTopLeft ? [sourceUvTopLeft[0], 1 - sourceUvTopLeft[1]] : imagePointUv(position, equipment, sensor);
   if (!uv) throw new Error("선택한 비전 이미지가 표시된 부분 안에 영역을 지정하세요.");
   // Shrink near a crop/perspective boundary instead of creating an invalid ROI.
   for (const size of [.1, .05, .02, .01, .002]) {
@@ -88,16 +94,23 @@ export function createImageObservationBinding(position, equipment, sensor, origi
 }
 
 // Move in world space, but persist the delta in the original image's coordinates.
-export function moveImageObservation(point, position, equipment, sensors) {
+export function moveImageObservation(point, position, equipment, sensors, sourceUvTopLeft = null) {
+  if (sourceUvTopLeft && !inUnit(sourceUvTopLeft)) return null;
   const sensor = sensors.find((item) => item.id === point.imageBinding?.sensorId);
   if (!sensor) return null;
   const resolved = resolveImageObservation(point, equipment, sensors);
   if (resolved.imageBindingIssue) return null;
-  const before = imagePointUv(resolved.localPosition, equipment, sensor);
-  const after = imagePointUv(position, equipment, sensor);
-  if (!before || !after) return null;
   const r = point.imageBinding.sourceRect;
+  const sourceCenter = point.imageBinding.sourceQuad?.length === 4
+    ? point.imageBinding.sourceQuad.reduce(([x, y], corner) => [x + corner[0] / 4, y + corner[1] / 4], [0, 0])
+    : [r.x + r.width / 2, r.y + r.height / 2];
+  const before = sourceUvTopLeft ? [sourceCenter[0], 1 - sourceCenter[1]]
+    : imagePointUv(resolved.localPosition, equipment, sensor);
+  const after = sourceUvTopLeft ? [sourceUvTopLeft[0], 1 - sourceUvTopLeft[1]]
+    : imagePointUv(position, equipment, sensor);
+  if (!before || !after) return null;
   const imageBinding = { ...point.imageBinding, sourceRect: { ...r, x: r.x + after[0] - before[0], y: r.y - after[1] + before[1] } };
+  if (imageBinding.sourceQuad) imageBinding.sourceQuad = imageBinding.sourceQuad.map(([x, y]) => [x + after[0] - before[0], y - after[1] + before[1]]);
   return resolveImageObservation({ ...point, imageBinding }, equipment, sensors).imageBindingIssue ? null : imageBinding;
 }
 

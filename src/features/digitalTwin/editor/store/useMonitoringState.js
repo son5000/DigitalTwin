@@ -114,6 +114,8 @@ export default function useMonitoringState({ equipment }) {
 
   const updateObservationPoint = useCallback((id, changes) => setObservationPoints((items) => items.map((item) => item.id === id ? normalizeObservationPoint({
     ...item, ...changes, revision: (item.revision ?? 0) + 1,
+    virtualCameraRegion: ["localPosition", "targetNormal", "planeWidth", "planeHeight", "planeRotation", "imageBinding", "thermalBinding"].some((key) => Object.hasOwn(changes, key))
+      ? changes.virtualCameraRegion ?? null : item.virtualCameraRegion,
     localPosition: changes.localPosition ? { ...item.localPosition, ...changes.localPosition } : item.localPosition,
     targetNormal: changes.targetNormal ? { ...item.targetNormal, ...changes.targetNormal } : item.targetNormal,
     normalRange: changes.normalRange ? { ...item.normalRange, ...changes.normalRange } : item.normalRange,

@@ -9,6 +9,7 @@ export const EQUIPMENT_SETUP_STEPS = Object.freeze([
   { id: "BASIC", label: "기본 정보", description: "설비 정보와 모델·재질·텍스처 파일을 등록합니다." },
   { id: "ASSET", label: "모델·관제 화면", description: "설비의 크기·정면·기준좌표와 관제 시작 화면을 설정하세요." },
   { id: "SENSOR", label: "센서 배치·연결", description: "센서 기능과 연결 정보를 등록하고, 위치·촬영 방향을 맞추세요." },
+  { id: "VIRTUAL_CAMERA", label: "가상 카메라", description: "원하는 관측 시점을 저장하고 목록에서 다시 확인하세요." },
   { id: "POINT", label: "관측 영역·임계치", description: "관측할 항목을 먼저 선택한 뒤 영역 형태와 경보 기준을 설정하세요. 영상 분석은 비전 텍스처에 연결합니다." },
   { id: "REVIEW", label: "최종 확인", description: "모델, 센서 연결, 관측 영역을 확인하고 프로젝트를 저장하세요." },
 ]);
@@ -65,13 +66,14 @@ export const SETUP_REQUIREMENTS = Object.freeze({
   BASIC: "필수: 설비명. 모델 파일·사진·제조사 정보는 선택 사항입니다.",
   ASSET: "필수: 표시할 모델, 유효한 크기, 기준좌표 적용. 스캔 사용 시 모델 정합 완료도 확인하세요. 시작 화면은 자동 맞춤을 사용할 수 있습니다.",
   SENSOR: "필수: 센서 이름·시리얼, 센서 조회, 유효한 설치 위치, 위치·화각 보정 확인. 텍스처는 사용할 때 설정하세요.",
-  POINT: "필수: 영역 이름, 관측 항목, 연결 센서. 경보는 선택 사항이며 추가한 조건의 기준값은 필수입니다.",
+  VIRTUAL_CAMERA: "관측에 사용할 시점을 저장하세요. 가상 카메라 없이 진행하려면 건너뛰기를 선택하세요.",
+  POINT: "필수: 영역 이름과 관측 항목. 가상 카메라 이미지에서 영역을 지정하면 2D 좌표와 설비 표면 좌표가 함께 저장됩니다.",
   REVIEW: "완료 처리한 단계의 필수 설정을 다시 확인합니다. 건너뛴 단계는 별도로 표시됩니다.",
 });
 
 const finite = (value) => value !== null && value !== undefined && String(value).trim() !== "" && Number.isFinite(Number(value));
 export function getSetupStepValidation(step, context) {
-  const { equipment, assets = [], sensors = [], points = [] } = context;
+  const { equipment, assets = [], sensors = [], points = [], viewerPreset } = context;
   const issue = (target, message, extra = {}) => ({ step, target, message, ...extra });
   if (step === "REVIEW") {
     const setup = getEquipmentSetup(equipment);
@@ -91,7 +93,7 @@ export function getSetupStepValidation(step, context) {
     if (equipment?.dimensions && Object.values(equipment.dimensions).some((value) => !finite(value) || Number(value) <= 0)) return issue("model-size", "설비의 가로·높이·깊이를 0보다 크게 입력하세요.");
     if (model && !model.alignmentTransform?.completed) return issue("model-alignment", "크기·방향·위치를 확인한 뒤 ‘모델 정합 완료’를 선택하세요.");
   }
-  if (equipment && ["ASSET", "SENSOR", "POINT"].includes(step) && !getEquipmentCoordinateFrame(equipment)) return issue("coordinate-frame", "설비 정면과 원점을 확인한 뒤 ‘기준좌표 적용’을 눌러주세요.", { step: "ASSET" });
+  if (equipment && ["ASSET", "SENSOR", "VIRTUAL_CAMERA", "POINT"].includes(step) && !getEquipmentCoordinateFrame(equipment)) return issue("coordinate-frame", "설비 정면과 원점을 확인한 뒤 ‘기준좌표 적용’을 눌러주세요.", { step: "ASSET" });
   if (step === "SENSOR") {
     if (!sensors.length) return issue("sensor-add", "센서를 등록하거나 이 단계를 건너뛰세요.");
     for (const sensor of sensors) {
@@ -107,8 +109,9 @@ export function getSetupStepValidation(step, context) {
       if (!sensor.calibrationConfirmed || sensor.calibrationConfirmationFrame !== referenceFrameKey(payload.coordinateFrame) || (sensor.surfaceMount && sensor.calibrationConfirmationModel !== payload.model.version)) return sensorIssue("sensor-calibration", "실제 설치 위치·방향을 확인한 뒤 보정 확인을 선택하세요.", "PLACEMENT");
     }
   }
+  if (step === "VIRTUAL_CAMERA" && !(viewerPreset?.virtualCameras?.[equipment?.id]?.length > 0)) return issue("virtual-camera-add", "현재 설비에서 관측할 가상 카메라 시점을 추가하거나 이 단계를 건너뛰세요.");
   if (step === "POINT") {
-    if (!points.length) return issue("roi-add", "모델에서 관측 영역을 추가하거나 이 단계를 건너뛰세요.");
+    if (!points.length) return issue("roi-add", "가상 카메라 이미지에서 관측 영역을 추가하거나 이 단계를 건너뛰세요.");
     for (const point of points) {
       const pointIssue = (target, message) => issue(target, `${point.name || "관측 영역"}: ${message}`, { pointId: point.id });
       if (point.name !== undefined && !point.name.trim()) return pointIssue("roi-name", "영역 이름을 입력하세요.");
@@ -120,14 +123,14 @@ export function getSetupStepValidation(step, context) {
       for (const item of point.measurements ?? []) {
         if (!item.name?.trim()) return pointIssue(`measurement-${item.id}-name`, "관측 항목의 표시 이름을 입력하세요.");
         if (["vision.gaugeValue", "vision.switchState"].includes(item.metric) && point.geometryType !== "PLANE") return pointIssue("roi-geometry-type", "게이지·스위치 영상 분석에는 평면 영역을 선택하세요.");
-        if (item.metric !== "ultrasound.db" && !sensors.some((sensor) => sensor.id === item.sensorId)) return pointIssue("roi-measurements", "텍스처 위에 영역을 다시 지정해 원본 카메라를 연결하세요.");
+        if (!["GENERAL", "ultrasound.db"].includes(item.metric) && !sensors.some((sensor) => sensor.id === item.sensorId)) return pointIssue("roi-measurements", "텍스처 위에 영역을 다시 지정해 원본 카메라를 연결하세요.");
         if (["vision.gaugeValue", "vision.switchState"].includes(item.metric) && !sensorHasImaging(sensors.find((sensor) => sensor.id === item.sensorId))) return pointIssue(`measurement-${item.id}-sensor`, "게이지·스위치 감지에는 영상 센서를 선택하세요.");
         for (const [index, rule] of (item.rules ?? []).entries()) {
           if (!finite(rule.threshold)) return pointIssue(`measurement-${item.id}-rule-${index}`, "경보 조건의 기준값을 입력하세요.");
         }
       }
       if (!point.measurements?.length) {
-        if (point.metric !== "ultrasound.db" && !point.sensorIds?.some((id) => sensors.some((sensor) => sensor.id === id))) return pointIssue("roi-measurements", "텍스처 위에 영역을 다시 지정하세요.");
+        if (!["GENERAL", "ultrasound.db"].includes(point.metric) && !point.sensorIds?.some((id) => sensors.some((sensor) => sensor.id === id))) return pointIssue("roi-measurements", "텍스처 위에 영역을 다시 지정하세요.");
         const limits = [point.normalRange?.max, point.warningRange?.max, point.dangerRange?.max];
         if (limits.some((value) => !finite(value)) || Number(limits[0]) >= Number(limits[1]) || Number(limits[1]) >= Number(limits[2])) return pointIssue("roi-measurements", "임계치를 정상 < 주의 < 위험 순서로 입력하세요.");
       }

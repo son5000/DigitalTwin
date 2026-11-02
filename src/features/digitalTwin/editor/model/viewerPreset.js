@@ -28,6 +28,12 @@ export function normalizeEquipmentView(view) {
     far: Number.isFinite(view.far) ? Math.max((view.near || 0.01) + 1, view.far) : 500 };
 }
 
+export function normalizeVirtualCameraDoorState(state) {
+  if (!state || !Array.isArray(state.frontOpen) || !Array.isArray(state.rearOpen)
+    || [...state.frontOpen, ...state.rearOpen].some((open) => typeof open !== "boolean")) return null;
+  return { frontOpen: state.frontOpen.slice(0, 2), rearOpen: state.rearOpen.slice(0, 2) };
+}
+
 export function normalizeScanLighting(source = {}) {
   return Object.fromEntries(Object.entries(DEFAULT_SCAN_LIGHTING).map(([key, fallback]) => [key,
     typeof source?.[key] === "number" && Number.isFinite(source[key]) ? Math.min(6, Math.max(0, source[key])) : fallback]));
@@ -65,6 +71,9 @@ export function createViewerPreset(source = {}) {
     lighting: normalizeScanLighting(source.lighting),
     equipmentEnvironments: Object.fromEntries(Object.entries(source.equipmentEnvironments ?? {}).filter(([, value]) => value && typeof value === "object").map(([id, value]) => [id, normalizeEquipmentEnvironment(value)])),
     equipmentViews: Object.fromEntries(Object.entries(source.equipmentViews ?? {}).map(([id, view]) => [id, normalizeEquipmentView(view)]).filter(([, view]) => view)),
+    virtualCameras: Object.fromEntries(Object.entries(source.virtualCameras ?? {}).map(([id, cameras]) => [id,
+      (Array.isArray(cameras) ? cameras : []).map((camera) => ({ id: String(camera.id ?? ""), name: String(camera.name ?? "").trim().slice(0, 80), view: normalizeEquipmentView(camera.view), doorState: normalizeVirtualCameraDoorState(camera.doorState) }))
+        .filter((camera) => camera.id && camera.name && camera.view)])),
     visibility: { ...(source.visibility ?? {}) },
     filters: { ...(source.filters ?? {}) },
     floorSettings: { ...(source.floorSettings ?? {}) },

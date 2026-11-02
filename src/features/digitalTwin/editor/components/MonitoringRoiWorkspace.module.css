@@ -82,10 +82,10 @@
 .quickTool[aria-pressed="true"], .quickTool[aria-expanded="true"] { color: var(--portal-blue, #469beb); }
 .alarmCount { display: inline-grid; place-items: center; min-width: 18px; padding: 0 4px; border-radius: 4px; background: #a84d0b; color: #fff; font-weight: 600; }
 .connectionStatus { color: var(--roi-muted); font-size: 12px; }
-.panel.dataPanel { bottom: auto; width: min(290px, calc(100% - 24px)); max-height: min(440px, 54%); padding: 12px; box-shadow: none; }
+.panel.dataPanel { bottom: auto; width: min(310px, calc(100% - 24px)); max-height: min(440px, 54%); padding: 14px; box-shadow: none; }
 .panel.dataPanel[data-section="THERMAL"] { max-height: min(520px, 70%); }
 .viewerPanel.viewerPanel { position: relative; inset: auto; flex: 1; width: 100%; min-height: 0; max-height: none; box-sizing: border-box; padding: 14px; border: 1px solid var(--portal-border, var(--roi-border)); border-radius: 8px; overflow: auto; overscroll-behavior: contain; box-shadow: none; }
-.viewerPanel.viewerPanel.dataPanel { flex: none; align-self: flex-start; width: min(290px, 100%); max-height: min(440px, 100%); margin-left: auto; padding: 12px; }
+.viewerPanel.viewerPanel.dataPanel { flex: none; align-self: flex-start; width: 100%; max-height: min(440px, 100%); margin-left: auto; padding: 14px; }
 .viewerPanel.viewerPanel.dataPanel[data-section="THERMAL"] { max-height: min(520px, 100%); }
 .dataPanel p, .dataPanel hr { margin: 0; }
 .radiusControl { display: flex; align-items: center; gap: 8px; margin: 10px 0; }

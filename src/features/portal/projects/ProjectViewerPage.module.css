@@ -1,7 +1,7 @@
-.layout { --overlay-top: max(12px, env(safe-area-inset-top)); --overlay-bottom: max(12px, env(safe-area-inset-bottom)); --overlay-left: max(80px, calc(env(safe-area-inset-left) + 68px)); --overlay-right: max(12px, env(safe-area-inset-right)); --controls-offset: 62px; --tools-offset: 48px; position: absolute; inset: 0; }
+.layout { --overlay-top: max(12px, env(safe-area-inset-top)); --overlay-bottom: max(12px, env(safe-area-inset-bottom)); --overlay-left: max(80px, calc(env(safe-area-inset-left) + 68px)); --overlay-right: max(12px, env(safe-area-inset-right)); --viewer-panel-width: min(320px, calc(100% - var(--overlay-left) - var(--overlay-right))); --controls-offset: 62px; --tools-offset: 48px; position: absolute; inset: 0; }
 .world { position: absolute; inset: 0; min-width: 0; min-height: 0; background: var(--portal-bg); }
 .layout > aside { position: absolute; top: var(--overlay-top); bottom: calc(var(--overlay-bottom) + var(--controls-offset)); left: var(--overlay-left); width: min(260px, calc(100% - var(--overlay-left) - var(--overlay-right))); min-height: 0; border-radius: 8px; box-shadow: 0 4px 16px rgb(0 0 0 / 16%); }
-.panelHost { position: absolute; z-index: 25; display: none; top: calc(var(--overlay-top) + var(--tools-offset)); right: var(--overlay-right); bottom: calc(var(--overlay-bottom) + var(--controls-offset)); width: min(320px, calc(100% - var(--overlay-left) - var(--overlay-right))); min-width: 0; min-height: 0; }
+.panelHost { position: absolute; z-index: 25; display: none; top: calc(var(--overlay-top) + var(--tools-offset)); right: var(--overlay-right); bottom: calc(var(--overlay-bottom) + var(--controls-offset)); width: var(--viewer-panel-width); min-width: 0; min-height: 0; }
 .layout[data-panel="true"] > .panelHost { display: flex; }
 .panelHost { pointer-events: none; }
 .panelHost > aside { pointer-events: auto; }
@@ -37,6 +37,15 @@
   .layout > aside, .panelHost { max-height: 45dvh; width: calc(100% - var(--overlay-left) - var(--overlay-right)); }
   .sceneTools button { flex: 1 1 auto; }
   .controlDock [data-viewer-control="doors"] { flex: 1 1 160px; }
+}
+
+@media (min-width: 561px) and (max-width: 760px) {
+  .layout[data-camera-list="true"][data-panel="true"] { --viewer-panel-width: min(320px, calc(100% - var(--overlay-left) - var(--overlay-right) - 220px)); }
+  .layout[data-camera-list="true"][data-panel="true"] > .panelHost { width: var(--viewer-panel-width); }
+}
+
+@media (max-width: 560px) {
+  .layout[data-camera-list="true"][data-panel="true"] > .panelHost { top: calc(var(--overlay-top) + var(--tools-offset) + min(33vh, 280px) + 16px); }
 }
 
 @media (pointer: coarse) {

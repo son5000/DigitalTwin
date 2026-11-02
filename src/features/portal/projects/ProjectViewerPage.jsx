@@ -120,7 +120,7 @@ function SavedWorldViewer({ project, requestedEquipmentId, operationsSection, op
     return () => query.removeEventListener("change", update);
   }, []);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [rightPanel, setRightPanel] = useState(startsInSingleEquipmentView ? "ROI" : null);
+  const [rightPanel, setRightPanel] = useState(null);
   const detailOpen = rightPanel === "DETAIL";
   const panelVisible = detailOpen || ((showEquipment || equipmentDetail) && ["ROI", "AUDIO", "THERMAL", "ALARMS"].includes(rightPanel));
   const sidebarVisible = !sidebarCollapsed && !(compactLayout && panelVisible);
@@ -246,7 +246,7 @@ function SavedWorldViewer({ project, requestedEquipmentId, operationsSection, op
     const context = getViewerEquipmentContext(tree, tree.nodes.get(key));
     setEquipmentId(id); setSelectedPartId(partId); setSelectedSensorId(null);
     setEquipmentDetail((current) => Boolean(id) && (equipmentScope || current));
-    if (id && equipmentScope) { setSidebarCollapsed(true); setRightPanel("ROI"); }
+    if (id && equipmentScope) { setSidebarCollapsed(true); setRightPanel(null); }
     else setDetailOpen(Boolean(id));
     setViewMode(VIEW_MODES.VIEW_3D); setShowEquipment(equipmentScope);
     if (!equipmentScope) {
@@ -286,7 +286,8 @@ function SavedWorldViewer({ project, requestedEquipmentId, operationsSection, op
         setSidebarCollapsed(true);
       }
       // A fresh selection request also lets the same ROI be focused again.
-      setRoiTarget(structuredClone(node.item)); setRightPanel("ROI");
+      setRoiTarget(structuredClone(node.item));
+      setRightPanel(node.item?.observationPoint?.virtualCameraRegion?.cameraId ? null : "ROI");
       return;
     }
     if (node.type === "EQUIPMENT" || node.type === "PART") {
@@ -333,14 +334,15 @@ function SavedWorldViewer({ project, requestedEquipmentId, operationsSection, op
       onHome={goHome} notificationCount={operations.data.notifications.filter((item) => item.status === "미확인").length} />
 
     <ViewerOverlayContext value={overlayHosts}>
-    <div ref={overlayLayoutRef} className={viewerStyles.layout} data-sidebar={sidebarVisible} data-panel={panelVisible}>
+    <div ref={overlayLayoutRef} className={viewerStyles.layout} data-sidebar={sidebarVisible} data-panel={panelVisible}
+      data-camera-list={Boolean((showEquipment || equipmentDetail) && layout.viewerPreset?.virtualCameras?.[equipmentId]?.length)}>
       <aside className={`${portalStyles.sidebar} ${sidebarVisible ? "" : portalStyles.sidebarCollapsed}`} data-camera-safe-ui={sidebarVisible ? "left" : undefined} aria-label="프로젝트 관측 메뉴" inert={!sidebarVisible}>
         <div className={portalStyles.workspace}>
           <button type="button" className={portalStyles.collapseButton} onClick={toggleSidebar} aria-label={sidebarVisible ? "메뉴 접기" : "메뉴 펼치기"} aria-expanded={sidebarVisible}><ChevronRightIcon size={16} /></button>
           <span>워크스페이스</span><strong>{details.name}</strong><small>{sidebarTree.config.label}</small>
         </div>
         {(isolatedEquipmentView || (!equipmentScope && equipmentContext)) && <nav className={viewerStyles.parentNavigation} aria-label="설비 관측 탐색">
-          <button type="button" data-parent={isolatedEquipmentView} onClick={isolatedEquipmentView ? showParentSpace : () => { setEquipmentDetail(true); setSidebarCollapsed(true); setRightPanel("ROI"); }}><ChevronRightIcon size={14} />{isolatedEquipmentView ? tree.scope === "MULTI_EQUIPMENT" ? "전체 설비 보기" : "상위 공간 보기" : "설비 상세 보기"}</button>
+          <button type="button" data-parent={isolatedEquipmentView} onClick={isolatedEquipmentView ? showParentSpace : () => { setEquipmentDetail(true); setSidebarCollapsed(true); setRightPanel(null); }}><ChevronRightIcon size={14} />{isolatedEquipmentView ? tree.scope === "MULTI_EQUIPMENT" ? "전체 설비 보기" : "상위 공간 보기" : "설비 상세 보기"}</button>
         </nav>}
         {(showEquipment || equipmentDetail) && !detailEquipment.length && <p className={viewerStyles.empty} role="status">등록된 설비가 없습니다. 프로젝트 목록에서 편집하기로 설비를 추가하세요.</p>}
         <WorldTreePanel tree={sidebarTree} projectName={getProjectDetails(project).name} snapshot={snapshot?.request === snapshotRequest ? snapshot : null} representativeImage={representativeImage} selectedKey={sidebarSelectedKey} selectionVersion={treeSelection.version} onSelect={selectTreeNode} />

@@ -18,6 +18,7 @@ import styles from "./MonitoringSettingsPanel.module.css";
 import SensorConnectionFields from "./SensorConnectionFields";
 import EquipmentAssetFilesPanel from "./EquipmentAssetFilesPanel";
 import EquipmentModelSetupPanel from "./EquipmentModelSetupPanel";
+import VirtualCameraFields from "./VirtualCameraFields";
 
 const STATUS_TEXT = { DONE: "완료", SKIPPED: "건너뜀", PENDING: "미완료" };
 
@@ -89,7 +90,7 @@ export default function MonitoringSettingsPanel({
   const stepIndex = EQUIPMENT_SETUP_STEPS.findIndex((step) => step.id === tab);
   const step = EQUIPMENT_SETUP_STEPS[stepIndex];
   function setStep(id, status) {
-    const issue = status === "DONE" ? getSetupStepValidation(id, { equipment: selectedEquipment, assets: scopedAssets, sensors: scopedSensors, points: scopedPoints }) : null;
+    const issue = status === "DONE" ? getSetupStepValidation(id, { equipment: selectedEquipment, assets: scopedAssets, sensors: scopedSensors, points: scopedPoints, viewerPreset }) : null;
     setStepError(issue ? { ...issue, equipmentId: selectedEquipment.id } : null);
     if (issue) {
       if (issue.sensorId) onSelectSensor(issue.sensorId);
@@ -121,7 +122,7 @@ export default function MonitoringSettingsPanel({
 
   return <section ref={panelRef} className={styles.panel} onChangeCapture={() => setStepError(null)}>
     <header>
-      <div className={styles.panelHeading}><span>{stepIndex + 1} / 5 단계 · 완료 {setup.completed} · 건너뜀 {setup.skipped}</span><h2>{selectedEquipment.name}</h2></div>
+      <div className={styles.panelHeading}><span>{stepIndex + 1} / {EQUIPMENT_SETUP_STEPS.length} 단계 · 완료 {setup.completed} · 건너뜀 {setup.skipped}</span><h2>{selectedEquipment.name}</h2></div>
       {onClose && <button type="button" className={styles.panelClose} aria-label="설비 상세 닫기" onClick={onClose}><CloseIcon size={18} /></button>}
       <progress aria-label="설비 설정 완료 단계" value={setup.completed} max={5} />
     </header>
@@ -185,7 +186,7 @@ export default function MonitoringSettingsPanel({
             onUpdateSensor(selectedSensor.id, { capabilities: event.target.checked ? [...capabilities, key] : capabilities.filter((value) => value !== key),
               ...(thermalAdded && !sensorHasImaging(selectedSensor) && selectedSensor.appearance === "BOX_SENSOR" ? { appearance: "BULLET_CAMERA" } : {}),
               ...(thermalAdded && !capabilities.includes("VISION") ? { textureProjection: { ...selectedSensor.textureProjection, kind: "THERMAL" } } : {}) });
-          }} />{label}</label>)}</div><p className={styles.help}>게이지·스위치 감지는 4단계에서 관측 영역별로 지정하세요.</p></details>
+          }} />{label}</label>)}</div><p className={styles.help}>게이지·스위치 감지는 5단계에서 관측 영역별로 지정하세요.</p></details>
         </fieldset>}
         {sensorSection === "PLACEMENT" && <fieldset className={styles.settingsGroup}><legend>월드의 센서 설치 위치</legend>
           <SensorAppearanceFields sensor={selectedSensor} onChange={onUpdateSensor} />
@@ -208,13 +209,24 @@ export default function MonitoringSettingsPanel({
       </>}
     </div> : null}
 
+    {tab === "VIRTUAL_CAMERA" && <div className={styles.content}><VirtualCameraFields equipment={selectedEquipment}
+      cameras={viewerPreset?.virtualCameras?.[selectedEquipment.id] ?? []} cameraController={cameraController} points={scopedPoints}
+      onChange={(cameras) => onViewerPresetChange?.({ virtualCameras: { ...viewerPreset?.virtualCameras, [selectedEquipment.id]: cameras } })}
+      onOpen={(id) => workspaceViewControllerRef?.current?.openVirtualCamera(id)} /></div>}
 
-    {tab === "POINT" && <ObservationRoiFields equipment={selectedEquipment} points={scopedPoints} selectedPoint={selectedPoint} sensors={scopedSensors} onSelect={onSelectPoint} onChange={onUpdatePoint} onRemove={onRemovePoint} onPlace={(type) => workspaceViewControllerRef?.current?.placeRoi(type)} />}
+    {tab === "POINT" && <section className={styles.settingsGroup} data-setup-field="roi-add" aria-label="관측 시점 선택">
+      <div className={styles.sectionHeading}><strong>가상 카메라</strong><span>{viewerPreset?.virtualCameras?.[selectedEquipment.id]?.length ?? 0}개</span></div>
+      <div className={styles.cameraChoices}>{(viewerPreset?.virtualCameras?.[selectedEquipment.id] ?? []).map((camera) => <button type="button" key={camera.id} onClick={() => workspaceViewControllerRef?.current?.openVirtualCamera(camera.id)}>
+        <span>{camera.name}</span><small>관측 영역 {scopedPoints.filter((point) => point.virtualCameraRegion?.cameraId === camera.id).length}개</small>
+      </button>)}</div>
+      {!viewerPreset?.virtualCameras?.[selectedEquipment.id]?.length && <p className={styles.help}>4단계에서 가상 카메라를 추가하세요.</p>}
+    </section>}
+    {tab === "POINT" && <ObservationRoiFields virtualCameraOnly equipment={selectedEquipment} points={scopedPoints} selectedPoint={selectedPoint} sensors={scopedSensors} onSelect={onSelectPoint} onChange={onUpdatePoint} onRemove={onRemovePoint} />}
 
     </div>
     <footer className={styles.stepFooter}>
       {stepError?.equipmentId === selectedEquipment.id && stepError.step === tab && <p id={errorId} role="alert">{stepError.message}</p>}
-      <div><button type="button" disabled={stepIndex === 0} onClick={() => setStep(EQUIPMENT_SETUP_STEPS[stepIndex - 1].id)}>이전</button><button type="button" onClick={() => setStep(tab, "SKIPPED")}>건너뛰기</button><button type="button" onClick={() => setStep(tab, "PENDING")}>다시 편집</button><button type="button" disabled={uploading} onClick={() => setStep(tab, "DONE")}>{stepIndex === 4 ? "검토 완료" : "완료 후 다음"}</button></div>
+      <div><button type="button" disabled={stepIndex === 0} onClick={() => setStep(EQUIPMENT_SETUP_STEPS[stepIndex - 1].id)}>이전</button><button type="button" onClick={() => setStep(tab, "SKIPPED")}>건너뛰기</button><button type="button" onClick={() => setStep(tab, "PENDING")}>다시 편집</button><button type="button" disabled={uploading} onClick={() => setStep(tab, "DONE")}>{stepIndex === EQUIPMENT_SETUP_STEPS.length - 1 ? "검토 완료" : "완료 후 다음"}</button></div>
       <small>입력 후 프로젝트를 저장해 보관하세요.</small>
     </footer>
   </section>;

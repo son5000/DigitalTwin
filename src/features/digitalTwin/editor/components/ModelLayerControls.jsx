@@ -1,7 +1,7 @@
 import styles from "./ModelLayerControls.module.css";
 import ViewerOverlaySlot from "./ViewerOverlaySlot";
 
-export default function ModelLayerControls({ value = {}, onChange, hasScan, scanDefault = true, shapeDefault = true, shapeOpacity = 1 }) {
+export default function ModelLayerControls({ value = {}, onChange, hasScan, scanDefault = true, shapeDefault = true, shapeOpacity = 1, showSceneOverlays = false }) {
   return <ViewerOverlaySlot name="controls"><details className={styles.controls} data-viewer-control="layers" data-camera-safe-ui onKeyDown={(event) => {
     if (event.key === "Escape" && event.currentTarget.open) {
       event.currentTarget.open = false;
@@ -15,6 +15,11 @@ export default function ModelLayerControls({ value = {}, onChange, hasScan, scan
       <label><input type="checkbox" checked={value[key]?.visible ?? visible} onChange={(event) => onChange({ ...value, [key]: { ...value[key], visible: event.target.checked } })} />{label}</label>
       <label><span>불투명도 {Math.round((value[key]?.opacity ?? opacity) * 100)}%</span><input aria-label={`${label} 불투명도`} type="range" min="0" max="100" step="1" value={Math.round((value[key]?.opacity ?? opacity) * 100)} onChange={(event) => onChange({ ...value, [key]: { ...value[key], opacity: Number(event.target.value) / 100 } })} /></label>
     </div>)}
+    {showSceneOverlays && <div className={styles.overlayOptions}>
+      {[["SENSORS", "센서 · 카메라 모형"], ["OBSERVATIONS", "관측 영역 · 이름표"]].map(([key, label]) => <label key={key}>
+        <input type="checkbox" checked={value[key]?.visible ?? true} onChange={(event) => onChange({ ...value, [key]: { visible: event.target.checked } })} />{label}
+      </label>)}
+    </div>}
     </div>
   </details></ViewerOverlaySlot>;
 }

@@ -3,6 +3,7 @@ import test from "node:test";
 import * as THREE from "three";
 import { captureViewerCamera, restoreEquipmentCamera } from "../src/features/digitalTwin/editor/three/viewerCameraMemory.js";
 import { applyEquipmentEnvironment } from "../src/features/digitalTwin/editor/three/equipmentEnvironment.js";
+import { captureEnclosureDoorState, enclosureDoorOverrideFromState, withDoorOverrides } from "../src/features/digitalTwin/editor/model/equipmentEnclosure.js";
 
 import {
   createViewerPreset,
@@ -14,6 +15,44 @@ import {
   normalizeEquipmentEnvironment,
   normalizeEquipmentView,
 } from "../src/features/digitalTwin/editor/model/viewerPreset.js";
+
+test("가상 카메라 시점은 프로젝트 설정을 JSON으로 복원한다", () => {
+  const view = { position: [2, 1, 3], target: [0, 0, 0], up: [0, 1, 0], fov: 60 };
+  const cameras = createViewerPreset(JSON.parse(JSON.stringify(createViewerPreset({ virtualCameras: { EQ1: [
+    { id: "cam-1", name: "정면", view }, { id: "broken", name: "잘못된 시점", view: {} },
+  ] } })))).virtualCameras.EQ1;
+  assert.equal(cameras.length, 1);
+  assert.equal(cameras[0].name, "정면");
+  assert.deepEqual(cameras[0].view.position, view.position);
+});
+
+test("가상 카메라는 앞뒤 문 상태를 저장하고 이전 시점은 현재 문 상태를 유지한다", () => {
+  const equipment = { id: "EQ1", dimensions: { width: 1, height: 2, depth: 1 }, enclosure: {
+    enabled: true, doorCount: 2, doors: [{ open: false }, { open: true }],
+    rear: { doorCount: 1, doors: [{ open: false }] },
+  } };
+  const state = { frontOpen: [true, false], rearOpen: [true] };
+  const displayed = withDoorOverrides(equipment, enclosureDoorOverrideFromState(equipment, state));
+  assert.deepEqual(captureEnclosureDoorState(displayed), state);
+  const view = { position: [2, 1, 3], target: [0, 0, 0], up: [0, 1, 0] };
+  const cameras = createViewerPreset(JSON.parse(JSON.stringify(createViewerPreset({ virtualCameras: { EQ1: [
+    { id: "open", name: "내부", view, doorState: state }, { id: "legacy", name: "외관", view },
+  ] } })))).virtualCameras.EQ1;
+  assert.deepEqual(cameras[0].doorState, state);
+  assert.equal(cameras[1].doorState, null);
+  assert.equal(enclosureDoorOverrideFromState(equipment, cameras[1].doorState), null);
+  assert.deepEqual(captureEnclosureDoorState(withDoorOverrides(equipment, enclosureDoorOverrideFromState(equipment, cameras[0].doorState))), state);
+});
+
+test("가상 카메라 시점은 프로젝트 설정을 JSON으로 복원한다", () => {
+  const view = { position: [2, 1, 3], target: [0, 0, 0], up: [0, 1, 0], fov: 60 };
+  const cameras = createViewerPreset(JSON.parse(JSON.stringify(createViewerPreset({ virtualCameras: { EQ1: [
+    { id: "cam-1", name: "정면", view }, { id: "broken", name: "잘못된 시점", view: {} },
+  ] } })))).virtualCameras.EQ1;
+  assert.equal(cameras.length, 1);
+  assert.equal(cameras[0].name, "정면");
+  assert.deepEqual(cameras[0].view.position, view.position);
+});
 
 test("설비별 배경·지면은 독립적으로 저장되고 잘못된 값은 보정된다", () => {
   const preset = createViewerPreset({ equipmentEnvironments: {

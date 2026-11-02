@@ -38,7 +38,7 @@ export default function RoiDashboard({ roi, sensors = [], readings, now, connect
         <dt>{row.name}</dt>
         <dd data-empty={row.value === null}>{formatValue(row)}</dd>
         <dd className={styles.metricMeta}>
-          <span>{point ? sensors.find((sensor) => sensor.id === row.sensorId)?.name ?? "연결 센서 없음" : "영역 측정값"}</span>
+          <span>{point ? (row.sourceMode === "EQUIPMENT_REGION" ? "설비 기준 영역" : sensors.find((sensor) => sensor.id === row.sensorId)?.name ?? "연결 센서 없음") : "영역 측정값"}</span>
           <span>{row.value === null ? "데이터 없음" : row.state.label}</span>
         </dd>
       </div>)}

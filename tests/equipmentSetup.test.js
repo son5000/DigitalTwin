@@ -4,6 +4,7 @@ import { EQUIPMENT_SETUP_STEPS, getEquipmentSetup, updateEquipmentSetup, getSens
 import { createViewerPreset, resolveEquipmentRepresentation } from "../src/features/digitalTwin/editor/model/viewerPreset.js";
 
 test("설비별 단계는 저장 후 복원하며 완료와 건너뜀을 구분한다", () => {
+  assert.deepEqual(EQUIPMENT_SETUP_STEPS.map((step) => step.id), ["BASIC", "ASSET", "SENSOR", "VIRTUAL_CAMERA", "POINT", "REVIEW"]);
   let equipment = { id: "A", metadata: {} };
   equipment.metadata.detailSetup = updateEquipmentSetup(equipment, "BASIC", "DONE");
   equipment.metadata.detailSetup = updateEquipmentSetup(equipment, "ASSET", "SKIPPED");
@@ -34,11 +35,11 @@ test("센서 수신 없음은 정상으로 오인하지 않고 경계값에서 �
   assert.deepEqual(getSensorReadingState(point, 80), { level: "DANGER", icon: "🔥", label: "위험" });
 });
 
-test("센서 미연결이나 역전된 임계치는 완료 처리 전에 안내한다", () => {
+test("텍스처 미연결이나 역전된 임계치는 완료 처리 전에 안내한다", () => {
   const point = { sensorIds: ["S1"], normalRange: { max: 60 }, warningRange: { max: 80 }, dangerRange: { max: 120 } };
   const values = { points: [point], sensors: [{ id: "S1" }] };
   assert.equal(getSetupStepIssue("POINT", values), "");
-  assert.match(getSetupStepIssue("POINT", { ...values, sensors: [] }), /센서/);
+  assert.match(getSetupStepIssue("POINT", { ...values, sensors: [] }), /텍스처/);
   assert.match(getSetupStepIssue("POINT", { ...values, points: [{ ...point, normalRange: { max: 100 } }] }), /임계치/);
   assert.match(getSetupStepIssue("ASSET", {}), /건너뛰세요/);
 });
@@ -50,7 +51,7 @@ test("저장 확인은 선택 설비 외의 미완료·건너뜀 단계도 집�
     { id: "other-floor" },
     { id: "outdoor", metadata: { detailSetup: { steps: { ...complete, ASSET: "SKIPPED" } } } },
   ];
-  assert.deepEqual(getEquipmentSetupSaveSummary(equipment), { equipmentCount: 2, pendingCount: 5, skippedCount: 1 });
+  assert.deepEqual(getEquipmentSetupSaveSummary(equipment), { equipmentCount: 2, pendingCount: 6, skippedCount: 1 });
   assert.deepEqual(getEquipmentSetupSaveSummary([equipment[0]]), { equipmentCount: 0, pendingCount: 0, skippedCount: 0 });
   assert.deepEqual(getEquipmentSetupSaveSummary([]), { equipmentCount: 0, pendingCount: 0, skippedCount: 0 });
 });

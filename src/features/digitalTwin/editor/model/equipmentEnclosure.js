@@ -172,6 +172,25 @@ export function enclosureDoorOverride(original, displayed, index, open, side = "
   };
 }
 
+export function captureEnclosureDoorState(equipment) {
+  const enclosure = getEnclosure(equipment);
+  if (!enclosure.enabled || (!enclosure.doorCount && !enclosure.rear.doorCount)) return null;
+  return {
+    frontOpen: enclosure.doors.slice(0, enclosure.doorCount).map((door) => door.open),
+    rearOpen: enclosure.rear.doors.slice(0, enclosure.rear.doorCount).map((door) => door.open),
+  };
+}
+
+export function enclosureDoorOverrideFromState(equipment, state) {
+  const enclosure = getEnclosure(equipment);
+  if (!enclosure.enabled || !state) return null;
+  return {
+    key: JSON.stringify(equipment.enclosure),
+    open: enclosure.doors.map((door, index) => index < enclosure.doorCount && typeof state.frontOpen?.[index] === "boolean" ? state.frontOpen[index] : door.open),
+    rearOpen: enclosure.rear.doors.map((door, index) => index < enclosure.rear.doorCount && typeof state.rearOpen?.[index] === "boolean" ? state.rearOpen[index] : door.open),
+  };
+}
+
 export function advanceEnclosureDoors(current, target, delta, reducedMotion = false) {
   if (reducedMotion || current === target) return target;
   const previous = getEnclosure(current), next = getEnclosure(target);

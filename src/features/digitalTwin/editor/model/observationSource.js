@@ -42,7 +42,7 @@ export function createThermalObservationBinding(hit, equipment, position) {
 }
 
 export function bindObservationMeasurements(measurements = [], { imageBinding, thermalBinding } = {}) {
-  return measurements.map((m) => ({ ...m, sensorId: m.metric === "ultrasound.db" ? ""
+  return measurements.map((m) => ({ ...m, sensorId: ["GENERAL", "ultrasound.db"].includes(m.metric) ? ""
     : m.metric === "TEMPERATURE" ? thermalBinding?.sensorId ?? ""
       : m.metric?.startsWith("vision.") ? imageBinding?.sensorId ?? "" : m.sensorId ?? "" }));
 }
