@@ -1,6 +1,7 @@
 import { validateCalibration, validateTelemetry, mediaUrl } from "../model/monitoringContract.js";
 import { validTemperatureGrid } from "../model/sensorProjection.js";
 import { MAX_THERMAL_CSV_BYTES, parseTemperatureCsv } from "../model/thermalFrame.js";
+import { textureAssetRepository } from "./textureAssetRepository.js";
 
 export const monitoringApiBase = (import.meta.env?.VITE_MONITORING_API_BASE || "").replace(/\/$/, "");
 export async function monitoringRequest(path, options = {}) {
@@ -58,6 +59,22 @@ export async function requestPointAudio(projectId, equipmentId, selection, signa
   const result = await monitoringRequest(`${equipmentPath(projectId, equipmentId)}/audio`, { method: "POST", body: JSON.stringify({ selection }), signal });
   if (result?.equipmentId !== equipmentId || !mediaUrl(result.url)) throw new Error("위치별 음원 응답 형식을 확인하세요.");
   return result;
+}
+export async function uploadRoiReferenceImage(projectId, equipmentId, roiId, measurementId, frame) {
+  const asset = await textureAssetRepository.get(frame.textureAssetId);
+  if (!asset?.blob) throw new Error("기준 사진 원본을 찾을 수 없습니다. 현재 영상을 다시 저장하세요.");
+  const form = new FormData();
+  form.append("image", asset.blob, asset.name || frame.name || "reference-image");
+  form.append("roiId", roiId); form.append("measurementId", measurementId);
+  form.append("sourceRect", JSON.stringify(frame.sourceRect));
+  form.append("sourceQuad", JSON.stringify(frame.sourceQuad));
+  const response = await fetch(`${monitoringApiBase}${equipmentPath(projectId, equipmentId)}/roi-reference-assets`, {
+    method: "POST", credentials: "same-origin", body: form, signal: AbortSignal.timeout(20000),
+  });
+  if (!response.ok) throw new Error(`기준 사진을 서버에 저장하지 못했습니다 (${response.status}).`);
+  const result = await response.json();
+  if (!result?.assetId) throw new Error("서버의 기준 사진 식별 번호를 확인하세요.");
+  return { ...frame, serverAssetId: result.assetId };
 }
 export async function acknowledgeAlarm(projectId, equipmentId, alarmId) {
   return monitoringRequest(`${equipmentPath(projectId, equipmentId)}/alarms/${encodeURIComponent(alarmId)}/acknowledge`, { method: "POST" });

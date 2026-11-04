@@ -5,12 +5,21 @@ const clamp = (value, min, max, fallback) => Math.max(min, Math.min(max, Number.
 export const ENCLOSURE_WALLS = { front: "앞판", back: "뒷판", left: "왼쪽 벽", right: "오른쪽 벽", top: "천장", bottom: "바닥" };
 
 function doorSet(source, width, height, defaultCount) {
+  const doorCount = Number.isInteger(source.doorCount) && source.doorCount >= 0 && source.doorCount <= 5 ? source.doorCount : defaultCount;
+  const doorLayout = source.doorLayout === "STACKED" ? "STACKED" : "SIDE_BY_SIDE";
+  const legacyFirstRatio = doorLayout === "STACKED" ? source.upperDoorRatio : source.leftDoorRatio;
+  const supplied = Array.isArray(source.doorRatios) && source.doorRatios.length === doorCount ? source.doorRatios : null;
+  const weights = supplied ?? (doorCount === 2 ? [Number(legacyFirstRatio) || .5, 1 - (Number(legacyFirstRatio) || .5)] : Array(doorCount).fill(1));
+  const safe = weights.map((value) => Number.isFinite(value) && value > 0 ? value : 1);
+  const total = safe.reduce((sum, value) => sum + value, 0) || 1;
   return {
-    doorCount: [0, 1, 2].includes(source.doorCount) ? source.doorCount : defaultCount,
-    doorLayout: source.doorLayout === "STACKED" ? "STACKED" : "SIDE_BY_SIDE",
+    doorCount,
+    doorLayout,
+    doorRatios: safe.map((value) => value / total),
+    stackOrder: source.stackOrder === "TOP_DOWN" || source.stackOrder === "BOTTOM_UP" ? source.stackOrder : doorCount > 2 ? "BOTTOM_UP" : "TOP_DOWN",
     upperDoorRatio: clamp(source.upperDoorRatio, .001 / height, 1 - .001 / height, .5),
     leftDoorRatio: clamp(source.leftDoorRatio, .001 / width, 1 - .001 / width, .5),
-    doors: [0, 1].map((index) => ({
+    doors: Array.from({ length: 5 }, (_, index) => ({
       hinge: ["LEFT", "RIGHT", "TOP", "BOTTOM"].includes(source.doors?.[index]?.hinge) ? source.doors[index].hinge : index === 0 ? "LEFT" : "RIGHT",
       swing: source.doors?.[index]?.swing === "INWARD" ? "INWARD" : "OUTWARD",
       open: source.doors?.[index]?.open === true,
@@ -45,6 +54,8 @@ export function getEnclosure(equipment) {
   const thickness = clamp(source.thickness, .001, Math.min(width, height, depth) / 4, .02);
   return {
     enabled: source.enabled === true, width, height, depth, thickness,
+    bodyLayout: source.bodyLayout === "BACK_TO_BACK" ? "BACK_TO_BACK" : "SINGLE",
+    frontDepthRatio: clamp(source.frontDepthRatio, .05, .95, .5),
     opacity: clamp(source.opacity ?? (legacyOpacity ? 1 : bodyAppearance.opacity), .05, 1, 1),
     color: /^#[0-9a-f]{6}$/i.test(source.color ?? "") ? source.color : bodyAppearance.color ?? "#78909c",
     walls: Object.fromEntries(Object.keys(ENCLOSURE_WALLS).map((id) => [id, id === "front" ? source.walls?.front === true : source.walls?.[id] !== false])),
@@ -63,23 +74,83 @@ export function withClosedEnclosureDoors(equipment) {
 
 export function getEnclosureDoorLabel(enclosure, index) {
   if (enclosure.doorCount === 1) return "문";
+  if (enclosure.doorCount > 2) return enclosure.doorLayout === "STACKED"
+    ? `${enclosure.stackOrder === "BOTTOM_UP" ? index + 1 : enclosure.doorCount - index}층 문`
+    : `왼쪽부터 ${index + 1}번 문`;
   return enclosure.doorLayout === "STACKED"
     ? index === 0 ? "위쪽 문" : "아래쪽 문"
     : index === 0 ? "왼쪽 문" : "오른쪽 문";
 }
 
+export function getEnclosureDoorCell(equipment, index, side = "FRONT") {
+  const c = getEnclosure(equipment), set = side === "REAR" ? c.rear : c;
+  if (!Number.isInteger(index) || index < 0 || index >= set.doorCount) return null;
+  const innerWidth = c.width - 2 * c.thickness, innerHeight = c.height - 2 * c.thickness;
+  const ratios = set.doorRatios;
+  if (set.doorLayout === "STACKED") {
+    const height = innerHeight * ratios[index];
+    const before = ratios.slice(0, index).reduce((sum, value) => sum + value, 0) * innerHeight;
+    const bottom = c.thickness + (set.stackOrder === "BOTTOM_UP" ? before : innerHeight - before - height);
+    return { left: -c.width / 2 + c.thickness, bottom, width: innerWidth, height };
+  }
+  const before = ratios.slice(0, index).reduce((sum, value) => sum + value, 0) * innerWidth;
+  return { left: -c.width / 2 + c.thickness + before, bottom: c.thickness,
+    width: innerWidth * ratios[index], height: innerHeight };
+}
+
+export function resizeEnclosureDoor(equipment, side, index, value) {
+  const enclosure = getEnclosure(equipment), set = side === "REAR" ? enclosure.rear : enclosure;
+  if (!Number.isFinite(value) || value < .01 || !Number.isInteger(index) || index < 0 || index >= set.doorCount || set.doorCount < 2) return null;
+  if (set.doorLayout === "STACKED") {
+    const innerHeight = enclosure.height - 2 * enclosure.thickness;
+    const heights = set.doorRatios.map((ratio) => ratio * innerHeight);
+    const lowerNeighbor = set.stackOrder === "BOTTOM_UP" ? index > 0 : index < set.doorCount - 1;
+    const upperNeighbor = set.stackOrder === "BOTTOM_UP" ? index < set.doorCount - 1 : index > 0;
+    heights[index] = value + (Number(lowerNeighbor) + Number(upperNeighbor)) * enclosure.thickness / 2;
+    const total = heights.reduce((sum, height) => sum + height, 0);
+    if (total + 2 * enclosure.thickness > 100) return null;
+    const doorRatios = heights.map((height) => height / total);
+    return side === "REAR" ? { height: total + 2 * enclosure.thickness, rear: { ...enclosure.rear, doorRatios } }
+      : { height: total + 2 * enclosure.thickness, doorRatios };
+  }
+  const span = enclosure.width - 2 * enclosure.thickness;
+  const neighbor = index === set.doorCount - 1 ? index - 1 : index + 1;
+  const combined = set.doorRatios[index] + set.doorRatios[neighbor];
+  const ratio = Math.max(.01 / span, Math.min(combined - .01 / span, value / span));
+  const doorRatios = set.doorRatios.map((entry, i) => i === index ? ratio : i === neighbor ? combined - ratio : entry);
+  return side === "REAR" ? { rear: { ...enclosure.rear, doorRatios } } : { doorRatios };
+}
+
+// The local origin is the lower-left corner seen through the closed door.
+// +X follows the door width, +Y is up, and -Z points into that compartment.
+export function getEnclosureScanSlot(equipment, index, side = "FRONT") {
+  if (side !== "FRONT" && side !== "REAR") return null;
+  const c = getEnclosure(equipment), cell = getEnclosureDoorCell(equipment, index, side);
+  if (!c.enabled || !cell) return null;
+  const set = side === "REAR" ? c.rear : c;
+  const lowerNeighbor = set.stackOrder === "BOTTOM_UP" ? index > 0 : index < set.doorCount - 1;
+  const upperNeighbor = set.stackOrder === "BOTTOM_UP" ? index < set.doorCount - 1 : index > 0;
+  const leftInset = set.doorLayout === "SIDE_BY_SIDE" && index > 0 ? c.thickness / 2 : 0;
+  const rightInset = set.doorLayout === "SIDE_BY_SIDE" && index < set.doorCount - 1 ? c.thickness / 2 : 0;
+  const bottomInset = set.doorLayout === "STACKED" && lowerNeighbor ? c.thickness / 2 : 0;
+  const topInset = set.doorLayout === "STACKED" && upperNeighbor ? c.thickness / 2 : 0;
+  const innerDepth = c.depth - 2 * c.thickness;
+  const usableDepth = c.bodyLayout === "BACK_TO_BACK" ? innerDepth - c.thickness : innerDepth;
+  const depth = c.bodyLayout === "BACK_TO_BACK"
+    ? usableDepth * (side === "FRONT" ? c.frontDepthRatio : 1 - c.frontDepthRatio) : usableDepth;
+  if (cell.width - leftInset - rightInset <= .001 || cell.height - bottomInset - topInset <= .001 || depth <= .001) return null;
+  const front = side === "FRONT";
+  return { side, index, id: `${front ? "FRONT" : "REAR"}:${index}`,
+    origin: { x: front ? cell.left + leftInset : -(cell.left + leftInset), y: cell.bottom + bottomInset,
+      z: front ? c.depth / 2 - c.thickness : -c.depth / 2 + c.thickness },
+    dimensions: { width: cell.width - leftInset - rightInset, height: cell.height - bottomInset - topInset, depth },
+    centerZ: front ? c.depth / 2 - c.thickness - depth / 2 : -c.depth / 2 + c.thickness + depth / 2,
+    rotationY: front ? 0 : Math.PI, cell };
+}
+
 export function getEnclosureDoor(equipment, index, side = "FRONT") {
   const c = getEnclosure(equipment), set = side === "REAR" ? c.rear : c, door = set.doors[index];
-  const stacked = set.doorCount === 2 && set.doorLayout === "STACKED";
-  const innerHeight = c.height - 2 * c.thickness;
-  const upperHeight = innerHeight * set.upperDoorRatio;
-  const innerWidth = c.width - c.thickness * 2;
-  const splitWidth = !stacked && set.doorCount === 2;
-  const leftWidth = innerWidth * set.leftDoorRatio;
-  const width = splitWidth ? index === 0 ? leftWidth : innerWidth - leftWidth : innerWidth;
-  const height = stacked ? index === 0 ? upperHeight : innerHeight - upperHeight : innerHeight;
-  const left = -c.width / 2 + c.thickness + (splitWidth && index === 1 ? leftWidth : 0);
-  const bottom = c.thickness + (stacked && index === 0 ? innerHeight - upperHeight : 0);
+  const { left, bottom, width, height } = getEnclosureDoorCell(equipment, index, side);
   const hingeX = door.hinge === "RIGHT" ? left + width : left;
   const hingeY = door.hinge === "TOP" ? bottom + height : bottom;
   const horizontalHinge = door.hinge === "TOP" || door.hinge === "BOTTOM";

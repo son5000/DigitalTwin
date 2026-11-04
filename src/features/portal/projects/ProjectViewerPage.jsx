@@ -269,7 +269,6 @@ function SavedWorldViewer({ project, requestedEquipmentId, operationsSection, op
     setObservedBuildingId(null); setSelectedSiteObjectId(id); setSelectedBuildingId(null); setSelectedFloorId(null);
     markSelected(id ? worldNodeKey("SITE_OBJECT", id) : null);
   }, [tree, selectEquipment, markSelected]);
-  const selectSensor = useCallback((id) => { setSelectedSensorId(id); }, []);
 
   function showParentSpace() {
     setEquipmentDetail(false); setShowEquipment(equipmentScope);
@@ -354,21 +353,21 @@ function SavedWorldViewer({ project, requestedEquipmentId, operationsSection, op
         <div className={viewerStyles.scene}>
           <ScanLoadStatus equipmentId={equipmentId} popup />
           {equipmentOverview ? <EquipmentObservationScene key="equipment-overview" overview equipmentList={overviewEquipment} terrainEnvironment={terrainEnvironment} gridSettings={layout.gridSettings ?? DEFAULT_GRID_SETTINGS}
-            onEquipmentSelect={selectEquipment} snapshotRequest={snapshotRequest} onSnapshot={setSnapshot} cameraMemory={viewerCameraMemory}
+            snapshotRequest={snapshotRequest} onSnapshot={setSnapshot} cameraMemory={viewerCameraMemory}
             theme={theme} onCameraControlsChange={setCameraControls} onZoomChange={setZoom} />
-            : showEquipment || equipmentDetail ? detailEquipment.length ? <MonitoringRoiWorkspace key={equipmentId ?? "world"} projectId={project.id} initialRoi={roiTarget?.equipmentId === equipmentId ? roiTarget : null} activePanel={rightPanel} sharedPanelLayout onPanelChange={setRightPanel} equipmentList={detailEquipment} focusEquipmentId={equipmentId} selectedPartId={selectedPartId} onEquipmentSelect={isolatedEquipmentView ? undefined : selectEquipment}
+            : showEquipment || equipmentDetail ? detailEquipment.length ? <MonitoringRoiWorkspace key={equipmentId ?? "world"} projectId={project.id} initialRoi={roiTarget?.equipmentId === equipmentId ? roiTarget : null} activePanel={rightPanel} sharedPanelLayout onPanelChange={setRightPanel} equipmentList={detailEquipment} focusEquipmentId={equipmentId} selectedPartId={selectedPartId}
             animateEquipmentFocus preserveWorldOnSelection={!selectedPartId} focusSelectionVersion={treeSelection.version} cameraMemory={viewerCameraMemory}
             snapshotRequest={snapshotRequest} onSnapshot={setSnapshot}
             sensors={model.sensors} observationPoints={model.points} assetBindings={layout.equipmentAssetBindings ?? EMPTY_ITEMS}
-            viewerPreset={layout.viewerPreset} selectedSensorId={selectedSensorId} onSensorSelect={selectSensor} transformTools={DISABLED_TRANSFORM_TOOLS} theme={theme} onCameraControlsChange={setCameraControls} onZoomChange={setZoom} /> : null
+            viewerPreset={layout.viewerPreset} selectedSensorId={selectedSensorId} transformTools={DISABLED_TRANSFORM_TOOLS} theme={theme} onCameraControlsChange={setCameraControls} onZoomChange={setZoom} /> : null
             : <SiteOverviewScene {...model} enableObjectLod={false} movementPlayback={movementEnabled ? VIEWER_MOVEMENT_PLAYBACK : VIEWER_MOVEMENT_PAUSED} showSceneControls={false} onCameraControlsChange={setCameraControls} onZoomChange={setZoom} selectedBuildingId={selectedBuildingId} selectedSiteObjectId={selectedSiteObjectId} selectedFloorId={selectedFloorId}
               buildingObservation={buildingObservation} equipmentFocus={equipmentFocus} worldEquipment={worldEquipment} snapshotRequest={!equipmentScope ? snapshotRequest : null} onSnapshot={setSnapshot}
               equipmentAssetBindings={layout.equipmentAssetBindings ?? EMPTY_ITEMS} viewerPreset={layout.viewerPreset} modelLayers={worldModelLayers}
-              interactionMode={SITE_INTERACTION_MODES.NAVIGATE} viewMode={viewMode} theme={theme} transformTools={DISABLED_TRANSFORM_TOOLS} gridSettings={DEFAULT_GRID_SETTINGS}
+              interactionMode={SITE_INTERACTION_MODES.NAVIGATE} allowWorldSelection={false} viewMode={viewMode} theme={theme} transformTools={DISABLED_TRANSFORM_TOOLS} gridSettings={DEFAULT_GRID_SETTINGS}
               onSelectBuilding={selectBuilding} onSelectEquipment={selectEquipment} onSelectFloor={selectFloor} onEnterBuilding={selectBuilding} onEnterFloor={selectFloor} />}
         </div>
 
-        {!showEquipment && !equipmentDetail && activeEquipment && (layout.equipmentAssetBindings ?? []).some((binding) => binding.equipmentId === activeEquipment.id && ["OBJ", "PLY"].includes(binding.assetType)) && <ModelLayerControls hasScan value={worldModelLayers[activeEquipment.id]} onChange={(value) => setWorldModelLayers((current) => ({ ...current, [activeEquipment.id]: value }))} />}
+        {!showEquipment && !equipmentDetail && activeEquipment && (layout.equipmentAssetBindings ?? []).some((binding) => binding.equipmentId === activeEquipment.id && ["OBJ", "PLY"].includes(binding.assetType)) && <ModelLayerControls hasScan shapeLabel={activeEquipment.enclosure?.enabled ? "설비 함체" : "설비 외형"} value={worldModelLayers[activeEquipment.id]} onChange={(value) => setWorldModelLayers((current) => ({ ...current, [activeEquipment.id]: value }))} />}
         <div className={viewerStyles.controlDock} role="group" aria-label="뷰어 조작" data-camera-safe-ui>
           <div ref={setControlsHost} className={viewerStyles.controlItems} />
           <div className={portalStyles.zoom} role="group" aria-label="월드 줌"><button type="button" title="확대" aria-label="확대" disabled={!cameraControls} onClick={() => cameraControls.zoomBy(1.25)}>+</button><output aria-label="현재 줌 비율">{zoom}%</output><button type="button" title="축소" aria-label="축소" disabled={!cameraControls} onClick={() => cameraControls.zoomBy(0.8)}>−</button></div>

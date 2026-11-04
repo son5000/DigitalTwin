@@ -77,7 +77,7 @@ import {
 import { equipmentAssetRepository } from "@/features/digitalTwin/editor/api/equipmentAssetRepository";
 import { createLocalEquipmentAssetRecord } from "@/features/digitalTwin/editor/model/equipmentAssetFiles";
 import { ASSET_SOURCE_TYPES } from "@/features/digitalTwin/editor/model/equipmentDetailModel";
-import { getEquipmentSetupSaveSummary, updateEquipmentSetup } from "@/features/digitalTwin/editor/model/equipmentSetup";
+import { getEquipmentSetup, getEquipmentSetupSaveSummary, updateEquipmentSetup } from "@/features/digitalTwin/editor/model/equipmentSetup";
 
 import styles from "./DigitalTwinEditorPage.module.css";
 
@@ -155,6 +155,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
   const [saveStatus, setSaveStatus] = useState("");
   const [pendingAssetUploads, setPendingAssetUploads] = useState(0);
   const [activeFloatingPanelId, setActiveFloatingPanelId] = useState(null);
+  const [initialViewFramingId, setInitialViewFramingId] = useState(null);
   const [siteAreaSelection, setSiteAreaSelection] = useState(null);
   const [siteInteractionMode, setSiteInteractionMode] = useState(SITE_INTERACTION_MODES.NAVIGATE);
   const [activeSiteTemplateId, setActiveSiteTemplateId] = useState(null);
@@ -214,7 +215,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     selectFloorEquipmentTemplate, addFloorEquipment, updateFloorEquipment, selectFloorEquipment,
     removeSelectedFloorEquipment, duplicateSelectedFloorEquipment,
     addObservationPoint, updateObservationPoint, removeObservationPoint, selectObservationPoint,
-    addAssetBinding, updateAssetBinding, selectAssetBinding,
+    addAssetBinding, updateAssetBinding, removeAssetBinding, selectAssetBinding,
     addMonitoringDevice, updateMonitoringDevice, removeMonitoringDevice, selectMonitoringDevice,
     addMonitoringBinding, updateMonitoringBinding, selectMonitoringBinding,
     configureObservationWorkflow, updateObservationViewerSettings,
@@ -247,6 +248,8 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
   const isEquipmentSpace = [OBSERVATION_SCOPE_TYPES.SINGLE_EQUIPMENT, OBSERVATION_SCOPE_TYPES.MULTI_EQUIPMENT].includes(editor.observationWorkflow.scopeType);
   const monitoringEquipmentId = resolveObservationEquipmentId(editor.observationWorkflow, editor.allMonitoringEquipment);
   const monitoringEquipment = editor.allMonitoringEquipment.find((item) => item.id === monitoringEquipmentId) ?? null;
+  const initialViewFraming = Boolean(initialViewFramingId && isMonitoringStep
+    && initialViewFramingId === monitoringEquipmentId && getEquipmentSetup(monitoringEquipment).currentStep === "ASSET");
   const userBuildings = useMemo(() => editor.buildings.filter((building) => !building.systemHost), [editor.buildings]);
   const isBuildingObservationMode = isCompositionStep
     && editor.observationWorkflow.scopeType === OBSERVATION_SCOPE_TYPES.BUILDING;
@@ -541,6 +544,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     setActiveFloatingPanelId(null);
   }, [resetSiteInteraction, selectBuilding, selectSiteObject]);
   const handleFloatingPanelChange = useCallback((panelId) => {
+    setInitialViewFramingId(null);
     if (isCompositionStep && siteInteractionMode === SITE_INTERACTION_MODES.PLACE_OBJECT) clearSitePlacement();
     if (isCompositionStep && panelId === WORLD_PANEL_IDS.TERRAIN) {
       resetSiteInteraction(SITE_INTERACTION_MODES.EDIT_TERRAIN);
@@ -557,6 +561,21 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     if (isCompositionStep && siteInteractionMode === SITE_INTERACTION_MODES.EDIT_TERRAIN) resetSiteInteraction();
     setActiveFloatingPanelId(null);
   }, [isCompositionStep, resetSiteInteraction, siteInteractionMode]);
+  const startInitialViewFraming = useCallback((equipmentId) => {
+    setInitialViewFramingId(equipmentId);
+    setActiveFloatingPanelId(null);
+  }, []);
+  const finishInitialViewFraming = useCallback((save) => {
+    const controller = equipmentCameraControllerRef.current;
+    if (save && initialViewFramingId && controller?.equipmentId === initialViewFramingId && controller.ready()) {
+      updateViewerPreset({ equipmentViews: {
+        ...editor.viewerPreset?.equipmentViews,
+        [initialViewFramingId]: controller.capture(),
+      } });
+    }
+    setInitialViewFramingId(null);
+    setActiveFloatingPanelId(WORLD_PANEL_IDS.DETAILS);
+  }, [editor.viewerPreset?.equipmentViews, initialViewFramingId, updateViewerPreset]);
   const handleCompositionViewModeChange = useCallback((mode) => {
     if (siteInteractionMode === SITE_INTERACTION_MODES.PLACE_OBJECT) clearSitePlacement();
     setViewMode(mode);
@@ -720,7 +739,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     setMonitoringEquipmentPickerOpen(false);
     return equipmentId;
   }, [addFloorEquipment, editor.allFloorEquipment.length, editor.currentFloor?.id, editor.gridSettings.baseSize, editor.observationWorkflow.viewerSettings?.equipmentIds, selectFloorEquipment, selectedFloor?.id, updateObservationViewerSettings]);
-  const handleMonitoringAssetFiles = useCallback(async (equipmentId, files, { preserveExterior = true } = {}) => {
+  const handleMonitoringAssetFiles = useCallback(async (equipmentId, files, { preserveExterior = true, scanSlot = null } = {}) => {
     const prepared = createLocalEquipmentAssetRecord(files);
     if (!prepared.ok) {
       setMonitoringEquipmentNotice(prepared.message);
@@ -742,6 +761,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
         displayMode: preserveExterior ? "COMPARE" : prepared.displayMode,
         includeProxy: preserveExterior,
         status: "READY",
+        scanSlot,
       });
       setMonitoringEquipmentNotice(`${prepared.primary.name} 파일을 이 브라우저에 저장하고 연결했습니다.`);
       return bindingId;
@@ -764,6 +784,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     await handleMonitoringAssetFiles(equipmentId, files, { preserveExterior: false });
   }, [handleMonitoringAssetFiles, handleMonitoringEquipmentAdd, updateFloorEquipment]);
   const handleMonitoringEquipmentSelect = useCallback((equipmentId) => {
+    setInitialViewFramingId(null);
     selectAssetBinding(null);
     selectObservationPoint(null);
     selectMonitoringDevice(null);
@@ -813,6 +834,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
 
   const enterStep = useCallback((stepId) => {
     if (!editor.observationWorkflow.activeStepIds.includes(stepId)) return;
+    setInitialViewFramingId(null);
     setWizardStepId(stepId);
     resetSiteInteraction();
     setShowOnlySelectedBuilding(false);
@@ -1349,11 +1371,14 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
               <EquipmentDetailWorkspace
                 workspaceViewControllerRef={equipmentWorkspaceViewRef}
                 cameraController={equipmentCameraControllerRef}
+                initialViewFraming={initialViewFraming}
+                onConfirmInitialView={() => finishInitialViewFraming(true)}
+                onCancelInitialView={() => finishInitialViewFraming(false)}
                 singleEquipment={editor.observationWorkflow.scopeType === OBSERVATION_SCOPE_TYPES.SINGLE_EQUIPMENT}
                 equipment={monitoringEquipment}
                 listOpen={activeFloatingPanelId === WORLD_PANEL_IDS.OBJECT_LIST}
                 onCloseList={handleFloatingPanelClose}
-                onSetupStepChange={(detailSetup) => { handleMonitoringEquipmentChange({ metadata: { detailSetup } }); setActiveFloatingPanelId(WORLD_PANEL_IDS.DETAILS); }}
+                onSetupStepChange={(detailSetup) => { setInitialViewFramingId(null); handleMonitoringEquipmentChange({ metadata: { detailSetup } }); setActiveFloatingPanelId(WORLD_PANEL_IDS.DETAILS); }}
                 equipmentList={editor.allMonitoringEquipment}
                 equipmentCount={editor.allMonitoringEquipment.length}
                 onSelectEquipment={handleMonitoringEquipmentSelect}
@@ -1588,12 +1613,13 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                 uploadNotice={monitoringEquipmentNotice}
                 assetBindings={editor.equipmentAssetBindings} sensorBindings={editor.sensorBindings} observationPoints={editor.observationPoints} serverBindings={editor.serverBindings}
                 selectedAsset={editor.selectedAssetBinding} selectedPoint={editor.selectedObservationPoint} selectedSensor={editor.selectedSensorBinding} selectedServer={editor.selectedServerBinding}
-                onAddAsset={addAssetBinding} onSelectAsset={selectAssetBinding} onUpdateAsset={updateAssetBinding}
+                onAddAsset={addAssetBinding} onSelectAsset={selectAssetBinding} onUpdateAsset={updateAssetBinding} onRemoveAsset={removeAssetBinding}
                 onRemovePoint={removeObservationPoint} onSelectPoint={selectObservationPoint} onUpdatePoint={updateObservationPoint}
                 onAddSensor={addMonitoringDevice} onSelectSensor={selectMonitoringDevice} onUpdateSensor={updateMonitoringDevice} onRemoveSensor={removeMonitoringDevice}
                 onAddServer={addMonitoringBinding} onSelectServer={selectMonitoringBinding} onUpdateServer={updateMonitoringBinding}
                 onUpdateEquipment={handleMonitoringEquipmentChange}
                 onUploadAssetFiles={handleMonitoringAssetFiles}
+                onStartInitialViewFraming={startInitialViewFraming}
                 onClose={handleFloatingPanelClose}
               />
             )}

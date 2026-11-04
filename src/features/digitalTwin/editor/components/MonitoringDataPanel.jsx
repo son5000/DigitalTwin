@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { requestPointAudio } from "../api/monitoringClient";
-import { getEquipmentCoordinateFrame, modelToReference } from "../model/equipmentCoordinateFrame.js";
+import { getEquipmentCoordinateFrame, modelToReference, modelToScanSlot, scanSlotForModelPosition, scanSlotFrame } from "../model/equipmentCoordinateFrame.js";
 import { roiAudioSelection } from "../model/roiMonitoring.js";
 import styles from "./MonitoringRoiWorkspace.module.css";
 
@@ -16,7 +16,14 @@ export default function MonitoringDataPanel({ section = "AUDIO", equipment, proj
   const audioRef = useRef(null), queuedAudio = useRef(null), requestSequence = useRef(0);
   const selectedRoi = rois.find((roi) => roi.id === roiId);
   const coordinateFrame = useMemo(() => getEquipmentCoordinateFrame(equipment), [equipment]);
-  const referencePoint = useMemo(() => point && coordinateFrame ? { ...point, schemaVersion: 2, coordinateFrame, position: Object.values(modelToReference(point.position, coordinateFrame)) } : point, [point, coordinateFrame]);
+  const referencePoint = useMemo(() => {
+    if (!point) return point;
+    const slot = scanSlotForModelPosition(equipment, point.position);
+    return { ...point,
+      ...(coordinateFrame ? { schemaVersion: 2, coordinateFrame, position: Object.values(modelToReference(point.position, coordinateFrame)) } : {}),
+      ...(slot ? { scanSlot: { side: slot.side, index: slot.index }, slotFrame: scanSlotFrame(equipment, slot),
+        slotPosition: Object.values(modelToScanSlot(point.position, slot)) } : {}) };
+  }, [point, coordinateFrame, equipment]);
   const selection = useMemo(() => source === "ROI" ? selectedRoi ? roiAudioSelection(selectedRoi, equipment) : null : referencePoint, [source, selectedRoi, equipment, referencePoint]);
   const pointKey = JSON.stringify([selection, equipmentId]);
   useEffect(() => {

@@ -1,10 +1,12 @@
 import { getEquipmentCoordinateFrame } from "./equipmentCoordinateFrame.js";
-import { getSensorMountPose } from "./equipmentEnclosure.js";
+import { getEnclosure, getEnclosureDoorEntries, getEnclosureScanSlot, getSensorMountPose } from "./equipmentEnclosure.js";
+import { equipmentScanBindings, scanBindingForDoor } from "./equipmentScanBindings.js";
 import { sensorHasImaging } from "./equipmentDetailModel.js";
 import { calibrationPayload } from "./monitoringContract.js";
 import { referenceFrameKey } from "./equipmentCoordinateFrame.js";
-import { imageObservationIssue } from "./imageObservation.js";
+import { imageObservationIssue, isImageObservationMetric } from "./imageObservation.js";
 import { thermalObservationIssue } from "./observationSource.js";
+import { observationProfileIssue } from "./observationProfiles.js";
 export const EQUIPMENT_SETUP_STEPS = Object.freeze([
   { id: "BASIC", label: "기본 정보", description: "설비 정보와 모델·재질·텍스처 파일을 등록합니다." },
   { id: "ASSET", label: "모델·관제 화면", description: "설비의 크기·정면·기준좌표와 관제 시작 화면을 설정하세요." },
@@ -87,11 +89,27 @@ export function getSetupStepValidation(step, context) {
   }
   if (step === "BASIC" && !equipment?.name?.trim()) return issue("equipment-name", "설비명을 입력하세요.");
   if (step === "ASSET") {
-    const model = assets.filter((asset) => ["OBJ", "PLY"].includes(asset.assetType)).at(-1);
+    const scans = assets.filter((asset) => ["OBJ", "PLY"].includes(asset.assetType));
+    const assigned = scans.filter((asset) => asset.scanSlot);
+    const doors = getEnclosureDoorEntries(equipment);
+    if (!assigned.length && doors.length > 1 && scans.some((asset) => asset.displayMode !== "PROXY"))
+      return issue("model-files", "문이 여러 개라면 표시할 스캔을 각 문에 연결하세요. 외관 도형만 사용할 수도 있습니다.");
+    if (assigned.length) {
+      if (getEnclosure(equipment).bodyLayout !== "BACK_TO_BACK" && assigned.some((asset) => asset.scanSlot.side === "FRONT")
+        && assigned.some((asset) => asset.scanSlot.side === "REAR")) return issue("model-files", "앞뒤 문에 각각 스캔을 연결했다면 캐비넷 구조를 ‘앞뒤 두 공간’으로 설정하세요.");
+      for (const asset of assigned) {
+        if (!getEnclosureScanSlot(equipment, asset.scanSlot.index, asset.scanSlot.side)) return issue("model-files", `${asset.name}: 연결된 문이 없어 스캔 위치를 확인하세요.`);
+      }
+      for (const door of doors) {
+        if (!scanBindingForDoor(scans, equipment.id, door.side, door.index)) return issue(`scan-slot-${door.side}:${door.index}`, `${door.label} 내부 스캔을 등록하세요.`);
+      }
+    }
+    const models = equipmentScanBindings(equipment, assets);
+    const model = models.at(-1);
     if (!equipment?.shapeTemplateId && !equipment?.enclosure?.enabled && !model) return issue("model-files", "스캔 모델을 등록하거나 이 단계를 건너뛰세요.", { step: "BASIC" });
-    if (model && (!model.sourceKey || ["ERROR", "MISSING", "LOADING", "PENDING"].includes(model.status))) return issue("model-files", "등록한 모델의 파일 연결과 불러오기 상태를 확인하세요.", { step: "BASIC" });
+    if (models.some((scan) => !scan.sourceKey || ["ERROR", "MISSING", "LOADING", "PENDING"].includes(scan.status))) return issue("model-files", "등록한 모델의 파일 연결과 불러오기 상태를 확인하세요.");
     if (equipment?.dimensions && Object.values(equipment.dimensions).some((value) => !finite(value) || Number(value) <= 0)) return issue("model-size", "설비의 가로·높이·깊이를 0보다 크게 입력하세요.");
-    if (model && !model.alignmentTransform?.completed) return issue("model-alignment", "크기·방향·위치를 확인한 뒤 ‘모델 정합 완료’를 선택하세요.");
+    if (models.some((scan) => !scan.alignmentTransform?.completed)) return issue("model-alignment", "각 스캔의 크기·방향·위치를 확인한 뒤 ‘모델 정합 완료’를 선택하세요.");
   }
   if (equipment && ["ASSET", "SENSOR", "VIRTUAL_CAMERA", "POINT"].includes(step) && !getEquipmentCoordinateFrame(equipment)) return issue("coordinate-frame", "설비 정면과 원점을 확인한 뒤 ‘기준좌표 적용’을 눌러주세요.", { step: "ASSET" });
   if (step === "SENSOR") {
@@ -122,9 +140,11 @@ export function getSetupStepValidation(step, context) {
       if (thermalIssue) return pointIssue("roi-thermal-binding", thermalIssue);
       for (const item of point.measurements ?? []) {
         if (!item.name?.trim()) return pointIssue(`measurement-${item.id}-name`, "관측 항목의 표시 이름을 입력하세요.");
-        if (["vision.gaugeValue", "vision.switchState"].includes(item.metric) && point.geometryType !== "PLANE") return pointIssue("roi-geometry-type", "게이지·스위치 영상 분석에는 평면 영역을 선택하세요.");
+        const profileIssue = observationProfileIssue(item);
+        if (profileIssue) return pointIssue("roi-measurements", profileIssue);
+        if (isImageObservationMetric(item.metric) && point.geometryType !== "PLANE") return pointIssue("roi-geometry-type", "카메라 영상에서 읽는 항목은 평면 영역으로 지정하세요.");
         if (!["GENERAL", "ultrasound.db"].includes(item.metric) && !sensors.some((sensor) => sensor.id === item.sensorId)) return pointIssue("roi-measurements", "텍스처 위에 영역을 다시 지정해 원본 카메라를 연결하세요.");
-        if (["vision.gaugeValue", "vision.switchState"].includes(item.metric) && !sensorHasImaging(sensors.find((sensor) => sensor.id === item.sensorId))) return pointIssue(`measurement-${item.id}-sensor`, "게이지·스위치 감지에는 영상 센서를 선택하세요.");
+        if (isImageObservationMetric(item.metric) && !sensorHasImaging(sensors.find((sensor) => sensor.id === item.sensorId))) return pointIssue(`measurement-${item.id}-sensor`, "게이지·스위치·LED·밸브를 읽으려면 비전 카메라를 연결하세요.");
         for (const [index, rule] of (item.rules ?? []).entries()) {
           if (!finite(rule.threshold)) return pointIssue(`measurement-${item.id}-rule-${index}`, "경보 조건의 기준값을 입력하세요.");
         }

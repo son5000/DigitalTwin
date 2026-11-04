@@ -4,6 +4,10 @@ import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 import * as THREE from "three";
 import { createAlignmentTransform, normalizeAssetBinding } from "../src/features/digitalTwin/editor/model/equipmentDetailModel.js";
+import { getEnclosureScanSlot, resizeEnclosureDoor } from "../src/features/digitalTwin/editor/model/equipmentEnclosure.js";
+import { modelToScanSlot, resultPositionToModel, scanSlotForModelPosition, scanSlotToModel } from "../src/features/digitalTwin/editor/model/equipmentCoordinateFrame.js";
+import { roiToReferencePayload } from "../src/features/digitalTwin/editor/model/roiMonitoring.js";
+import { modelReference } from "../src/features/digitalTwin/editor/model/monitoringContract.js";
 
 let server;
 let applyAssetAlignment;
@@ -93,4 +97,74 @@ test("부모 월드의 위치·회전·크기는 스캔의 자동 정렬 기준�
   applyAssetAlignment(local, binding, equipment); applyAssetAlignment(nested, binding, equipment);
   almostEqual(nested.actualObject.position.toArray(), local.actualObject.position.toArray());
   almostEqual(nested.aligned.scale.toArray(), local.aligned.scale.toArray());
+});
+
+test("문별 스캔은 mm 원본을 구획 안에 맞추고 해당 문 왼쪽 아래에 고정한다", () => {
+  const cabinet = { id: "CABINET", dimensions: { width: 1.2, height: 2.4, depth: 1.2 },
+    enclosure: { enabled: true, doorCount: 3, doorLayout: "STACKED", bodyLayout: "BACK_TO_BACK", rear: { doorCount: 1 } } };
+  for (const side of ["FRONT", "REAR"]) {
+    const runtime = fixture();
+    const binding = normalizeAssetBinding({ equipmentId: cabinet.id, assetType: "OBJ", scanSlot: { side, index: 0 },
+      alignmentTransform: { unit: "MM", originMode: "DOOR_CORNER", autoCentered: false, floorAligned: false, fitToProxy: true } });
+    const slot = getEnclosureScanSlot(cabinet, 0, side);
+    assert.equal(applyAssetAlignment(runtime, binding, cabinet), true);
+    const bounds = new THREE.Box3().setFromObject(runtime.aligned);
+    const size = bounds.getSize(new THREE.Vector3());
+    assert.ok(size.x <= slot.dimensions.width + 1e-8);
+    assert.ok(size.y <= slot.dimensions.height + 1e-8);
+    assert.ok(size.z <= slot.dimensions.depth + 1e-8);
+    assert.ok([[size.x, slot.dimensions.width], [size.y, slot.dimensions.height], [size.z, slot.dimensions.depth]]
+      .some(([actual, limit]) => Math.abs(actual - limit) < 1e-8));
+    assert.ok(Math.abs((side === "FRONT" ? bounds.min.x : bounds.max.x) - slot.origin.x) < 1e-8);
+    assert.ok(Math.abs(bounds.min.y - slot.origin.y) < 1e-8);
+    assert.ok(Math.abs((side === "FRONT" ? bounds.max.z : bounds.min.z) - slot.origin.z) < 1e-8);
+  }
+});
+
+test("층별 내부 높이를 조정해도 다른 층 높이를 유지하고 각 기준점이 새 바닥을 따른다", () => {
+  const cabinet = { id: "CABINET", dimensions: { width: 1.2, height: 2.4, depth: 1.2 },
+    enclosure: { enabled: true, doorCount: 3, doorLayout: "STACKED", stackOrder: "BOTTOM_UP" } };
+  const before = [0, 1, 2].map((index) => getEnclosureScanSlot(cabinet, index));
+  const changes = resizeEnclosureDoor(cabinet, "FRONT", 1, .9);
+  const changed = { ...cabinet, enclosure: { ...cabinet.enclosure, ...changes } };
+  const after = [0, 1, 2].map((index) => getEnclosureScanSlot(changed, index));
+  almostEqual(after.map((slot) => slot.dimensions.height), [before[0].dimensions.height, .9, before[2].dimensions.height]);
+  assert.ok(after[2].origin.y > before[2].origin.y);
+  assert.equal(after[0].origin.y, before[0].origin.y);
+});
+
+test("앞뒤 서랍의 원점·상대좌표는 왕복 변환되고 서버 모델에 문별 정합값이 포함된다", () => {
+  const cabinet = { id: "CABINET", dimensions: { width: 1.2, height: 2.4, depth: 1.2 },
+    enclosure: { enabled: true, doorCount: 3, doorLayout: "STACKED", bodyLayout: "BACK_TO_BACK", rear: { doorCount: 1 } } };
+  for (const side of ["FRONT", "REAR"]) {
+    const slot = getEnclosureScanSlot(cabinet, 0, side);
+    const local = { x: .1, y: .1, z: -.1 };
+    const model = scanSlotToModel(local, slot);
+    almostEqual(Object.values(modelToScanSlot(model, slot)), Object.values(local));
+    assert.equal(scanSlotForModelPosition(cabinet, model)?.id, slot.id);
+    almostEqual(resultPositionToModel({ equipmentId: cabinet.id, coordinateSpace: "SCAN_SLOT", scanSlot: { side, index: 0 },
+      position: Object.values(local) }, cabinet), Object.values(model));
+  }
+  const binding = normalizeAssetBinding({ id: "SCAN-2", equipmentId: cabinet.id, assetId: "A2", assetType: "PLY",
+    scanSlot: { side: "FRONT", index: 1 }, alignmentTransform: { position: { x: .05, y: .02, z: -.03 } } });
+  assert.equal(binding.alignmentTransform.originMode, "DOOR_CORNER");
+  const reference = modelReference(cabinet, [binding]).scanAssets[0];
+  assert.deepEqual(reference.scanSlot, { side: "FRONT", index: 1 });
+  assert.deepEqual(reference.alignment.position, { x: .05, y: .02, z: -.03 });
+  assert.equal(reference.slotFrame.id, "CABINET:FRONT:1");
+});
+
+test("서랍 안 일반 관측 영역만 서랍 상대좌표를 전달하고 비전 영역은 기존 이미지 좌표를 유지한다", () => {
+  const cabinet = { id: "CABINET", dimensions: { width: 1.2, height: 2.4, depth: 1.2 },
+    enclosure: { enabled: true, doorCount: 3, doorLayout: "STACKED" } };
+  const slot = getEnclosureScanSlot(cabinet, 1);
+  const center = scanSlotToModel({ x: .1, y: .1, z: -.1 }, slot);
+  const surface = { type: "SPHERE", coordinateSpace: "EQUIPMENT_LOCAL", center: Object.values(center), radius: .02 };
+  const general = roiToReferencePayload({ equipmentId: cabinet.id, surface }, cabinet);
+  assert.deepEqual(general.scanSlot, { side: "FRONT", index: 1 });
+  almostEqual(general.slotSurface.center, [.1, .1, -.1]);
+  assert.deepEqual(general.surface, surface);
+  const vision = roiToReferencePayload({ equipmentId: cabinet.id, surface, imageBinding: { sensorId: "VISION" } }, cabinet);
+  assert.equal(vision.scanSlot, undefined);
+  assert.deepEqual(vision.surface, surface);
 });

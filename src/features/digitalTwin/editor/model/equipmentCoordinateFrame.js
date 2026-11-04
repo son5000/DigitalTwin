@@ -1,4 +1,5 @@
 import { Euler, Quaternion, Vector3 } from "three";
+import { getEnclosureDoorEntries, getEnclosureScanSlot } from "./equipmentEnclosure.js";
 
 const vector = (value) => Array.isArray(value) ? new Vector3(...value) : new Vector3(value?.x ?? 0, value?.y ?? 0, value?.z ?? 0);
 const plain = (value) => ({ x: value.x, y: value.y, z: value.z });
@@ -24,6 +25,38 @@ export function modelToReference(position, frame) {
 
 export function referenceToModel(position, frame) {
   return plain(vector(position).applyQuaternion(orientation(frame)).add(vector(frame?.origin)));
+}
+
+// Each compartment has its own lower-left, front-most origin. +X is right
+// when facing its door; +Y is up; -Z points from the door into the cabinet.
+export function modelToScanSlot(position, slot) {
+  const point = vector(position).sub(vector(slot.origin));
+  return { x: point.x * (slot.side === "REAR" ? -1 : 1), y: point.y,
+    z: point.z * (slot.side === "REAR" ? -1 : 1) };
+}
+
+export function scanSlotToModel(position, slot) {
+  const point = vector(position);
+  const direction = slot.side === "REAR" ? -1 : 1;
+  return { x: slot.origin.x + point.x * direction, y: slot.origin.y + point.y,
+    z: slot.origin.z + point.z * direction };
+}
+
+export function scanSlotForModelPosition(equipment, position) {
+  const tolerance = .002;
+  const matches = getEnclosureDoorEntries(equipment).map(({ side, index }) => getEnclosureScanSlot(equipment, index, side))
+    .filter(Boolean).map((slot) => ({ slot, local: modelToScanSlot(position, slot) }))
+    .filter(({ slot, local }) => local.x >= -tolerance && local.x <= slot.dimensions.width + tolerance
+      && local.y >= -tolerance && local.y <= slot.dimensions.height + tolerance
+      && local.z <= tolerance && local.z >= -slot.dimensions.depth - tolerance);
+  // Shared front/rear spaces can overlap. Attribute a point to the nearer door.
+  return matches.sort((a, b) => b.local.z - a.local.z)[0]?.slot ?? null;
+}
+
+export function scanSlotFrame(equipment, slot) {
+  return { id: `${equipment.id}:${slot.id}`, equipmentId: equipment.id, side: slot.side, index: slot.index,
+    origin: [slot.origin.x, slot.origin.y, slot.origin.z], rotationY: slot.rotationY,
+    dimensions: slot.dimensions, unit: "m", axes: { right: "+X", up: "+Y", inward: "-Z" } };
 }
 
 export function modelRotationToReference(rotation, frame) {
@@ -73,6 +106,12 @@ export function mapSurfaceCoordinates(surface, frame, toReference = true) {
 }
 
 export function resultPositionToModel(record, equipment) {
+  if (record.coordinateSpace === "SCAN_SLOT") {
+    if (record.equipmentId !== equipment.id) throw new Error("다른 설비의 서랍 좌표입니다.");
+    const slot = getEnclosureScanSlot(equipment, record.scanSlot?.index, record.scanSlot?.side);
+    if (!slot || !Array.isArray(record.position) || record.position.length !== 3 || !record.position.every(Number.isFinite)) throw new Error("수신한 서랍 기준좌표를 확인하세요.");
+    return Object.values(scanSlotToModel(record.position, slot));
+  }
   const frame = getEquipmentCoordinateFrame(equipment);
   if (!Array.isArray(record.position) || record.position.length !== 3 || !record.position.every(Number.isFinite)) throw new Error("수신 좌표를 확인하세요.");
   if (!record.coordinateFrame) {

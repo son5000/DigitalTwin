@@ -1,9 +1,10 @@
-import { getSensorMountPose } from "./equipmentEnclosure.js";
+import { getEnclosureScanSlot, getSensorMountPose } from "./equipmentEnclosure.js";
 import { getSensorCapabilities } from "./equipmentDetailModel.js";
-import { getEquipmentCoordinateFrame, sensorReferencePose, validateCoordinateFrame } from "./equipmentCoordinateFrame.js";
+import { getEquipmentCoordinateFrame, scanSlotFrame, sensorReferencePose, validateCoordinateFrame } from "./equipmentCoordinateFrame.js";
 import { normalizeSensorProjection } from "./sensorImageTransform.js";
 import { imageAnalysisTransform } from "./imageAnalysisContract.js";
 import { resolveImageSurface } from "./textureSurfaceMapping.js";
+import { equipmentScanBindings } from "./equipmentScanBindings.js";
 
 export const MONITORING_MODES = { MODEL: "모델", VISION: "비전", THERMAL: "열화상" };
 
@@ -16,13 +17,18 @@ export function mediaUrl(value, demo = false) {
 }
 
 export function modelReference(equipment, assets = []) {
-  const asset = assets.filter((item) => item.equipmentId === equipment?.id && ["OBJ", "PLY"].includes(item.assetType)).at(-1);
+  const scans = equipmentScanBindings(equipment, assets);
+  const asset = scans.at(-1);
   const identity = { equipmentId: equipment?.id, templateId: equipment?.shapeTemplateId, customAssetId: equipment?.customAssetId,
-    dimensions: equipment?.dimensions, ...(equipment?.enclosure ? { enclosure: equipment.enclosure } : {}), parts: equipment?.parts, assetId: asset?.assetId ?? null, alignment: asset?.alignmentTransform ?? null,
+    dimensions: equipment?.dimensions, ...(equipment?.enclosure ? { enclosure: equipment.enclosure } : {}), parts: equipment?.parts,
+    scans: scans.map((scan) => ({ assetId: scan.assetId, scanSlot: scan.scanSlot,
+      slotFrame: scan.scanSlot ? scanSlotFrame(equipment, getEnclosureScanSlot(equipment, scan.scanSlot.index, scan.scanSlot.side)) : null,
+      alignment: scan.alignmentTransform,
+      sourceType: scan.sourceType, sourceKey: scan.sourceKey, assetType: scan.assetType })), assetId: asset?.assetId ?? null, alignment: asset?.alignmentTransform ?? null,
     ...(asset?.includeProxy ? { includeProxy: true } : {}), sourceType: asset?.sourceType, sourceKey: asset?.sourceKey, assetType: asset?.assetType };
   let hash = 2166136261;
   for (const char of JSON.stringify(identity)) { hash ^= char.charCodeAt(0); hash = Math.imul(hash, 16777619); }
-  return { assetId: asset?.assetId ?? null, version: `geometry-${(hash >>> 0).toString(16)}` };
+  return { assetId: asset?.assetId ?? null, scanAssets: identity.scans, version: `geometry-${(hash >>> 0).toString(16)}` };
 }
 
 export function calibrationPayload(projectId, equipment, sensor, assets = []) {

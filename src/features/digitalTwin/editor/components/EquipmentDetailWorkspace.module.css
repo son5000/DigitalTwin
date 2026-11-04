@@ -26,6 +26,11 @@
 }
 
 .viewer { position: relative; overflow: hidden; background: #081016; }
+.initialViewToolbar { position: absolute; z-index: 8; top: calc(var(--editor-overlay-gap, 8px) + 44px); right: var(--editor-overlay-right-safe, 12px); display: flex; align-items: center; gap: 8px; max-width: calc(100% - var(--editor-overlay-left-safe, 74px) - 12px); padding: 7px; border: 1px solid var(--color-border-strong); border-radius: 7px; color: var(--color-heading); background: var(--color-surface-overlay); box-shadow: var(--shadow-panel); font-size: 12px; }
+.initialViewToolbar span { padding: 0 7px; white-space: nowrap; }
+.initialViewToolbar button { min-height: 32px; padding: 5px 11px; border: 1px solid var(--color-border); border-radius: 5px; color: var(--color-heading); background: var(--color-input); white-space: nowrap; cursor: pointer; }
+.initialViewToolbar button.initialViewConfirm { border-color: var(--color-accent); background: var(--color-accent); color: #fff; font-weight: 600; }
+.initialViewToolbar button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 .equipmentList { display: flex; flex-direction: column; gap: 10px; min-height: 0; padding: 16px 12px; background: var(--color-surface); border-right: 1px solid var(--color-border); color: var(--color-heading); }
 .equipmentList header, .equipmentNavigation { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
 .equipmentList header span, .equipmentNavigation span { color: var(--color-text-muted); }
@@ -57,6 +62,8 @@
 }
 @media (max-width: 760px), (orientation: portrait) {
     .setupProgress { top: 8px; left: 8px; right: 8px; }
+    .initialViewToolbar { top: 58px; left: 8px; right: 8px; max-width: none; flex-wrap: wrap; }
+    .initialViewToolbar span { flex: 1 1 100%; }
     .workspace .equipmentList { top: 224px; left: 8px; bottom: 84px; width: 240px; }
   .framePreview { top: 224px; left: 8px; width: 220px; }
 }

@@ -1,7 +1,7 @@
 import EnclosureDoorControls from "../components/EnclosureDoorControls";
 import ModelLayerControls from "../components/ModelLayerControls";
 import { applyModelLayerAppearance } from "./modelLayerAppearance";
-import { enclosureDoorOverride, withDoorOverrides } from "../model/equipmentEnclosure";
+import { enclosureDoorOverride, getEnclosureScanSlot, withDoorOverrides } from "../model/equipmentEnclosure";
 import { applyEquipmentEnvironment } from "./equipmentEnvironment";
 import { normalizeScanLighting } from "../model/viewerPreset";
 import { useEffect, useRef, useState } from "react";
@@ -196,37 +196,48 @@ export function applyAssetAlignment(runtime, binding, equipment) {
   const object = runtime.actualObject;
   object.position.set(0, 0, 0);
   object.rotation.set(0, 0, 0);
-  object.scale.setScalar(unitScale(alignment.unit));
+  const sourceUnit = unitScale(alignment.unit);
+  object.scale.setScalar(sourceUnit);
   const bounds = getAssetLocalBounds(object);
   if (bounds.isEmpty()) return false;
   const center = bounds.getCenter(new THREE.Vector3());
   const size = bounds.getSize(new THREE.Vector3());
   if (![center.x, center.y, center.z, size.x, size.y, size.z, bounds.min.y].every(Number.isFinite)) return false;
-  if (alignment.autoCentered) {
+  const slot = binding.scanSlot ? getEnclosureScanSlot(equipment, binding.scanSlot.index, binding.scanSlot.side) : null;
+  if (binding.scanSlot && !slot) return false;
+  if (slot && alignment.originMode === "DOOR_CORNER") {
+    // getAssetLocalBounds already includes object.scale (the source unit).
+    object.position.set(-bounds.min.x, -bounds.min.y, -bounds.max.z);
+  } else if (alignment.autoCentered) {
     object.position.x -= center.x;
     object.position.z -= center.z;
     object.position.y -= alignment.floorAligned ? bounds.min.y : center.y;
   }
-  const proxyDimensions = { ...(equipment?.dimensions ?? { width: 1, height: 2, depth: 0.8 }), ...alignment.targetDimensions };
-  const rotatedSize = new THREE.Box3(new THREE.Vector3(), size.clone()).applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(alignment.rotation.x, alignment.rotation.y, alignment.rotation.z))).getSize(new THREE.Vector3());
+  const proxyDimensions = { ...(slot?.dimensions ?? equipment?.dimensions ?? { width: 1, height: 2, depth: 0.8 }), ...alignment.targetDimensions };
+  const measuredSize = size;
+  const rotatedSize = new THREE.Box3(new THREE.Vector3(), measuredSize.clone()).applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(alignment.rotation.x, alignment.rotation.y, alignment.rotation.z))).getSize(new THREE.Vector3());
   const axis = { WIDTH: "x", HEIGHT: "y", DEPTH: "z" }[alignment.fitDimension];
   const targetSize = { x: proxyDimensions.width, y: proxyDimensions.height, z: proxyDimensions.depth };
   const fitScale = alignment.fitToProxy && axis ? targetSize[axis] / Math.max(rotatedSize[axis], 0.000001) : alignment.fitToProxy
     ? Math.min(
-      proxyDimensions.width / Math.max(size.x, 0.001),
-      proxyDimensions.height / Math.max(size.y, 0.001),
-      proxyDimensions.depth / Math.max(size.z, 0.001),
+      proxyDimensions.width / Math.max(measuredSize.x, 0.001),
+      proxyDimensions.height / Math.max(measuredSize.y, 0.001),
+      proxyDimensions.depth / Math.max(measuredSize.z, 0.001),
     )
     : 1;
-  runtime.aligned.position.set(alignment.position.x, alignment.position.y, alignment.position.z);
-  runtime.aligned.rotation.set(alignment.rotation.x, alignment.rotation.y, alignment.rotation.z);
+  const offset = new THREE.Vector3(alignment.position.x, alignment.position.y, alignment.position.z);
+  const slotRotation = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), slot?.rotationY ?? 0);
+  if (slot) offset.applyQuaternion(slotRotation).add(new THREE.Vector3(slot.origin.x, slot.origin.y, slot.origin.z));
+  runtime.aligned.position.copy(offset);
+  runtime.aligned.quaternion.copy(slotRotation).multiply(new THREE.Quaternion().setFromEuler(
+    new THREE.Euler(alignment.rotation.x, alignment.rotation.y, alignment.rotation.z)));
   runtime.aligned.scale.set(alignment.scale.x * fitScale, alignment.scale.y * fitScale, alignment.scale.z * fitScale);
   if (alignment.fitToProxy && alignment.fitDimension === "EXACT") {
     // Mesh-local dimensions: rotation changes orientation, never the requested size.
     runtime.aligned.scale.set(
-      alignment.scale.x * proxyDimensions.width / Math.max(size.x, 0.000001),
-      alignment.scale.y * proxyDimensions.height / Math.max(size.y, 0.000001),
-      alignment.scale.z * proxyDimensions.depth / Math.max(size.z, 0.000001),
+      alignment.scale.x * proxyDimensions.width / Math.max(measuredSize.x, 0.000001),
+      alignment.scale.y * proxyDimensions.height / Math.max(measuredSize.y, 0.000001),
+      alignment.scale.z * proxyDimensions.depth / Math.max(measuredSize.z, 0.000001),
     );
   }
   runtime.aligned.updateMatrixWorld(true);

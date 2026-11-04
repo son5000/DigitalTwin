@@ -23,11 +23,11 @@ export default function ObservationCreationFields({ equipment, sensors, onPlace 
     <ObservationMetricChoices values={metrics} onChange={setMetrics} />
     {!!metrics.length && <>
       <label className={styles.field}><span>2. 영역 형태</span><select value={image ? "PLANE" : type} disabled={image} onChange={(e)=>setType(e.target.value)}>
-        <option value="SPHERE">구체 · 3차원 범위</option><option value="PLANE">평면 · 사각 영역</option>
+        <option value="SPHERE">입체 범위</option><option value="PLANE">평면 사각형</option>
       </select></label>
-      <p className={styles.help}>{textureKind ? `${image ? "비전" : "열화상"} 텍스처가 표시된 부분을 클릭하면 해당 카메라가 자동으로 연결됩니다.` : "설비 기준 위치로 관측합니다. 초음파 센서를 개별 연결하지 않습니다."}</p>
-      {!available && <p className={styles.requirements}>3단계에서 {image ? "비전" : "열화상"} 카메라의 텍스처를 먼저 설정하세요.</p>}
-      <button type="button" className={styles.primaryAction} disabled={!available} onClick={place}>{textureKind ? `${image ? "비전" : "열화상"} 텍스처 위에 영역 지정` : "모델 위에 영역 지정"}</button>
+      <p className={styles.help}>{textureKind ? `${image ? "카메라 영상" : "열화상 영상"}이 보이는 부분을 선택하면 촬영한 카메라가 자동으로 연결됩니다.` : "선택한 위치에서 수신되는 값을 확인합니다. 센서를 따로 고를 필요는 없습니다."}</p>
+      {!available && <p className={styles.requirements}>3단계에서 {image ? "비전" : "열화상"} 카메라 영상을 먼저 설정하세요.</p>}
+      <button type="button" className={styles.primaryAction} disabled={!available} onClick={place}>{textureKind ? `${image ? "카메라" : "열화상"} 영상에서 영역 지정` : "설비 위에 영역 지정"}</button>
     </>}
   </fieldset>;
 }

@@ -57,3 +57,13 @@
 UV 열화상·비전 텍스처는 기존 UV 매핑 계약을 유지한다. 신호 발생 위치와 강도 계산은 백엔드 담당이다.
 
 프론트 직렬화·역변환을 구현한 계약이며, 실제 서버의 v2 수용·저장·응답 처리는 별도 연동 확인이 필요하다. DB 마이그레이션은 포함하지 않는다.
+
+## 문별 내부 스캔과 서랍 기준좌표
+
+- 여러 층의 문은 `enclosure.doorRatios`와 캐비넷 `height`로 각각의 **실제 내부 높이**를 저장한다. 한 층의 높이를 바꾸면 다른 층 내부 높이를 유지하며 캐비넷 높이가 조정된다.
+- 문별 파일은 `equipmentAssetBindings[].scanSlot: {side: "FRONT"|"REAR", index}`로 연결한다. `alignmentTransform`의 `position`·`rotation`·`scale`·`targetDimensions`는 해당 문 기준 스캔의 정합값이다. 프로젝트 JSON/ZIP에 이 값과 외관 구성이 함께 저장된다.
+- `model.scanAssets[]`는 각 파일의 `assetId`, `scanSlot`, `slotFrame`, `alignment`, 소스 식별값을 제공한다. `slotFrame.id`는 `equipmentId:side:index`, `origin`은 캐비넷 모델 좌표의 해당 공간 **왼쪽·바닥·정면 모서리**, `rotationY`는 앞/뒤 방향, `dimensions`는 내부 사용 가능 크기(m)이다.
+- 슬롯 상대좌표는 문을 정면에서 바라본 기준 `+X` 오른쪽, `+Y` 위, `-Z` 안쪽이다. `slotFrame`과 `alignment`를 함께 사용해 스캔의 실제 모델 위치를 재현한다. 서랍 높이 또는 스캔 정합이 바뀌면 `model.version`도 바뀐다.
+- 내부 일반 ROI의 저장·음원 요청에는 기존 설비 좌표의 `surface`와 함께 `scanSlot`, `slotFrame`, `slotSurface`가 붙는다. `slotSurface.center`/`vertices`는 서랍 상대좌표다. 3D 표면의 단일 지점 음원 요청에는 `scanSlot`, `slotFrame`, `slotPosition`이 붙는다. ROI가 둘 이상의 서랍에 걸치면 슬롯 좌표를 붙이지 않는다.
+- 서버가 서랍 기준 초음파 위치를 반환할 때는 `equipmentId`, `modelVersion`, `coordinateSpace: "SCAN_SLOT"`, `scanSlot`, `position: [x,y,z]`를 함께 보낸다. 프론트는 이 좌표를 캐비넷 모델 좌표로 변환해 표시한다. 열화상 픽셀/텍스쳐 응답은 기존 카메라·텍스쳐 계약을 유지하며, 위치 기반 핫스팟만 동일한 슬롯 좌표 계약을 사용할 수 있다.
+- 캐비넷 외관에 입히는 비전 이미지는 기존 `imageBinding`·`imageAnalysis`의 원본 이미지 좌표와 보정값을 그대로 사용한다. 비전 ROI에 슬롯 좌표를 자동으로 붙이지 않는다.

@@ -1,0 +1,19 @@
+.profile { display: grid; gap: 10px; padding: 12px 0; border-top: 1px solid var(--portal-border, #41505e); container-type: inline-size; }
+.profile > label, .gaugeGrid label, .band label { display: grid; gap: 5px; font-size: 12px; color: var(--portal-muted, #a9b8c4); }
+.profile input, .profile select { box-sizing: border-box; min-width: 0; width: 100%; min-height: 34px; padding: 6px 8px; border: 1px solid var(--portal-border, #41505e); border-radius: 4px; color: var(--portal-text, #f1f5f8); background: var(--portal-surface, #263844); font: inherit; }
+.profile button { justify-self: start; min-height: 32px; }
+.sectionTitle { display: grid; gap: 3px; }
+.sectionTitle strong { font-size: 13px; }
+.sectionTitle small, .note { margin: 0; color: var(--portal-muted, #a9b8c4); font-size: 12px; line-height: 1.45; }
+.gaugeGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.rule, .band, .colorRow { display: grid; gap: 6px; align-items: end; }
+.rule { grid-template-columns: minmax(90px, 1.5fr) minmax(60px, .7fr) minmax(64px, .7fr) minmax(60px, .7fr) auto; }
+.band { grid-template-columns: minmax(80px, 1.2fr) minmax(70px, 1fr) minmax(70px, 1fr) auto; }
+.colorRow { grid-template-columns: 18px minmax(45px, .6fr) minmax(90px, 1fr) minmax(64px, .7fr) auto; }
+.colorRow strong { font-size: 12px; }
+.swatch { width: 16px; height: 16px; border: 1px solid #7c8994; border-radius: 50%; }
+@container (max-width: 480px) {
+  .rule, .band, .colorRow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rule > select:first-child, .band > input:first-child { grid-column: 1 / -1; }
+  .colorRow .swatch { align-self: center; }
+}

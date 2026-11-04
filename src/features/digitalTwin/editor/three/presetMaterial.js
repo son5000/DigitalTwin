@@ -183,7 +183,7 @@ export function createPresetMaterial(sourceAppearance, overrides = {}) {
     emissiveIntensity: appearance.emissiveIntensity ?? 0,
     transparent: opacity < 1 || transmission > 0,
     opacity,
-    depthWrite: opacity >= 0.96 && transmission <= 0.05,
+    depthWrite: opacity === 1 && transmission === 0,
     side: THREE.DoubleSide,
   });
   material.userData.sharedMaterialKey = key;

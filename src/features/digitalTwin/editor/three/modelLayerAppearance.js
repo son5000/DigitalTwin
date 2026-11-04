@@ -25,7 +25,7 @@ export function applyModelLayerAppearance(root, settings, defaultVisible = true)
       const transparent = base.transparent || opacity < 1;
       if (material.transparent !== transparent) material.needsUpdate = true;
       material.opacity = opacity; material.transparent = transparent;
-      material.depthWrite = base.depthWrite && opacity >= .99;
+      material.depthWrite = opacity === 1 && (base.depthWrite || (base.opacity < 1 && (material.transmission ?? 0) === 0));
     }
   });
 }

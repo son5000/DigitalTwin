@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { equipmentScanBindings } from "../model/equipmentScanBindings.js";
 import { SCENE_THEMES } from "../constants/sceneThemes";
 import { createFloorDisplayOffsets, resolveFloorOwnerId } from "../model/floorDisplay";
 import { getBuildingFloorFootprintRegions } from "../utils/buildingFootprint";
@@ -24,7 +25,8 @@ export function updateDetailedModelVisibility(entry, settings, runtime) {
   const camera = runtime.activeCamera ?? runtime.camera;
   if (!camera) return;
   entry.detailedModels.forEach((detail) => {
-    const { object, equipmentId, fallback, aligned, binding } = detail;
+    const { object, equipmentId, fallback, aligned } = detail;
+    const bindings = detail.bindings ?? (detail.binding ? [detail.binding] : []);
     const layers = settings.modelLayers?.[equipmentId];
     const detailed = settings.equipmentId === equipmentId && resolveEquipmentRepresentation({
       preset: entry.data.viewerPreset, equipmentId, hasDetailedModel: true,
@@ -32,7 +34,7 @@ export function updateDetailedModelVisibility(entry, settings, runtime) {
       distance: camera.position.distanceTo(object.getWorldPosition(new THREE.Vector3())),
     }) === "DETAILED";
     if (aligned) aligned.visible = layers?.ACTUAL?.visible ?? detailed;
-    fallback.forEach((child) => { child.visible = layers?.PROXY?.visible ?? (aligned ? !detailed || Boolean(binding?.includeProxy) : child.visible); });
+    fallback.forEach((child) => { child.visible = layers?.PROXY?.visible ?? (aligned ? !detailed || bindings.some((binding) => binding.includeProxy) : child.visible); });
     if (detail.layerSource !== layers || detail.layerAligned !== aligned) {
       detail.layerSource = layers; detail.layerAligned = aligned;
       applyModelLayerAppearance(aligned, layers?.ACTUAL, detailed);
@@ -63,22 +65,30 @@ export function loadSelectedDetail(entry, equipmentId, ready) {
     }
     if (!ready || detail.attempted) return;
     detail.attempted = true;
-    detail.fallback.forEach((child) => { child.visible = false; });
+    const scanBindings = detail.bindings ?? (detail.binding ? [detail.binding] : []);
+    detail.fallback.forEach((child) => { child.visible = scanBindings.some((binding) => binding.includeProxy); });
     const controller = new AbortController();
     detail.controller = controller;
     setScanLoadState(equipmentId, "모델을 불러오는 중입니다…");
     void import("./EquipmentAssetViewer").then(async ({ loadBindingObject, applyAssetAlignment }) => {
       if (controller.signal.aborted) return;
-      const loaded = await loadBindingObject(detail.binding, { signal: controller.signal });
-      if (controller.signal.aborted || entry.disposed) { disposeObject3D(loaded.object); loaded.revoke(); return; }
-      const aligned = new THREE.Group();
-      aligned.add(loaded.object);
-      if (!applyAssetAlignment({ actualObject: loaded.object, aligned }, detail.binding, detail.equipment)) {
-        disposeObject3D(aligned); loaded.revoke(); throw new Error("EMPTY_MODEL");
+      const results = await Promise.allSettled(scanBindings.map((binding) => loadBindingObject(binding, { signal: controller.signal })));
+      if (controller.signal.aborted || entry.disposed) {
+        results.forEach((result) => { if (result.status === "fulfilled") { disposeObject3D(result.value.object); result.value.revoke(); } }); return;
       }
-      aligned.userData.releaseAssetSources = loaded.revoke;
-      detail.object.add(aligned);
-      detail.aligned = aligned;
+      const group = new THREE.Group(), releases = [];
+      results.forEach((result, index) => {
+        if (result.status !== "fulfilled") return;
+        const aligned = new THREE.Group(); aligned.add(result.value.object);
+        if (!applyAssetAlignment({ actualObject: result.value.object, aligned }, scanBindings[index], detail.equipment)) {
+          disposeObject3D(aligned); result.value.revoke(); return;
+        }
+        group.add(aligned); releases.push(result.value.revoke);
+      });
+      if (!group.children.length) throw new Error("EMPTY_MODEL");
+      group.userData.releaseAssetSources = () => releases.forEach((release) => release());
+      detail.object.add(group);
+      detail.aligned = group;
       setScanLoadState(equipmentId, "스캔 모델 준비 완료");
     }).catch((error) => {
       if (!controller.signal.aborted) detail.fallback.forEach((child) => { child.visible = true; });
@@ -131,7 +141,11 @@ function createInterior(data, theme, labelRoot, labelClass, onSelectFloor) {
   const labels = new Map();
   const options = { selected: false, theme, sceneTheme: SCENE_THEMES[theme], enableLod: false };
   const entry = { data, theme, root, groups, labels, materials: [], localBounds: new Map(), equipmentTargets: new Map(), detailedModels: [], disposed: false };
-  const bindings = new Map((data.assetBindings ?? []).filter((binding) => ["OBJ", "PLY"].includes(binding.assetType)).map((binding) => [binding.equipmentId, binding]));
+  const bindings = new Map();
+  (data.assetBindings ?? []).forEach((binding) => {
+    if (!["OBJ", "PLY"].includes(binding.assetType)) return;
+    bindings.set(binding.equipmentId, [...(bindings.get(binding.equipmentId) ?? []), binding]);
+  });
   const renderOptions = { theme, viewerTranslucent: true, enableLod: false };
   function addEquipment(parent, equipment, floorId) {
     equipment.forEach((item) => entry.equipmentTargets.set(item.id, { item, parent, floorId }));
@@ -140,14 +154,16 @@ function createInterior(data, theme, labelRoot, labelClass, onSelectFloor) {
       position: { x: 0, y: 0, z: 0, ...item.position }, rotation: { x: 0, y: 0, z: 0, ...item.rotation },
       appearance: { color: "#6f8f9d", opacity: 1, ...item.appearance }, visible: item.visible !== false,
     }, baseY: 0 }));
-    createEquipmentRenderObjects(entries.filter(({ equipment: item }) => !bindings.has(item.id)), renderOptions).forEach((object) => parent.add(object));
-    entries.filter(({ equipment: item }) => bindings.has(item.id)).forEach((record) => {
-      if (bindings.get(record.equipment.id)?.includeProxy && !record.equipment.enclosure?.enabled) record.equipment.appearance.opacity = 0.28;
+    const activeBindingsByEquipment = new Map(entries.map(({ equipment: item }) => [item.id, equipmentScanBindings(item, bindings.get(item.id))]));
+    createEquipmentRenderObjects(entries.filter(({ equipment: item }) => !activeBindingsByEquipment.get(item.id).length), renderOptions).forEach((object) => parent.add(object));
+    entries.filter(({ equipment: item }) => activeBindingsByEquipment.get(item.id).length).forEach((record) => {
+      const activeBindings = activeBindingsByEquipment.get(record.equipment.id);
+      if (activeBindings.some((binding) => binding.includeProxy) && !record.equipment.enclosure?.enabled) record.equipment.appearance.opacity = 0.28;
       const [object] = createEquipmentRenderObjects([record], renderOptions);
       parent.add(object);
       const fallback = object.children.filter((child) => !child.userData.equipmentNameLabel);
       const detail = { object, equipmentId: record.equipment.id, fallback, aligned: null,
-        binding: bindings.get(record.equipment.id), equipment: record.equipment, controller: null, attempted: false };
+        bindings: activeBindings, equipment: record.equipment, controller: null, attempted: false };
       entry.detailedModels.push(detail);
     });
   }

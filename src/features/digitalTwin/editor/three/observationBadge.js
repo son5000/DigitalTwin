@@ -34,7 +34,7 @@ export function createObservationBadge(marker, point, index, status, theme = "da
   texture.generateMipmaps = false;
   texture.minFilter = THREE.LinearFilter;
   texture.magFilter = THREE.LinearFilter;
-  const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false, depthWrite: false, toneMapped: false, fog: false }));
+  const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: true, depthWrite: false, toneMapped: false, fog: false }));
   label.renderOrder = Infinity;
   label.frustumCulled = false;
   label.center.set(.5, 0);

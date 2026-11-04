@@ -95,6 +95,7 @@ export function generateCabinet({
       color: sceneTheme.cabinetPlate,
       transparent: true,
       opacity: 0.9,
+      depthWrite: false,
     }),
   );
   plate.position.set(0, headerBottom + headerHeight / 2, frontZ + 0.014);

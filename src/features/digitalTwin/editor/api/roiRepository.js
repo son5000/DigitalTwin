@@ -3,7 +3,7 @@ import { normalizeObservationPoint } from "../model/equipmentDetailModel.js";
 import { readProjects, updateProjectObservationPoints } from "../../../portal/projects/projectRepository.js";
 
 export const roiStorageKey = (projectId) => `digital-twin-rois-v1:${projectId}`;
-import { monitoringApiBase, monitoringRequest as request } from "./monitoringClient.js";
+import { monitoringApiBase, monitoringRequest as request, uploadRoiReferenceImage } from "./monitoringClient.js";
 export { monitoringApiBase, lookupSensor } from "./monitoringClient.js";
 
 export async function loadMonitoringProject(projectId, signal) {
@@ -33,8 +33,16 @@ export function createRoiRepository(projectId, storage = window.localStorage) {
     },
     async save(input, equipment) {
       const roi = validateRoi(input);
-      const payload = roiToReferencePayload(roi, equipment);
       if (shared) {
+        const measurements = await Promise.all((roi.measurements ?? []).map(async (item) => {
+          const frame = item.analysisConfig?.referenceFrame;
+          if (!frame?.textureAssetId || frame.serverAssetId) return item;
+          return { ...item, analysisConfig: { ...item.analysisConfig,
+            referenceFrame: await uploadRoiReferenceImage(projectId, roi.equipmentId, roi.id, item.id, frame) } };
+        }));
+        const withAssets = { ...roi, measurements,
+          ...(roi.observationPoint ? { observationPoint: { ...roi.observationPoint, measurements } } : {}) };
+        const payload = roiToReferencePayload(withAssets, equipment);
         const result = await request(`${path}/${encodeURIComponent(roi.id)}`, {
           method: "PUT", headers: { "If-Match": String(roi.revision) }, body: JSON.stringify(payload), signal: AbortSignal.timeout(15000),
         });

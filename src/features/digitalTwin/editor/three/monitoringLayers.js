@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { resultPositionToModel } from "../model/equipmentCoordinateFrame.js";
+import { getEnclosureScanSlot } from "../model/equipmentEnclosure.js";
 import { isFreshMeasurement, mediaUrl } from "../model/monitoringContract.js";
 import { createSensorHeatmap } from "./sensorHeatmap.js";
 
@@ -48,7 +49,10 @@ export function bindMonitoringLayers({ renderedEquipment, getOptions, getSensors
           let normal;
           if (Array.isArray(hotspot.normal) && hotspot.normal.length === 3 && hotspot.normal.every(Number.isFinite) && Math.hypot(...hotspot.normal) > 1e-6) {
             normal = new THREE.Vector3(...hotspot.normal);
-            if (hotspot.coordinateFrame) normal.applyEuler(new THREE.Euler(...hotspot.coordinateFrame.rotation));
+            if (hotspot.coordinateSpace === "SCAN_SLOT") {
+              const slot = getEnclosureScanSlot(options.equipment ?? entry.item, hotspot.scanSlot?.index, hotspot.scanSlot?.side);
+              if (slot) normal.applyAxisAngle(new THREE.Vector3(0, 1, 0), slot.rotationY);
+            } else if (hotspot.coordinateFrame) normal.applyEuler(new THREE.Euler(...hotspot.coordinateFrame.rotation));
           }
           const object = createSensorHeatmap(sensor?.heatmap ?? { radius: hotspot.radius }, position, normal);
           entry.object.add(object); overlays.push(object);

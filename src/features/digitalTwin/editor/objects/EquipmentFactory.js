@@ -129,6 +129,7 @@ export function createEquipmentObject(
       metalness: appearance.metalness ?? 0.1,
       transparent: (appearance.opacity ?? 1) < 1,
       opacity: appearance.opacity ?? 1,
+      depthWrite: (appearance.opacity ?? 1) === 1,
     });
     const lowProxy = new THREE.Mesh(
       new THREE.BoxGeometry(equipment.dimensions.width, equipment.dimensions.height, equipment.dimensions.depth),

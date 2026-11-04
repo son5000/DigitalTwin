@@ -4,22 +4,41 @@ import EquipmentEnvironmentFields from "./EquipmentEnvironmentFields";
 import NumericField from "./NumericField";
 import EquipmentCoordinateFrameFields from "./EquipmentCoordinateFrameFields";
 import { DEFAULT_SCAN_LIGHTING, normalizeScanLighting } from "../model/viewerPreset";
+import { getEnclosure, getEnclosureDoorEntries, getEnclosureScanSlot } from "../model/equipmentEnclosure.js";
+import { scanBindingForDoor } from "../model/equipmentScanBindings.js";
 import styles from "./MonitoringSettingsPanel.module.css";
 
-export default function EquipmentModelSetupPanel({ equipment, binding, onUpdateEquipment, onUpdateAsset, viewerPreset, onViewerPresetChange, onEquipmentRepresentationChange, cameraController }) {
+export default function EquipmentModelSetupPanel({ equipment, binding, bindings = [], onUpdateEquipment, onUpdateAsset, onRemoveAsset, onUploadAssetFiles, viewerPreset, onViewerPresetChange, onEquipmentRepresentationChange, cameraController, onStartInitialViewFraming }) {
   const [notice, setNotice] = useState("");
   const [cameraInfo, setCameraInfo] = useState(null);
-  const alignment = binding?.alignmentTransform;
+  const [selectedBindingId, setSelectedBindingId] = useState(null);
+  const [uploadingSlot, setUploadingSlot] = useState("");
+  const scans = bindings.filter((item) => ["OBJ", "PLY"].includes(item.assetType));
+  const activeBinding = scans.find((item) => item.id === selectedBindingId) ?? binding;
+  const alignment = activeBinding?.alignmentTransform;
+  const activeSlot = activeBinding?.scanSlot ? getEnclosureScanSlot(equipment, activeBinding.scanSlot.index, activeBinding.scanSlot.side) : null;
+  const defaultDimensions = activeSlot?.dimensions ?? equipment.dimensions;
+  const cabinet = getEnclosure(equipment);
+  const doors = cabinet.enabled ? getEnclosureDoorEntries(equipment) : [];
   const lighting = normalizeScanLighting(viewerPreset?.lighting);
   const savedView = viewerPreset?.equipmentViews?.[equipment.id];
-  function align(changes) { onUpdateAsset(binding.id, { alignmentTransform: changes }); }
+  function align(changes) { if (activeBinding) onUpdateAsset(activeBinding.id, { alignmentTransform: changes }); }
+  async function uploadScan(event, scanSlot) {
+    const files = [...(event.target.files ?? [])]; event.target.value = "";
+    if (!files.length) return;
+    const key = scanSlot ? `${scanSlot.side}:${scanSlot.index}` : "WHOLE";
+    setUploadingSlot(key);
+    try {
+      const id = await onUploadAssetFiles?.(equipment.id, files, { preserveExterior: true, scanSlot });
+      if (id) { setSelectedBindingId(id); setNotice("스캔을 연결했습니다. 아래에서 크기와 위치를 확인하세요."); }
+    } finally { setUploadingSlot(""); }
+  }
   function cameraAction(action, value) {
     const controller = cameraController?.current;
     if (!controller || controller.equipmentId !== equipment.id) { setNotice("모델 로딩을 완료한 뒤 설정하세요."); return; }
-    if (binding && !controller.ready()) { setNotice("스캔 모델 표시를 선택하고 로딩이 완료된 뒤 설정하세요."); return; }
+    if (!controller.ready()) { setNotice(activeBinding ? "스캔 모델 표시를 선택하고 로딩이 완료된 뒤 설정하세요." : "모델 로딩을 완료한 뒤 설정하세요."); return; }
     if (action === "save") {
-      onViewerPresetChange({ equipmentViews: { ...viewerPreset?.equipmentViews, [equipment.id]: controller.capture() } });
-      setNotice("최초 관제 화면을 지정했습니다. 프로젝트를 저장해 보관하세요.");
+      onStartInitialViewFraming?.(equipment.id);
     } else { controller[action]?.(value); setNotice(""); }
     setCameraInfo(controller.capture());
   }
@@ -27,7 +46,29 @@ export default function EquipmentModelSetupPanel({ equipment, binding, onUpdateE
 
     <section className={styles.modelSetupGroup} aria-labelledby="model-shape-settings-title">
     <h3 id="model-shape-settings-title">모델 구성·정합</h3>
-    <EquipmentEnclosureFields equipment={equipment} binding={binding} onUpdateEquipment={onUpdateEquipment} onUpdateAsset={onUpdateAsset} onEquipmentRepresentationChange={onEquipmentRepresentationChange} />
+    <EquipmentEnclosureFields equipment={equipment} binding={binding} bindings={scans} onUpdateEquipment={onUpdateEquipment} onUpdateAsset={onUpdateAsset} onEquipmentRepresentationChange={onEquipmentRepresentationChange} />
+    <fieldset className={styles.settingsGroup} data-setup-field="model-files"><legend>문별 내부 스캔</legend>
+      <p className={styles.help}>문마다 내부 스캔을 연결합니다. 기준좌표 (0, 0, 0)는 각 공간을 정면에서 바라볼 때 왼쪽 바닥의 가장 앞쪽입니다.</p>
+      {scans.filter((item) => !item.scanSlot).slice(-1).map((item) => <button type="button" key={item.id} aria-pressed={activeBinding?.id === item.id} onClick={() => setSelectedBindingId(item.id)}>설비 전체 · {item.name}{doors.length ? " (문별 스캔을 연결하면 대체)" : ""}</button>)}
+      {(doors.length ? doors : [{ side: null, index: null, id: "WHOLE", label: "설비 전체" }]).map((door) => {
+        const slot = door.side ? getEnclosureScanSlot(equipment, door.index, door.side) : null;
+        const item = door.side ? scanBindingForDoor(scans, equipment.id, door.side, door.index) : scans.filter((entry) => !entry.scanSlot).at(-1);
+        const key = door.side ? `${door.side}:${door.index}` : "WHOLE";
+        return <div className={styles.settingsGroup} key={door.id} data-setup-field={`scan-slot-${key}`}>
+          <strong>{door.label}</strong>
+          {slot && <p className={styles.help}>서랍 기준 (0, 0, 0) · 캐비넷 모델 좌표 X {slot.origin.x.toFixed(2)} / Y {slot.origin.y.toFixed(2)} / Z {slot.origin.z.toFixed(2)} m</p>}
+          {door.side && !slot && <p className={styles.help} role="alert">문에 비해 공간이 좁습니다. 외관 크기 또는 문 크기를 늘리세요.</p>}
+          <p className={styles.help}>{item ? item.name : "연결된 스캔 없음"}</p>
+          <div className={styles.actionRow}>{item && <><button type="button" aria-pressed={activeBinding?.id === item.id} onClick={() => setSelectedBindingId(item.id)}>크기·위치 편집</button><button type="button" onClick={() => { onRemoveAsset?.(item.id); if (selectedBindingId === item.id) setSelectedBindingId(null); }}>연결 해제</button></>}
+            <label className={styles.uploadButton}>{uploadingSlot === key ? "등록 중…" : item ? "스캔 교체" : "스캔 등록"}
+              <input type="file" multiple accept=".obj,.ply,.mtl,.jpg,.jpeg,.png,.webp" disabled={Boolean(uploadingSlot) || Boolean(door.side && !slot)} onChange={(event) => void uploadScan(event, door.side ? { side: door.side, index: door.index } : null)} />
+            </label></div>
+        </div>;
+      })}
+      {scans.filter((item) => item.scanSlot && !getEnclosureScanSlot(equipment, item.scanSlot.index, item.scanSlot.side)).map((item) =>
+        <div className={styles.settingsGroup} key={item.id}><p role="alert">{item.name} · 연결한 문이 현재 외관에 없습니다.</p><button type="button" onClick={() => { onRemoveAsset?.(item.id); if (selectedBindingId === item.id) setSelectedBindingId(null); }}>연결 해제</button></div>)}
+    </fieldset>
+    {activeBinding?.scanSlot && <p className={styles.help}>편집 중인 파일: {activeBinding.name} · {activeBinding.scanSlot.side === "REAR" ? "뒷면" : "앞면"} {activeBinding.scanSlot.index + 1}번 문 내부</p>}
     <fieldset className={styles.settingsGroup}><legend>방향·정면</legend>
       <p className={styles.help}>설비가 똑바로 보이도록 방향을 맞추세요.</p>
       {alignment ? <>
@@ -39,7 +80,7 @@ export default function EquipmentModelSetupPanel({ equipment, binding, onUpdateE
     <fieldset className={styles.settingsGroup} data-setup-field="model-size"><legend>실제 크기·모델 배율 · 필수</legend>
       {alignment && <>
         <h4 className={styles.subsectionTitle}>업로드 모델 자체 크기</h4>
-        <div className={styles.axisGrid}>{[["width", "X축"], ["height", "Y축"], ["depth", "Z축"]].map(([key, label]) => <NumericField displayPrecision={2} key={key} label={label} unit="m" min={0.001} step={0.01} value={alignment.targetDimensions?.[key] ?? equipment.dimensions[key]} onChange={(value) => { if (value > 0) align({ targetDimensions: { ...equipment.dimensions, ...alignment.targetDimensions, [key]: value }, fitToProxy: true, fitDimension: "EXACT", scale: { x: 1, y: 1, z: 1 } }); }} />)}</div>
+        <div className={styles.axisGrid}>{[["width", "X축"], ["height", "Y축"], ["depth", "Z축"]].map(([key, label]) => <NumericField displayPrecision={2} key={key} label={label} unit="m" min={0.001} step={0.01} value={alignment.targetDimensions?.[key] ?? defaultDimensions[key]} onChange={(value) => { if (value > 0) align({ targetDimensions: { ...defaultDimensions, ...alignment.targetDimensions, [key]: value }, fitToProxy: true, fitDimension: "EXACT", scale: { x: 1, y: 1, z: 1 } }); }} />)}</div>
         <p className={styles.help}>회전하기 전 모델의 가로·높이·깊이를 입력하세요. 각 길이를 따로 바꾸면 모양이 늘어나거나 줄어듭니다.</p>
         <div className={styles.actionRow}><button type="button" onClick={() => align({ scale: Object.fromEntries(Object.entries(alignment.scale).map(([axis, value]) => [axis, value * 1.1])) })}>모델 10% 키우기</button><button type="button" onClick={() => align({ scale: Object.fromEntries(Object.entries(alignment.scale).map(([axis, value]) => [axis, value / 1.1])) })}>모델 10% 줄이기</button></div>
         <label className={styles.field}><span>크기 적용 방식</span><select value={alignment.fitToProxy ? alignment.fitDimension ?? "CONTAIN" : "SOURCE"} onChange={(event) => align({ fitToProxy: event.target.value !== "SOURCE", fitDimension: event.target.value === "SOURCE" ? "CONTAIN" : event.target.value, scale: { x: 1, y: 1, z: 1 } })}><option value="EXACT">메시 각 축 치수 직접 적용</option><option value="HEIGHT">실측 높이에 맞춤 · 비율 유지</option><option value="WIDTH">실측 가로에 맞춤 · 비율 유지</option><option value="DEPTH">실측 깊이에 맞춤 · 비율 유지</option><option value="CONTAIN">입력한 크기 안에 맞춤 · 비율 유지</option><option value="SOURCE">원본 단위·배율 사용</option></select></label>
@@ -51,9 +92,10 @@ export default function EquipmentModelSetupPanel({ equipment, binding, onUpdateE
     </fieldset>
     {alignment && <fieldset className={styles.settingsGroup} data-setup-field="model-alignment"><legend>위치·바닥 정렬 · 정합 확인 필수</legend>
       <h4 className={styles.subsectionTitle}>위치</h4>
+      {activeSlot && <p className={styles.help}>이 서랍의 왼쪽·바닥·정면 모서리가 (0, 0, 0)입니다. X는 오른쪽, Y는 위쪽, Z 음수는 서랍 안쪽입니다. 아래 위치는 이 기준점에서 스캔이 떨어진 거리입니다.</p>}
       <div className={styles.axisGrid}>{["x", "y", "z"].map((axis) => <NumericField displayPrecision={2} key={axis} label={`${axis.toUpperCase()}축`} unit="m" step={0.01} value={alignment.position[axis]} onChange={(value) => align({ position: { [axis]: value } })} />)}</div>
-      <div className={styles.checkGrid}>{[["autoCentered", "원본 중심 정렬"], ["floorAligned", "원본 바닥 정렬"], ["completed", "모델 정합 완료"]].map(([key, label]) => <label className={styles.check} key={key}><input type="checkbox" checked={alignment[key]} onChange={(event) => align({ [key]: event.target.checked })} />{label}</label>)}</div>
-      <button type="button" onClick={() => cameraAction("floor")}>현재 방향으로 바닥에 놓기</button>
+      <div className={styles.checkGrid}>{[...(!activeSlot ? [["autoCentered", "원본 중심 정렬"], ["floorAligned", "원본 바닥 정렬"]] : []), ["completed", "모델 정합 완료"]].map(([key, label]) => <label className={styles.check} key={key}><input type="checkbox" checked={alignment[key]} onChange={(event) => align({ [key]: event.target.checked })} />{label}</label>)}</div>
+        {!activeBinding?.scanSlot && <button type="button" onClick={() => cameraAction("floor")}>현재 방향으로 바닥에 놓기</button>}
     </fieldset>}
     <EquipmentCoordinateFrameFields key={`${equipment.id}:${equipment.metadata?.coordinateFrame?.version ?? 0}`} equipment={equipment} binding={binding} cameraController={cameraController} onUpdateEquipment={onUpdateEquipment} />
     </section>
@@ -76,11 +118,11 @@ export default function EquipmentModelSetupPanel({ equipment, binding, onUpdateE
     <section className={styles.modelSetupGroup} aria-labelledby="monitoring-camera-settings-title">
     <h3 id="monitoring-camera-settings-title">최초 관제 화면</h3>
     <fieldset className={styles.settingsGroup}><legend>카메라</legend>
-      <p className={styles.help}>원하는 각도와 배율로 맞춘 뒤 관제 시작 화면으로 저장하세요.</p>
+      <p className={styles.help}>원하는 각도와 배율로 맞춘 뒤 시점 지정을 시작하세요. 우측 패널이 닫힌 화면에서 위치를 확인하고 확정합니다.</p>
       <div className={styles.actionRow}>{[["front", "정면"], ["back", "후면"], ["left", "좌측"], ["right", "우측"], ["top", "위에서"]].map(([value, label]) => <button type="button" key={value} onClick={() => cameraAction("direction", value)}>{label}</button>)}<button type="button" onClick={() => cameraAction("fit")}>모델 전체 맞춤</button><button type="button" onClick={() => cameraAction("zoom", 1.2)}>확대 +</button><button type="button" onClick={() => cameraAction("zoom", 1 / 1.2)}>축소 −</button></div>
       <NumericField displayPrecision={2} label="화면 배율" unit="배" min={0.1} step={0.1} value={cameraInfo?.zoom ?? savedView?.zoom ?? 1} onChange={(value) => cameraAction("zoomLevel", value)} />
       <NumericField displayPrecision={2} label="카메라 화각" unit="°" min={10} value={cameraInfo?.fov ?? savedView?.fov ?? 60} onChange={(value) => cameraAction("fov", Math.max(10, Math.min(100, value)))} />
-      <button type="button" className={styles.primaryAction} onClick={() => cameraAction("save")}>현재 화면을 최초 관제 화면으로 저장</button>
+      <button type="button" className={styles.primaryAction} onClick={() => cameraAction("save")}>최초 관제 화면 지정</button>
       <button type="button" disabled={!savedView} onClick={() => cameraAction("preview", savedView)}>저장한 최초 화면 미리보기</button>
       <button type="button" disabled={!savedView} onClick={() => { onViewerPresetChange({ equipmentViews: { ...viewerPreset?.equipmentViews, [equipment.id]: null } }); setNotice("최초 화면 지정을 해제했습니다. 다음 접속부터 자동 맞춤을 사용합니다."); }}>최초 화면 지정 해제</button>
       <p className={styles.help}>{savedView ? "시작 화면을 지정했습니다. 마지막으로 프로젝트를 저장하세요." : "시작 화면을 지정하지 않으면 설비 전체가 보입니다."}</p>

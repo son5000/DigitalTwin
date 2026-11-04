@@ -18,6 +18,7 @@ import styles from "./MonitoringSettingsPanel.module.css";
 import SensorConnectionFields from "./SensorConnectionFields";
 import EquipmentAssetFilesPanel from "./EquipmentAssetFilesPanel";
 import EquipmentModelSetupPanel from "./EquipmentModelSetupPanel";
+import { equipmentScanBindings } from "../model/equipmentScanBindings.js";
 import VirtualCameraFields from "./VirtualCameraFields";
 
 const STATUS_TEXT = { DONE: "완료", SKIPPED: "건너뜀", PENDING: "미완료" };
@@ -26,10 +27,10 @@ const STATUS_TEXT = { DONE: "완료", SKIPPED: "건너뜀", PENDING: "미완료"
 export default function MonitoringSettingsPanel({
   equipment, selectedEquipmentId, assetBindings, sensorBindings, observationPoints,
   selectedAsset: assetSelection, selectedPoint: pointSelection, selectedSensor: sensorSelection,
-  onUpdateAsset,
+  onUpdateAsset, onRemoveAsset,
   onSelectPoint, onUpdatePoint, onRemovePoint,
   onAddSensor, onSelectSensor, onUpdateSensor, onRemoveSensor,
-  workspaceViewControllerRef, cameraController, onUpdateEquipment, onUploadAssetFiles, viewerPreset, onEquipmentRepresentationChange, onViewerPresetChange, uploadNotice, onClose,
+  workspaceViewControllerRef, cameraController, onUpdateEquipment, onUploadAssetFiles, viewerPreset, onEquipmentRepresentationChange, onViewerPresetChange, onStartInitialViewFraming, uploadNotice, onClose,
 }) {
   const [sensorCount, setSensorCount] = useState(1);
   const [sensorSection, setSensorSection] = useState("TEXTURE");
@@ -82,7 +83,8 @@ export default function MonitoringSettingsPanel({
 
   if (!selectedEquipment) return <section className={styles.panel}><div className={styles.emptyState}><strong>관측 설비를 등록하세요</strong><p>상단 ‘설비 추가’에서 카탈로그 설비를 선택하거나 OBJ·PLY 파일을 직접 등록할 수 있습니다.</p></div></section>;
   const selectedAsset = scopedAssets.find((item) => item.id === assetSelection?.id);
-  const modelAsset = ["OBJ", "PLY"].includes(selectedAsset?.assetType) ? selectedAsset : scopedAssets.filter((item) => ["OBJ", "PLY"].includes(item.assetType)).at(-1);
+  const activeScans = equipmentScanBindings(selectedEquipment, scopedAssets);
+  const modelAsset = activeScans.find((item) => item.id === selectedAsset?.id) ?? activeScans.at(-1);
   const selectedSensor = scopedSensors.find((item) => item.id === sensorSelection?.id);
   const selectedPoint = scopedPoints.find((item) => item.id === pointSelection?.id);
   const setup = getEquipmentSetup(selectedEquipment);
@@ -150,7 +152,7 @@ export default function MonitoringSettingsPanel({
 
     </div> : null}
 
-    {tab === "ASSET" ? <div className={styles.content}><EquipmentModelSetupPanel workspaceViewControllerRef={workspaceViewControllerRef} equipmentCount={equipment.length} equipment={selectedEquipment} binding={modelAsset} onUpdateEquipment={onUpdateEquipment} onUpdateAsset={onUpdateAsset} viewerPreset={viewerPreset} onViewerPresetChange={onViewerPresetChange} onEquipmentRepresentationChange={onEquipmentRepresentationChange} cameraController={cameraController} /></div> : null}
+    {tab === "ASSET" ? <div className={styles.content}><EquipmentModelSetupPanel workspaceViewControllerRef={workspaceViewControllerRef} equipmentCount={equipment.length} equipment={selectedEquipment} binding={modelAsset} bindings={scopedAssets} onUpdateEquipment={onUpdateEquipment} onUpdateAsset={onUpdateAsset} onRemoveAsset={onRemoveAsset} onUploadAssetFiles={onUploadAssetFiles} viewerPreset={viewerPreset} onViewerPresetChange={onViewerPresetChange} onEquipmentRepresentationChange={onEquipmentRepresentationChange} cameraController={cameraController} onStartInitialViewFraming={onStartInitialViewFraming} /></div> : null}
 
     {tab === "REVIEW" ? <div className={styles.content}>
       <div className={styles.review}>{EQUIPMENT_SETUP_STEPS.slice(0, -1).map(({ id, label }) => <button type="button" key={id} onClick={() => setStep(id)}>{label} · {STATUS_TEXT[setup.steps[id]]} →</button>)}</div>

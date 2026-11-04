@@ -58,10 +58,13 @@ export function createAlignmentTransform(source = {}) {
     fitDimension: ["WIDTH", "HEIGHT", "DEPTH", "EXACT"].includes(source.fitDimension) ? source.fitDimension : "CONTAIN",
     targetDimensions: Object.fromEntries(Object.entries(source.targetDimensions ?? {}).filter(([key, value]) => ["width", "height", "depth"].includes(key) && Number.isFinite(value) && value > 0)),
     completed: source.completed ?? false,
+    originMode: source.originMode === "DOOR_CORNER" ? "DOOR_CORNER" : "CENTER",
   };
 }
 
 export function createEquipmentAssetBinding(equipmentId, asset, source = {}) {
+  const scanSlot = ["FRONT", "REAR"].includes(source.scanSlot?.side) && Number.isInteger(source.scanSlot?.index)
+    && source.scanSlot.index >= 0 && source.scanSlot.index < 5 ? { side: source.scanSlot.side, index: source.scanSlot.index } : null;
   return {
     id: source.id ?? createId("EQUIPMENT_ASSET_BINDING"),
     equipmentId,
@@ -73,7 +76,11 @@ export function createEquipmentAssetBinding(equipmentId, asset, source = {}) {
     textureSourceKey: source.textureSourceKey ?? asset.textureSourceKey ?? null,
     assetType: source.assetType ?? asset.assetType ?? ASSET_TYPES.OBJ,
     usageType: source.usageType ?? asset.usageType ?? ASSET_USAGE_TYPES.MODEL,
-    alignmentTransform: createAlignmentTransform(source.alignmentTransform),
+    scanSlot,
+    alignmentTransform: createAlignmentTransform(scanSlot ? {
+      fitToProxy: true, ...source.alignmentTransform,
+      autoCentered: false, floorAligned: false, originMode: "DOOR_CORNER",
+    } : source.alignmentTransform),
     displayMode: source.displayMode ?? EQUIPMENT_DISPLAY_MODES.PROXY,
     includeProxy: source.includeProxy === true,
     status: source.status ?? "READY",

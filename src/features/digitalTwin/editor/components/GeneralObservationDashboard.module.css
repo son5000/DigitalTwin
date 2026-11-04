@@ -1,0 +1,15 @@
+.section { display: grid; gap: 12px; padding: 14px 0; border-top: 1px solid var(--portal-border, #41505e); }
+.heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.heading strong { font-size: 13px; }
+.heading label { display: grid; gap: 4px; min-width: 160px; font-size: 11px; color: var(--portal-muted, #a9b8c4); }
+.heading select { min-height: 32px; min-width: 0; border: 1px solid var(--portal-border, #41505e); border-radius: 4px; background: var(--portal-surface, #263844); color: var(--portal-text, #f1f5f8); }
+.chart { display: block; width: 100%; max-height: 210px; background: rgb(20 34 46 / 35%); border-radius: 4px; }
+.chart text { fill: var(--portal-muted, #a9b8c4); font-size: 11px; }
+.axis { fill: none; stroke: #708596; stroke-width: 1; }
+.trace { fill: none; stroke: #53c5e4; stroke-width: 2; stroke-linejoin: round; }
+.empty { margin: 0; padding: 24px 12px; text-align: center; color: var(--portal-muted, #a9b8c4); font-size: 12px; }
+.audioRow { display: flex; align-items: center; gap: 10px; }
+.audioRow small, .error { color: var(--portal-muted, #a9b8c4); font-size: 12px; }
+.audioRow button { min-height: 32px; }
+.section audio { width: 100%; }
+@media (max-width: 600px) { .heading { align-items: stretch; flex-direction: column; } .heading label { width: 100%; } }

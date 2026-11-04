@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { getEnclosure, getEnclosureBodyAppearance, getEnclosureDoor, getEnclosureDoorEntries } from "../model/equipmentEnclosure.js";
+import { getEnclosure, getEnclosureBodyAppearance, getEnclosureDoor, getEnclosureDoorEntries, getEnclosureScanSlot } from "../model/equipmentEnclosure.js";
 import { addEquipmentLabel, addGeometry } from "./generatorHelpers";
 
 export function generateEnclosure(equipment, { edgeColor, sceneTheme }) {
@@ -17,6 +17,27 @@ export function generateEnclosure(equipment, { edgeColor, sceneTheme }) {
   if (c.walls.right) panel(group, "right", [t, h, d - t], [w / 2 - t / 2, h / 2, t / 2]);
   if (c.walls.top) panel(group, "top", [w - 2 * t, t, d - t], [0, h - t / 2, t / 2]);
   if (c.walls.bottom) panel(group, "bottom", [w - 2 * t, t, d - t], [0, t / 2, t / 2]);
+  if (c.bodyLayout === "BACK_TO_BACK") {
+    const rear = getEnclosureScanSlot(equipment, 0, "REAR");
+    const rearDepth = rear?.dimensions.depth ?? (d - 3 * t) * (1 - c.frontDepthRatio);
+    panel(group, "center-divider", [w - 2 * t, h - 2 * t, t], [0, h / 2, -d / 2 + t + rearDepth + t / 2]);
+  }
+  for (const side of ["FRONT", "REAR"]) {
+    const set = side === "FRONT" ? c : c.rear;
+    for (let index = 0; index < set.doorCount - 1; index++) {
+      const slot = getEnclosureScanSlot(equipment, index, side);
+      if (!slot) continue;
+      if (set.doorLayout === "STACKED") {
+        const boundary = set.stackOrder === "BOTTOM_UP" ? slot.cell.bottom + slot.cell.height : slot.cell.bottom;
+        panel(group, `${side.toLowerCase()}-shelf-${index}`, [w - 2 * t, t, slot.dimensions.depth],
+          [0, boundary, slot.centerZ]);
+      } else {
+        const boundary = side === "FRONT" ? slot.cell.left + slot.cell.width : -(slot.cell.left + slot.cell.width);
+        panel(group, `${side.toLowerCase()}-divider-${index}`, [t, h - 2 * t, slot.dimensions.depth],
+          [boundary, h / 2, slot.centerZ]);
+      }
+    }
+  }
   for (const { index, side, id } of getEnclosureDoorEntries(equipment)) {
     const door = getEnclosureDoor(equipment, index, side);
     const pivot = new THREE.Group();

@@ -14,6 +14,7 @@ export default function EquipmentDetailWorkspace({
   equipmentList = [], onSelectEquipment, sensorBindings = [], observationPoints = [],
   listOpen, onCloseList, onSetupStepChange, worldView, selectedSensor,
   onAddEquipment, onAlignmentChange, pointOptions, viewerPreset,
+  initialViewFraming = false, onConfirmInitialView, onCancelInitialView,
 }) {
   const [viewChoice, setViewChoice] = useState(null);
   const [cameraMemory] = useState(() => new Map());
@@ -66,6 +67,11 @@ export default function EquipmentDetailWorkspace({
         })}{!filteredEquipment.length && <p>검색 결과가 없습니다.</p>}</div>
       </aside>}
       <div className={styles.viewer} aria-label="실제 설비 3D 뷰어">
+        {initialViewFraming && <div className={styles.initialViewToolbar} data-camera-safe-ui role="group" aria-label="최초 관제 화면 지정">
+          <span>뷰어에서 보일 시작 화면을 맞추세요</span>
+          <button type="button" className={styles.initialViewConfirm} onClick={onConfirmInitialView}>이 화면으로 확정</button>
+          <button type="button" onClick={onCancelInitialView}>취소</button>
+        </div>}
         {worldView && cloneElement(worldView, { cameraMemory, cameraResetVersion, cameraScope: "DETAIL", cameraController, onAlignmentChange,
           ...(viewMode === "ALL" ? { equipment: null, equipmentList } : {}), editorStage: setup.currentStep,
           sensorViewId: sensorStep && comparisonSensorId === selectedSensor?.id ? comparisonSensorId : null,

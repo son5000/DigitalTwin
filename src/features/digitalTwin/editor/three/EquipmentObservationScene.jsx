@@ -1,6 +1,6 @@
 import { updateEnclosureDoors } from "../generators/EnclosureGenerator";
 import EnclosureDoorControls from "../components/EnclosureDoorControls";
-import { advanceEnclosureDoors, captureEnclosureDoorState, enclosureDoorOverride, enclosureDoorOverrideFromState, getEnclosure, getEnclosureSurfaces, getSensorMountPose, projectSensorMount, withDoorOverrides } from "../model/equipmentEnclosure";
+import { advanceEnclosureDoors, captureEnclosureDoorState, enclosureDoorOverride, enclosureDoorOverrideFromState, getEnclosure, getEnclosureScanSlot, getEnclosureSurfaces, getSensorMountPose, projectSensorMount, withDoorOverrides } from "../model/equipmentEnclosure";
 import { createSensorSceneLayer } from "./sensorSceneLayer";
 import { createSensorFrustumLayer } from "./sensorFrustumLayer.js";
 import ModelLayerControls from "../components/ModelLayerControls";
@@ -17,7 +17,6 @@ import { planeOrientation } from "../model/observationGeometry.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { createDualTransformControls, attachDualTransformControls, disposeDualTransformControls, detachDualTransformControls, setDualTransformDragging } from "./dualTransformControls";
 
-import { ASSET_TYPES } from "@/features/digitalTwin/editor/model/equipmentDetailModel";
 import { GROUND_VIEW_MODES, getGroundViewPresentation } from "@/features/digitalTwin/editor/model/undergroundModel";
 import { createTerrainMesh, createTerrainGrid } from "../terrain/TerrainMeshFactory";
 import { DEFAULT_GRID_SETTINGS } from "../constants/gridSettings";
@@ -27,6 +26,7 @@ import { addEquipmentLabel } from "../generators/generatorHelpers";
 import { normalizeEquipmentPart } from "@/features/digitalTwin/editor/constants/partTemplates";
 import { createPartObject } from "@/features/digitalTwin/editor/world/PartFactory";
 import { applyAssetAlignment, loadBindingObject } from "@/features/digitalTwin/editor/three/EquipmentAssetViewer";
+import { equipmentScanBindings } from "../model/equipmentScanBindings.js";
 import { disposeObject3D } from "@/features/digitalTwin/editor/three/disposeObject3D";
 import { createSiteEnvironmentObject } from "../world/SiteEnvironmentFactory";
 import { focusEquipmentInWorld, updateViewerCameraRange } from "./viewerEquipmentFocus";
@@ -74,11 +74,21 @@ function findSensorId(object, root) {
 
 const EMPTY_ITEMS = [];
 
-function proxySignature(item, includeProxy) {
+function proxySignature(item) {
   const stableDoors = (value) => value ? { ...value, doors: value.doors?.map((door) => Object.fromEntries(Object.entries(door).filter(([key]) => !["open", "angle", "hideWhenOpen"].includes(key)))) } : value;
   const enclosure = item.enclosure ? { ...stableDoors(item.enclosure), rear: stableDoors(item.enclosure.rear) } : undefined;
   const siteShape = item.siteObject ? { ...item.siteObject, position: undefined, rotation: undefined } : null;
-  return JSON.stringify([getEquipmentGeometrySignature({ ...item, name: "", showNameLabel: false, enclosure }), item.parts, siteShape, includeProxy]);
+  return JSON.stringify([getEquipmentGeometrySignature({ ...item, name: "", showNameLabel: false, enclosure }), item.parts, siteShape]);
+}
+
+function scanSourceSignature(binding) {
+  return JSON.stringify([binding.id, binding.assetId, binding.assetType, binding.sourceType,
+    binding.sourceKey, binding.objectUrl, binding.relatedSourceKey, binding.textureSourceKey]);
+}
+
+function scanAlignmentSignature(binding, equipment) {
+  const slot = binding.scanSlot ? getEnclosureScanSlot(equipment, binding.scanSlot.index, binding.scanSlot.side) : null;
+  return JSON.stringify([binding.alignmentTransform, slot, equipment.dimensions]);
 }
 
 export default function EquipmentObservationScene({
@@ -148,7 +158,7 @@ export default function EquipmentObservationScene({
   useEffect(() => { doorOverridesRef.current = doorOverrides; }, [doorOverrides]);
   const doorEquipment = equipmentList.find((item) => item.id === focusEquipmentId) ?? equipment ?? (equipmentList.length === 1 ? equipmentList[0] : null);
   const displayedDoorEquipment = doorEquipment ? withDoorOverrides(doorEquipment, doorOverrides[doorEquipment.id]) : null;
-  const doorBinding = assetBindings.filter((binding) => binding.equipmentId === doorEquipment?.id && [ASSET_TYPES.OBJ, ASSET_TYPES.PLY].includes(binding.assetType)).at(-1);
+  const doorBinding = equipmentScanBindings(doorEquipment, assetBindings).at(-1);
   const hasVisibleEnclosure = displayedDoorEquipment?.enclosure?.enabled && (!doorBinding || doorBinding.includeProxy || ["PROXY", "COMPARE"].includes(doorBinding.displayMode));
   const selectedPointId = pointOptions?.selectedId ?? null;
   const pointEditing = pointOptions?.editing === true;
@@ -179,8 +189,7 @@ export default function EquipmentObservationScene({
   const scenePartId = preserveWorldOnSelection ? null : selectedPartId;
   const sceneInputsRef = useRef(null);
   useEffect(() => { sceneInputsRef.current = { equipment, equipmentList, assetBindings, representationKey, onEquipmentSelect, onCameraControlsChange, onZoomChange }; }, [equipment, equipmentList, assetBindings, representationKey, onEquipmentSelect, onCameraControlsChange, onZoomChange]);
-  const structureKey = JSON.stringify([(equipmentList.length ? equipmentList : equipment ? [equipment] : []).map((item) => item.id),
-    assetBindings.map(({ id, equipmentId, assetId, assetType, sourceType, sourceKey, objectUrl, relatedSourceKey, textureSourceKey }) => [id, equipmentId, assetId, assetType, sourceType, sourceKey, objectUrl, relatedSourceKey, textureSourceKey])]);
+  const structureKey = JSON.stringify((equipmentList.length ? equipmentList : equipment ? [equipment] : []).map((item) => item.id));
 
   useEffect(() => {
     const { equipment, equipmentList, assetBindings } = sceneInputsRef.current;
@@ -258,8 +267,7 @@ export default function EquipmentObservationScene({
       logicalRoot.position.set(displayEquipment.position.x, displayEquipment.position.y, displayEquipment.position.z);
       logicalRoot.rotation.set(Number(item.rotation?.x) || 0, Number(item.rotation?.y) || 0, Number(item.rotation?.z) || 0);
       logicalRoot.userData.equipmentId = item.id;
-      const includeProxy = assetBindings.filter((binding) => binding.equipmentId === item.id && [ASSET_TYPES.OBJ, ASSET_TYPES.PLY].includes(binding.assetType)).at(-1)?.includeProxy;
-      const proxy = createProxy(item, includeProxy);
+      const proxy = createProxy(item);
       logicalRoot.add(proxy);
       const label = addEquipmentLabel(logicalRoot, item.showNameLabel ? item.name : null, item.enclosure?.height ?? item.dimensions?.height ?? 1, SCENE_THEMES[theme].equipmentEdge, SCENE_THEMES[theme]);
       const selectedPart = !item.customAssetId && item.id === sceneFocusId && Array.isArray(item.parts)
@@ -268,44 +276,129 @@ export default function EquipmentObservationScene({
         logicalRoot.add(createPartObject(normalizeEquipmentPart(selectedPart), displayEquipment, { selected: true, theme, selectionColor: "#ffc14d" }));
       }
       equipmentRoot.add(logicalRoot);
-      renderedEquipment.set(item.id, { item, object: logicalRoot, proxy, label, proxyKey: proxySignature(item, includeProxy), actual: null, loading: null, position: logicalRoot.position.clone() });
+      const labelKey = JSON.stringify([item.name, item.showNameLabel, item.enclosure?.height ?? item.dimensions?.height]);
+      renderedEquipment.set(item.id, { item, object: logicalRoot, proxy, label, labelKey, proxyKey: proxySignature(item), actual: null, loading: null,
+        actualScans: null, pendingScans: new Map(), scanAlignmentKeys: new Map(), position: logicalRoot.position.clone() });
     });
     const detailedBindings = new Map();
-    assetBindings.forEach((binding) => {
-      if (![ASSET_TYPES.OBJ, ASSET_TYPES.PLY].includes(binding.assetType)) return;
-      detailedBindings.set(binding.equipmentId, binding);
-    });
+    entries.forEach((item) => detailedBindings.set(item.id, equipmentScanBindings(item, assetBindings)));
 
-    async function ensureDetailed(entry, binding) {
-      if (entry.actual || entry.loading || entry.attempted || !binding) return entry.loading;
+    function releaseScan(entry, id) {
+      const pending = entry.pendingScans.get(id);
+      if (pending) { pending.controller.abort(); entry.pendingScans.delete(id); }
+      const scan = entry.actualScans?.get(id);
+      if (!scan) return;
+      entry.actualScans.delete(id);
+      entry.scanAlignmentKeys.delete(id);
+      scan.aligned.removeFromParent();
+      scan.revoke();
+      disposeObject3D(scan.aligned);
+    }
+
+    function syncDetailedScans(entry, scanBindings) {
+      if (entry.loading) { entry.needsScanSync = true; return; }
+      if (!entry.actual || !entry.actualScans) return;
+      const current = new Map(scanBindings.map((binding) => [binding.id, binding]));
+      let changed = false;
+      let boundsChanged = false;
+      for (const [id, scan] of entry.actualScans) {
+        if (scan.sourceSignature !== scanSourceSignature(current.get(id) ?? {}) || !current.has(id)) { releaseScan(entry, id); changed = true; boundsChanged = true; }
+      }
+      for (const [id, job] of entry.pendingScans) {
+        if (job.sourceSignature !== scanSourceSignature(current.get(id) ?? {}) || !current.has(id)) { releaseScan(entry, id); changed = true; }
+      }
+      if (!scanBindings.length) {
+        entry.actual.removeFromParent();
+        disposeObject3D(entry.actual);
+        entry.actual = null; entry.actualScans = null; entry.attempted = false;
+        entry.layerActual = null;
+        setScanLoadState(entry.item.id, "");
+        if (changed) {
+          worldBounds.copy(new THREE.Box3().setFromObject(root)).union(new THREE.Box3().setFromObject(floor));
+          invalidateWorldSnapshot(snapshotRequest); requestSnapshot();
+        }
+        return;
+      }
+      for (const binding of scanBindings) {
+        if (entry.actualScans.has(binding.id) || entry.pendingScans.has(binding.id)) continue;
+        changed = true;
+        const controller = new AbortController();
+        const job = { controller, sourceSignature: scanSourceSignature(binding) };
+        entry.pendingScans.set(binding.id, job);
+        setScanLoadState(entry.item.id, `스캔 ${entry.actualScans.size}/${scanBindings.length}개 표시 중 · 새 파일 불러오는 중…`);
+        void loadBindingObject(binding, { signal: controller.signal }).then((loaded) => {
+          const latest = detailedBindings.get(entry.item.id)?.find((candidate) => candidate.id === binding.id);
+          if (disposed || controller.signal.aborted || entry.pendingScans.get(binding.id) !== job || !latest || scanSourceSignature(latest) !== job.sourceSignature) {
+            disposeObject3D(loaded.object); loaded.revoke(); return;
+          }
+          const aligned = new THREE.Group(); aligned.add(loaded.object);
+          if (!applyAssetAlignment({ actualObject: loaded.object, aligned }, latest, entry.item)) {
+            disposeObject3D(aligned); loaded.revoke(); throw new Error("EMPTY_MODEL");
+          }
+          entry.actual.add(aligned);
+          entry.actualScans.set(binding.id, { aligned, object: loaded.object, revoke: loaded.revoke, sourceSignature: job.sourceSignature });
+          entry.scanAlignmentKeys.set(binding.id, scanAlignmentSignature(latest, entry.item));
+          entry.layerActual = null;
+          worldBounds.copy(new THREE.Box3().setFromObject(root)).union(new THREE.Box3().setFromObject(floor));
+          invalidateWorldSnapshot(snapshotRequest);
+          requestSnapshot();
+        }).catch((error) => {
+          if (!controller.signal.aborted) console.warn(`[설비 표현] ${entry.item.name ?? entry.item.id} 스캔 파일만 갱신하지 못했습니다.`, error);
+        }).finally(() => {
+          if (entry.pendingScans.get(binding.id) !== job) return;
+          entry.pendingScans.delete(binding.id);
+          const total = detailedBindings.get(entry.item.id)?.length ?? 0;
+          setScanLoadState(entry.item.id, entry.actualScans?.size === total ? "스캔 모델 준비 완료"
+            : `스캔 ${entry.actualScans?.size ?? 0}/${total}개 표시 중 · 파일 확인 필요`);
+          if (!disposed) syncEquipmentRepresentations();
+        });
+      }
+      if (changed) {
+        if (!entry.pendingScans.size) setScanLoadState(entry.item.id, entry.actualScans.size === scanBindings.length
+          ? "스캔 모델 준비 완료" : `스캔 ${entry.actualScans.size}/${scanBindings.length}개 표시 중 · 파일 확인 필요`);
+        if (boundsChanged) worldBounds.copy(new THREE.Box3().setFromObject(root)).union(new THREE.Box3().setFromObject(floor));
+        invalidateWorldSnapshot(snapshotRequest); requestSnapshot();
+      }
+    }
+
+    async function ensureDetailed(entry, scanBindings) {
+      if (entry.actual || entry.loading || entry.attempted || !scanBindings?.length) return entry.loading;
       entry.attempted = true;
       const controller = new AbortController();
       entry.controller = controller;
       setScanLoadState(entry.item.id, "모델을 불러오는 중입니다…");
-      entry.loading = loadBindingObject(binding, { signal: controller.signal }).then((loaded) => {
+      entry.loading = Promise.allSettled(scanBindings.map((binding) => loadBindingObject(binding, { signal: controller.signal }))).then((results) => {
         if (disposed || controller.signal.aborted) {
-          disposeObject3D(loaded.object);
-          loaded.revoke();
+          results.forEach((result) => { if (result.status === "fulfilled") { disposeObject3D(result.value.object); result.value.revoke(); } });
           return;
         }
-        const aligned = new THREE.Group();
-        aligned.add(loaded.object);
-        if (!applyAssetAlignment({ actualObject: loaded.object, aligned }, detailedBindings.get(entry.item.id) ?? binding, entry.item)) {
-          disposeObject3D(aligned);
-          loaded.revoke();
-          throw new Error("EMPTY_MODEL");
-        }
-        aligned.userData.releaseAssetSources = loaded.revoke;
-        entry.object.add(aligned);
-        entry.actual = aligned;
-        entry.actualObject = loaded.object;
-        setScanLoadState(entry.item.id, "스캔 모델 준비 완료");
+        const actual = new THREE.Group();
+        const scans = new Map();
+        let firstError = null;
+        results.forEach((result, index) => {
+          if (result.status === "rejected") { firstError ??= result.reason; return; }
+          const binding = scanBindings[index], loaded = result.value;
+          const aligned = new THREE.Group();
+          aligned.add(loaded.object);
+          if (!applyAssetAlignment({ actualObject: loaded.object, aligned }, binding, entry.item)) {
+            disposeObject3D(aligned); loaded.revoke(); firstError ??= new Error("EMPTY_MODEL"); return;
+          }
+          actual.add(aligned);
+          scans.set(binding.id, { aligned, object: loaded.object, revoke: loaded.revoke, sourceSignature: scanSourceSignature(binding) });
+          entry.scanAlignmentKeys.set(binding.id, scanAlignmentSignature(binding, entry.item));
+        });
+        if (!scans.size) throw firstError ?? new Error("EMPTY_MODEL");
+        actual.userData.releaseAssetSources = () => scans.forEach((scan) => scan.revoke());
+        entry.object.add(actual);
+        entry.actual = actual;
+        entry.actualScans = scans;
+        setScanLoadState(entry.item.id, scans.size === scanBindings.length ? "스캔 모델 준비 완료" : `스캔 ${scans.size}/${scanBindings.length}개 표시 중 · 나머지 파일 확인 필요`);
         invalidateWorldSnapshot(snapshotRequest);
         requestSnapshot();
         worldBounds.copy(new THREE.Box3().setFromObject(root)).union(new THREE.Box3().setFromObject(floor));
         if (allowDetailedFit && entry.item.id === sceneFocusId && !scenePartId) {
           if (animateEquipmentFocus) focusEquipmentInWorld(focusRuntime, entry.object, entry.item);
-          else fitCamera(camera, controls, aligned);
+          else fitCamera(camera, controls, actual);
           allowDetailedFit = false;
         }
       }).catch((error) => {
@@ -313,7 +406,16 @@ export default function EquipmentObservationScene({
         setScanLoadState(entry.item.id, error.message.includes("LIMIT") ? "모델이 표시 용량 제한을 초과했습니다. 기존 설비를 표시합니다." : "스캔 모델 로딩 실패. 다시 선택하여 재시도하세요.");
         console.warn(`[설비 표현] ${entry.item.name ?? entry.item.id} 상세 모델을 표시하지 못해 간략 모델로 복구했습니다.`, error);
         entry.actual = null;
-      }).finally(() => { entry.loading = null; });
+        entry.actualScans = null;
+      }).finally(() => {
+        entry.loading = null;
+        if (entry.controller === controller) entry.controller = null;
+        if (!disposed && !controller.signal.aborted && entry.needsScanSync) {
+          entry.needsScanSync = false;
+          if (entry.actual) syncDetailedScans(entry, detailedBindings.get(entry.item.id) ?? []);
+          else entry.attempted = false;
+        }
+      });
       return entry.loading;
     }
 
@@ -323,11 +425,15 @@ export default function EquipmentObservationScene({
         if (!selected) {
           if (entry.attempted) {
             entry.controller?.abort();
+            entry.pendingScans.forEach((job) => job.controller.abort());
+            entry.pendingScans.clear();
             if (entry.actual) {
               entry.actual.removeFromParent();
               entry.actual.userData.releaseAssetSources?.();
               disposeObject3D(entry.actual);
               entry.actual = null;
+              entry.actualScans = null;
+              entry.scanAlignmentKeys.clear();
             }
             entry.attempted = false;
             setScanLoadState(equipmentId, "");
@@ -338,19 +444,21 @@ export default function EquipmentObservationScene({
           entry.proxy.visible = settings?.visible ?? true;
           return;
         }
-        const binding = detailedBindings.get(equipmentId);
+        const scanBindings = detailedBindings.get(equipmentId) ?? [];
+        const binding = scanBindings.at(-1);
         const representation = resolveEquipmentRepresentation({
           preset: { equipmentRepresentation: JSON.parse(sceneInputsRef.current.representationKey) },
           equipmentId,
-          hasDetailedModel: Boolean(binding),
+          hasDetailedModel: scanBindings.length > 0,
           selected,
           distance: camera.position.distanceTo(entry.object.getWorldPosition(new THREE.Vector3())),
         });
         const layers = modelLayersRef.current[equipmentId];
-        const showDetailed = (layers?.ACTUAL?.visible ?? (sensorCallbacksRef.current.onSensorChange ? Boolean(binding && binding.displayMode !== "PROXY") : representation === EQUIPMENT_REPRESENTATIONS.DETAILED)) && !scenePartId;
-        entry.proxy.visible = !showDetailed || Boolean(entry.actual && (binding?.includeProxy || binding?.displayMode === "COMPARE")) || Boolean(entry.attempted && !entry.loading && !entry.actual);
+        const showDetailed = scanBindings.length > 0 && (layers?.ACTUAL?.visible ?? (sensorCallbacksRef.current.onSensorChange ? binding.displayMode !== "PROXY" : representation === EQUIPMENT_REPRESENTATIONS.DETAILED)) && !scenePartId;
+        entry.proxy.visible = !showDetailed || Boolean(entry.actual && scanBindings.some((scan) => scan.includeProxy || scan.displayMode === "COMPARE"))
+          || Boolean(entry.actual && !entry.actualScans?.size) || Boolean(entry.attempted && !entry.loading && !entry.actual);
         if (entry.actual) entry.actual.visible = showDetailed;
-        else if (showDetailed && !entry.attempted && !entry.loading) void ensureDetailed(entry, binding).then(() => {
+        else if (showDetailed && !entry.attempted && !entry.loading) void ensureDetailed(entry, scanBindings).then(() => {
           if (!disposed && entry.actual) syncEquipmentRepresentations();
         });
         if (entry.layerSource !== layers || entry.layerActual !== entry.actual || entry.layerDefault !== `${entry.proxy.visible}:${showDetailed}`) {
@@ -703,7 +811,7 @@ export default function EquipmentObservationScene({
     };
     const stopFit = () => { allowDetailedFit = false; focusRuntime.cameraFocus = null; };
     const coordinateLayer = bindEquipmentCoordinateFrame({ renderer, camera, controls, renderedEquipment, theme,
-      getEquipment: () => coordinateEquipmentRef.current, getStage: () => editorStageRef.current, getBinding: (id) => detailedBindings.get(id) });
+      getEquipment: () => coordinateEquipmentRef.current, getStage: () => editorStageRef.current, getBinding: (id) => detailedBindings.get(id)?.at(-1) });
     const focusedDoorSource = () => sceneInputsRef.current.equipmentList.find((item) => item.id === focusEquipment?.id)
       ?? (sceneInputsRef.current.equipment?.id === focusEquipment?.id ? sceneInputsRef.current.equipment : null);
     const cameraApi = {
@@ -811,6 +919,26 @@ export default function EquipmentObservationScene({
         return { position: { x: local.x, y: local.y, z: local.z }, normal: { x: normal.x, y: normal.y, z: normal.z },
           sensor: hit.sensor ?? null, frame: hit.frame ?? null, hit, equipment: entry.item };
       },
+      projectImagePointToPlane: (u, v, anchorPosition = null) => {
+        const entry = renderedEquipment.get(focusEquipment?.id);
+        if (!entry || entry.loading) return null;
+        const snapshotCamera = camera.clone(); snapshotCamera.aspect = 640 / 400;
+        snapshotCamera.updateProjectionMatrix(); snapshotCamera.updateMatrixWorld(true);
+        entry.object.updateWorldMatrix(true, false);
+        const anchor = anchorPosition
+          ? entry.object.localToWorld(new THREE.Vector3(anchorPosition.x, anchorPosition.y, anchorPosition.z))
+          : entry.object.getWorldPosition(new THREE.Vector3());
+        const worldNormal = snapshotCamera.getWorldDirection(new THREE.Vector3()).negate();
+        const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(worldNormal, anchor);
+        const probe = new THREE.Raycaster();
+        probe.setFromCamera(new THREE.Vector2(u * 2 - 1, 1 - v * 2), snapshotCamera);
+        const worldPoint = probe.ray.intersectPlane(plane, new THREE.Vector3());
+        if (!worldPoint) return null;
+        const local = entry.object.worldToLocal(worldPoint);
+        const normal = worldNormal.transformDirection(entry.object.matrixWorld.clone().invert());
+        return { position: { x: local.x, y: local.y, z: local.z },
+          normal: { x: normal.x, y: normal.y, z: normal.z }, equipment: entry.item };
+      },
       preview: (view) => { stopFit(); restoreEquipmentCamera(camera, controls, view); },
       fit: () => { stopFit(); camera.zoom = 1; fitCamera(camera, controls, viewObject()); },
       zoom: (factor) => { stopFit(); camera.zoom = Math.max(.1, Math.min(20, camera.zoom * factor)); camera.updateProjectionMatrix(); },
@@ -826,10 +954,11 @@ export default function EquipmentObservationScene({
         restoreViewerCamera(camera, controls, snapshot);
       },
       floor: () => {
-        const entry = renderedEquipment.get(focusEquipment?.id), binding = detailedBindings.get(focusEquipment?.id);
-        if (!entry?.actual || !binding?.alignmentTransform) return;
+        const entry = renderedEquipment.get(focusEquipment?.id), binding = detailedBindings.get(focusEquipment?.id)?.at(-1);
+        if (!entry?.actual || !binding?.alignmentTransform || binding.scanSlot) return;
         const bounds = new THREE.Box3().setFromObject(entry.actual);
-        if (!bounds.isEmpty()) alignmentCallbackRef.current?.({ position: { ...binding.alignmentTransform.position, y: entry.actual.position.y - bounds.min.y + entry.object.position.y } }, binding.id);
+        const aligned = entry.actualScans?.get(binding.id)?.aligned;
+        if (!bounds.isEmpty() && aligned) alignmentCallbackRef.current?.({ position: { ...binding.alignmentTransform.position, y: aligned.position.y - bounds.min.y + entry.object.position.y } }, binding.id);
       },
     };
     if (cameraControllerRef) cameraControllerRef.current = cameraApi;
@@ -873,21 +1002,29 @@ export default function EquipmentObservationScene({
     function syncEquipmentInputs() {
       const next = sceneInputsRef.current;
       if (previousInputs === next || dragging) return;
+      const priorEquipment = previousInputs.equipmentList.length ? previousInputs.equipmentList : previousInputs.equipment ? [previousInputs.equipment] : [];
+      const nextEquipment = next.equipmentList.length ? next.equipmentList : next.equipment ? [next.equipment] : [];
+      const equipmentChanged = priorEquipment.length !== nextEquipment.length || priorEquipment.some((item, index) => item !== nextEquipment[index]);
+      let scanAlignmentChanged = false;
       previousInputs = next;
+      const previousScans = JSON.stringify([...detailedBindings].map(([id, scans]) => [id, scans.map(scanSourceSignature)]));
       detailedBindings.clear();
-      next.assetBindings.forEach((binding) => { if ([ASSET_TYPES.OBJ, ASSET_TYPES.PLY].includes(binding.assetType)) detailedBindings.set(binding.equipmentId, binding); });
+      for (const source of next.equipmentList.length ? next.equipmentList : next.equipment ? [next.equipment] : []) {
+        detailedBindings.set(source.id, equipmentScanBindings(source, next.assetBindings));
+      }
+      if (previousScans !== JSON.stringify([...detailedBindings].map(([id, scans]) => [id, scans.map(scanSourceSignature)]))) allowDetailedFit = false;
       for (const source of next.equipmentList.length ? next.equipmentList : next.equipment ? [next.equipment] : []) {
         const entry = renderedEquipment.get(source.id);
         if (!entry) continue;
         const item = withDoorOverrides(source, doorOverridesRef.current[source.id]);
-        const binding = detailedBindings.get(source.id);
-        const key = proxySignature(item, binding?.includeProxy);
+        const scanBindings = detailedBindings.get(source.id) ?? [];
+        const key = proxySignature(item);
         entry.object.position.set((item.position?.x ?? 0) - (origin.x ?? 0), (item.position?.y ?? 0) - (origin.y ?? 0), (item.position?.z ?? 0) - (origin.z ?? 0));
         entry.object.rotation.set(item.rotation?.x ?? 0, item.rotation?.y ?? 0, item.rotation?.z ?? 0);
         entry.position.copy(entry.object.position);
         if (entry.proxyKey !== key) {
           entry.proxy.removeFromParent(); disposeObject3D(entry.proxy);
-          entry.proxy = createProxy(item, binding?.includeProxy); entry.object.add(entry.proxy);
+          entry.proxy = createProxy(item); entry.object.add(entry.proxy);
           entry.proxyKey = key; entry.layerDefault = null; entry.unselectedLayers = null;
         }
         const labelKey = JSON.stringify([item.name, item.showNameLabel, item.enclosure?.height ?? item.dimensions?.height]);
@@ -898,15 +1035,21 @@ export default function EquipmentObservationScene({
         }
         entry.item = item; entry.doorTarget = item;
         updateEnclosureDoors(entry.proxy, item);
-        const alignmentKey = JSON.stringify([binding?.alignmentTransform, item.dimensions]);
-        if (entry.actual && entry.alignmentKey !== alignmentKey) {
-          applyAssetAlignment({ actualObject: entry.actualObject, aligned: entry.actual }, binding, item);
-          entry.alignmentKey = alignmentKey;
-        }
+        syncDetailedScans(entry, scanBindings);
+        scanBindings.forEach((binding) => {
+          const scan = entry.actualScans?.get(binding.id);
+          if (!scan) return;
+          const alignmentKey = scanAlignmentSignature(binding, item);
+          if (entry.scanAlignmentKeys.get(binding.id) !== alignmentKey) {
+            applyAssetAlignment({ actualObject: scan.object, aligned: scan.aligned }, binding, item);
+            entry.scanAlignmentKeys.set(binding.id, alignmentKey);
+            scanAlignmentChanged = true;
+          }
+        });
         entry.object.updateMatrixWorld(true);
       }
-      sensorState = null;
-      worldBounds.copy(new THREE.Box3().setFromObject(root)).union(new THREE.Box3().setFromObject(floor));
+      if (equipmentChanged) sensorState = null;
+      if (equipmentChanged || scanAlignmentChanged) worldBounds.copy(new THREE.Box3().setFromObject(root)).union(new THREE.Box3().setFromObject(floor));
     }
     function render() {
       const now = performance.now(), delta = Math.max(.001, (now - previousFrame) / 1000); previousFrame = now;
@@ -965,7 +1108,7 @@ export default function EquipmentObservationScene({
       cancelSnapshot();
       cancelSnapshot = scheduleWorldSnapshot({
       request: snapshotRequest, onSnapshot,
-      isReady: () => ![...renderedEquipment.values()].some((entry) => entry.loading),
+      isReady: () => ![...renderedEquipment.values()].some((entry) => entry.loading || entry.pendingScans.size),
       getSource: () => {
         const roots = snapshotRequest.scope === "SINGLE_EQUIPMENT"
           ? [renderedEquipment.get(snapshotRequest.targetId)?.object]
@@ -988,7 +1131,12 @@ export default function EquipmentObservationScene({
       disconnectFocus();
       focusRuntimeRef.current = null;
       disposed = true;
-      renderedEquipment.forEach((entry) => { entry.controller?.abort(); setScanLoadState(entry.item.id, ""); });
+      renderedEquipment.forEach((entry) => {
+        entry.controller?.abort();
+        entry.pendingScans.forEach((job) => job.controller.abort());
+        entry.pendingScans.clear();
+        setScanLoadState(entry.item.id, "");
+      });
       cancelAnimationFrame(frameId);
       observer.disconnect();
       renderer.domElement.removeEventListener("pointerup", handlePointerUp);
@@ -1031,7 +1179,7 @@ export default function EquipmentObservationScene({
 
   return <section className={styles.viewer} aria-label="설비와 센서 위치·화각">
     <div ref={mountRef} className={styles.canvas} />
-    {!overview && doorEquipment && <ModelLayerControls value={modelLayers[doorEquipment.id]} hasScan={Boolean(doorBinding)} scanDefault={Boolean(doorBinding && doorBinding.displayMode !== "PROXY")} shapeDefault={!doorBinding || ["PROXY", "COMPARE"].includes(doorBinding.displayMode) || doorBinding.includeProxy} shapeOpacity={doorEquipment.enclosure?.enabled ? getEnclosure(doorEquipment).opacity : doorEquipment.appearance?.opacity ?? 1} showSceneOverlays={!onSensorChange} onChange={(value) => setModelLayers((current) => ({ ...current, [doorEquipment.id]: value }))} />}
+    {!overview && doorEquipment && <ModelLayerControls value={modelLayers[doorEquipment.id]} hasScan={Boolean(doorBinding)} scanDefault={Boolean(doorBinding && doorBinding.displayMode !== "PROXY")} shapeDefault={!doorBinding || ["PROXY", "COMPARE"].includes(doorBinding.displayMode) || doorBinding.includeProxy} shapeOpacity={doorEquipment.enclosure?.enabled ? getEnclosure(doorEquipment).opacity : doorEquipment.appearance?.opacity ?? 1} shapeLabel={doorEquipment.enclosure?.enabled ? "설비 함체" : "설비 외형"} showSceneOverlays={!onSensorChange} onChange={(value) => setModelLayers((current) => ({ ...current, [doorEquipment.id]: value }))} />}
     {onSensorChange && (!editorStage || editorStage === "SENSOR") && selectedSensorId && !sensorViewId && <div className={styles.surfacePlacement} data-camera-safe-ui>
       {hasVisibleEnclosure && <button type="button" aria-pressed={placingSensorId === selectedSensorId} onClick={() => { setPlacingSensorId(placingSensorId === selectedSensorId ? null : selectedSensorId); setProjectionPicking(null); setPlacementNotice(""); }}>{placingSensorId === selectedSensorId ? "부착 취소" : "외관에 센서 부착"}</button>}
       {sensors.find((sensor) => sensor.id === selectedSensorId)?.textureProjection?.enabled && <button type="button" aria-pressed={projectionPicking === selectedSensorId} onClick={() => { setProjectionPicking(projectionPicking === selectedSensorId ? null : selectedSensorId); setPlacingSensorId(null); setPlacementNotice(""); }}>{projectionPicking === selectedSensorId ? "적용면 선택 취소" : "영상 적용면 선택"}</button>}

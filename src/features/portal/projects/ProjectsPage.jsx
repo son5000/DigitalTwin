@@ -1,13 +1,22 @@
 import { useEffect, useState } from "react";
+import { GridViewIcon, ListViewIcon } from "@/components/icons";
 import Brand from "../components/Brand";
 import { navigateTo } from "@/features/customAssets/core/customAssetNavigation";
 import { createProject, getProjectDetails, openProject, readProjects } from "./projectRepository";
 import styles from "./ProjectsPage.module.css";
 import { downloadProjectBundle, exportProjectBundle, importProjectBundle } from "./projectBundle";
 
+const PROJECT_VIEW_STORAGE_KEY = "digital-twin-projects-view-v1";
+
+function readProjectView() {
+  try { return window.localStorage.getItem(PROJECT_VIEW_STORAGE_KEY) === "list" ? "list" : "grid"; }
+  catch { return "grid"; }
+}
+
 export default function ProjectsPage() {
   const [result, setResult] = useState({ projects: [], loading: true, error: "" });
   const [bundleState, setBundleState] = useState({ busy: false, message: "", error: false });
+  const [viewMode, setViewMode] = useState(readProjectView);
   useEffect(() => {
     const refresh = () => {
       try { setResult({ projects: readProjects().projects, loading: false, error: "" }); }
@@ -46,6 +55,12 @@ export default function ProjectsPage() {
     } catch (error) { setBundleState({ busy: false, message: error.message, error: true }); }
   }
 
+  function changeViewMode(mode) {
+    setViewMode(mode);
+    try { window.localStorage.setItem(PROJECT_VIEW_STORAGE_KEY, mode); }
+    catch { /* Keep the selected view for this session when storage is unavailable. */ }
+  }
+
   return <div className={styles.page}>
     <header className={styles.header}><Brand /><a href="/" onClick={(event) => { event.preventDefault(); navigateTo("/"); }}>홈으로</a></header>
     <main className={styles.main}>
@@ -66,13 +81,20 @@ export default function ProjectsPage() {
         {bundleState.message && <p className={styles.bundleMessage} data-error={bundleState.error} role={bundleState.error ? "alert" : "status"}>{bundleState.message}</p>}
       </section>
       {result.loading ? <p role="status">저장된 프로젝트를 확인하는 중입니다.</p> : result.error ? <p className={styles.notice} role="alert">{result.error}</p> : <>
+        <div className={styles.listToolbar}>
+          <span>저장된 프로젝트 <strong>{result.projects.length}</strong></span>
+          <div className={styles.viewToggle} role="group" aria-label="프로젝트 보기 방식">
+            <button type="button" aria-pressed={viewMode === "grid"} onClick={() => changeViewMode("grid")}><GridViewIcon size={17} /><span>카드 보기</span></button>
+            <button type="button" aria-pressed={viewMode === "list"} onClick={() => changeViewMode("list")}><ListViewIcon size={17} /><span>리스트 보기</span></button>
+          </div>
+        </div>
         {!result.projects.length && <div className={styles.empty}><h2>아직 저장된 프로젝트나 뷰어가 없습니다</h2><p>새 월드를 만들고 관측할 부지, 건축물 또는 설비를 선택하세요.</p></div>}
-        <div className={styles.grid}>
+        <div className={styles.grid} data-view={viewMode}>
           {result.projects.map((project) => {
             const details = getProjectDetails(project);
             return <article key={project.id} className={styles.card} aria-label={details.name}>
               <img className={styles.thumbnail} src={details.thumbnail} alt={`${details.scope} 미리보기`} width="800" height="480" />
-              <div className={styles.cardBody}><span className={styles.status} data-draft={details.isDraft}>{details.status}</span><h2>{details.name}</h2><p>{details.scope}</p><small>최근 수정 · {details.modified}</small>
+              <div className={styles.cardBody}><div className={styles.cardInfo}><span className={styles.status} data-draft={details.isDraft}>{details.status}</span><h2>{details.name}</h2><p>{details.scope}</p><small>최근 수정 · {details.modified}</small></div>
                 <div className={styles.actions}>
                   {details.isDraft ? <button className={styles.primary} onClick={() => enterProject(project.id)}>이어서 편집</button> : null}
                   {project.layout.observationWorkflow?.configured !== false ? <button className={details.isDraft ? undefined : styles.primary} onClick={() => navigateTo(`/viewer?project=${encodeURIComponent(project.id)}`)}>뷰어 열기</button> : null}

@@ -83,8 +83,14 @@ export default function useMonitoringState({ equipment }) {
       sourceType: source.sourceType ?? ASSET_SOURCE_TYPES.UPLOAD,
       status: assetType === "UNSUPPORTED" ? "UNSUPPORTED" : source.status ?? "READY",
     });
-    setEquipmentAssetBindings((items) => [...items.filter((item) => !([ASSET_TYPES.OBJ, ASSET_TYPES.PLY].includes(binding.assetType)
-      && item.equipmentId === equipmentId && [ASSET_TYPES.OBJ, ASSET_TYPES.PLY].includes(item.assetType))), binding]);
+    setEquipmentAssetBindings((items) => [...items.filter((item) => {
+      if (![ASSET_TYPES.OBJ, ASSET_TYPES.PLY].includes(binding.assetType) || item.equipmentId !== equipmentId
+        || ![ASSET_TYPES.OBJ, ASSET_TYPES.PLY].includes(item.assetType)) return true;
+      if (binding.scanSlot) return item.scanSlot
+        ? item.scanSlot.side !== binding.scanSlot.side || item.scanSlot.index !== binding.scanSlot.index
+        : !["CABINET_SCAN_OBJ", "CABINET_SCAN_PLY"].includes(item.assetId);
+      return false;
+    }), binding]);
     setSelectedAssetBindingId(binding.id);
     return binding.id;
   }, []);
@@ -98,6 +104,10 @@ export default function useMonitoringState({ equipment }) {
       scale: { ...item.alignmentTransform.scale, ...changes.alignmentTransform.scale },
     } : item.alignmentTransform,
   } : item)), []);
+  const removeAssetBinding = useCallback((id) => {
+    setEquipmentAssetBindings((items) => items.filter((item) => item.id !== id));
+    setSelectedAssetBindingId((selected) => selected === id ? null : selected);
+  }, []);
 
   const addObservationPoint = useCallback((equipmentId, localPosition = { x: 0, y: 0.5, z: 0 }, geometry = {}) => {
     if (!equipmentId) return null;
@@ -221,7 +231,7 @@ export default function useMonitoringState({ equipment }) {
     selectedMonitoringDevice: selectedSensorBinding, selectedMonitoringBinding: selectedServerBinding,
     actions: {
       ensureEquipmentDetail,
-      addAssetBinding, updateAssetBinding, selectAssetBinding: setSelectedAssetBindingId,
+      addAssetBinding, updateAssetBinding, removeAssetBinding, selectAssetBinding: setSelectedAssetBindingId,
       addObservationPoint, updateObservationPoint, removeObservationPoint, selectObservationPoint: setSelectedObservationPointId,
       addMonitoringDevice, updateMonitoringDevice, removeMonitoringDevice, selectMonitoringDevice: setSelectedSensorBindingId,
       addMonitoringBinding, updateMonitoringBinding, selectMonitoringBinding: setSelectedServerBindingId,

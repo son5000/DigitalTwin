@@ -652,6 +652,7 @@ export default function SiteOverviewScene({
   onCameraControlsChange,
   onZoomChange,
   interactionMode,
+  allowWorldSelection = true,
   placementTemplateId,
   placementVariants,
   areaSelection,
@@ -725,12 +726,13 @@ export default function SiteOverviewScene({
 
   useEffect(() => {
     handlersRef.current = {
+      allowWorldSelection,
       onSelectBuilding, onSelectSiteObject, onSelectEquipment, onUpdateBuilding, onUpdateSiteObject,
       onEnterBuilding, onSelectFloor, onEnterFloor, onAreaSelectionChange, onPlaceTemplate, onPlaceTemplateArea, onCancelPlacement,
       onTerrainChange, onTerrainAreaSelectionChange,
       onMovementWaypointAdd, onMovementWaypointChange, onMovementWaypointInsert, onMovementWaypointDelete, onMovementEditComplete,
     };
-  }, [onAreaSelectionChange, onCancelPlacement, onEnterBuilding, onEnterFloor, onMovementEditComplete, onMovementWaypointAdd, onMovementWaypointChange, onMovementWaypointDelete, onMovementWaypointInsert, onPlaceTemplate, onPlaceTemplateArea, onSelectBuilding, onSelectEquipment, onSelectFloor, onSelectSiteObject, onTerrainChange, onTerrainAreaSelectionChange, onUpdateBuilding, onUpdateSiteObject]);
+  }, [allowWorldSelection, onAreaSelectionChange, onCancelPlacement, onEnterBuilding, onEnterFloor, onMovementEditComplete, onMovementWaypointAdd, onMovementWaypointChange, onMovementWaypointDelete, onMovementWaypointInsert, onPlaceTemplate, onPlaceTemplateArea, onSelectBuilding, onSelectEquipment, onSelectFloor, onSelectSiteObject, onTerrainChange, onTerrainAreaSelectionChange, onUpdateBuilding, onUpdateSiteObject]);
 
   useEffect(() => {
     siteObjectsRef.current = siteObjects;
@@ -1246,7 +1248,7 @@ export default function SiteOverviewScene({
         );
         return;
       }
-      if (pointerStart.distanceTo(new THREE.Vector2(event.clientX, event.clientY)) > 5 || dualTransformIsActive(transformControls)) return;
+      if (!handlersRef.current.allowWorldSelection || pointerStart.distanceTo(new THREE.Vector2(event.clientX, event.clientY)) > 5 || dualTransformIsActive(transformControls)) return;
       raycaster.setFromCamera(getPointer(event, renderer.domElement), runtime.activeCamera);
       if (handlersRef.current.onSelectEquipment) {
         const equipmentId = runtime.buildingObservation.pickEquipment(raycaster)
@@ -1266,7 +1268,7 @@ export default function SiteOverviewScene({
       else handlersRef.current.onSelectBuilding(buildingId);
     }
     function handleDoubleClick(event) {
-      if (interactionModeRef.current !== SITE_INTERACTION_MODES.NAVIGATE) return;
+      if (!handlersRef.current.allowWorldSelection || interactionModeRef.current !== SITE_INTERACTION_MODES.NAVIGATE) return;
       raycaster.setFromCamera(getPointer(event, renderer.domElement), runtime.activeCamera);
       const observationFloorId = runtime.buildingObservation.pick(raycaster);
       if (observationFloorId) return handlersRef.current.onEnterFloor(observationFloorId);

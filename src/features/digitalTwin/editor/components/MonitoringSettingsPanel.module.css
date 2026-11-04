@@ -132,6 +132,8 @@ details.settingsGroup[open] > :not(summary) + * { margin-top: 12px; }
 .rangeGrid input[type="number"], .axisGrid input[type="number"] { text-align: right; }
 .axisGrid { display: grid; min-width: 0; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 6px; }
 .axisGrid > * { min-width: 0; --inspector-field-columns: minmax(0, 1fr); }
+.drawerHeightGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.drawerHeightGrid > * { min-width: 0; --inspector-field-columns: minmax(0, 1fr); }
 .modelSetupGroup { display: grid; min-width: 0; gap: 10px; padding-top: 2px; }
 .modelSetupGroup > h3 { margin: 0; padding: 7px 2px 6px; border-bottom: 1px solid var(--color-border-strong); color: var(--color-heading); font-size: 14px; line-height: 1.4; }
 .subsectionTitle { margin: 0; color: var(--color-text-muted); font-size: 12px; font-weight: 700; line-height: 1.4; }

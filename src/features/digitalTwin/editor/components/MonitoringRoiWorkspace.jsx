@@ -23,6 +23,8 @@ import ObservationCreationFields from "./ObservationCreationFields.jsx";
 import { normalizeObservationPoint } from "../model/equipmentDetailModel.js";
 import VirtualCameraViewport from "./VirtualCameraViewport.jsx";
 import { bindObservationMeasurements, thermalObservationIssue } from "../model/observationSource.js";
+import { observationProfileIssue } from "../model/observationProfiles.js";
+import { captureObservationImage } from "../api/imageObservationAsset.js";
 
 const EMPTY_SENSORS = [];
 const thermalSummaryCache = new WeakMap();
@@ -36,7 +38,7 @@ function thermalFrameSummary(grid) {
 function RoiFields({ draft, setDraft }) {
   function updateRule(index, changes) { setDraft((current) => ({ ...current, rules: current.rules.map((rule, i) => i === index ? { ...rule, ...changes } : rule) })); }
   return <>
-    <label>ROI 이름<input value={draft.name} maxLength={80} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} /></label>
+    <label>관측 영역 이름<input value={draft.name} maxLength={80} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} /></label>
     <fieldset><legend>표시할 측정값</legend><div className={styles.choices}>{ROI_METRICS.map((metric) => <label key={metric.id}>
       <input type="checkbox" checked={draft.displayMetrics.includes(metric.id)} onChange={(event) => setDraft((current) => ({ ...current,
         displayMetrics: event.target.checked ? [...current.displayMetrics, metric.id] : current.displayMetrics.filter((id) => id !== metric.id) }))} />{metric.label}
@@ -103,6 +105,7 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [captureBusy, setCaptureBusy] = useState(false);
   const [preview, setPreview] = useState(null);
   const [focusVersion, setFocusVersion] = useState(initialRoi ? 1 : 0);
   const selectedDraft = draft?.equipmentId === equipmentId ? draft : null;
@@ -201,12 +204,12 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
 
   function replaceDraft(next) {
     if (busy) return false;
-    if (dirty && !window.confirm("저장하지 않은 ROI 설정을 버리시겠습니까?")) return false;
+    if (dirty && !window.confirm("저장하지 않은 관측 영역 설정을 버리시겠습니까?")) return false;
     setDraft(next); setEditing(false); setPreview(null); setError(""); setNotice(""); setDrawingFor(null);
     return true;
   }
   function cancelEditing() {
-    if (busy || (dirty && !window.confirm("저장하지 않은 ROI 설정을 버리시겠습니까?"))) return false;
+    if (busy || (dirty && !window.confirm("저장하지 않은 관측 영역 설정을 버리시겠습니까?"))) return false;
     setDraft(saved ? structuredClone(saved) : null); setEditing(false);
     setPreview(null); setError(""); setNotice(""); setDrawingFor(null);
     return true;
@@ -214,22 +217,24 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
   async function persist(event) {
     event.preventDefault(); setBusy(true); setError("");
     try {
-      if (geometryChanged) throw new Error("모델이 변경되었습니다. 현재 표면에 ROI를 다시 지정하세요.");
+      if (geometryChanged) throw new Error("설비 모델이 변경되었습니다. 관측 영역을 다시 지정하세요.");
       const point = isObservationRoi(currentDraft) ? resolveImageObservation(roiToObservationPoint(currentDraft),equipment,sceneProps.sensors ?? []) : null;
       const imageIssue = point && imageObservationIssue(point,equipment,sceneProps.sensors ?? []);
       if (imageIssue) throw new Error(imageIssue);
       const thermalIssue = point && thermalObservationIssue(point, equipment, sceneProps.sensors ?? []);
       if (thermalIssue) throw new Error(thermalIssue);
+      const profileIssue = point?.measurements.map(observationProfileIssue).find(Boolean);
+      if (profileIssue) throw new Error(profileIssue);
       const result = await monitoring.save(point ? observationPointToRoi(point) : currentDraft, equipment);
       setDraft(result); setEditing(false); setPreview(null);
-      setNotice(monitoring.shared ? "공동 ROI 설정을 저장했습니다." : "이 브라우저에 저장했습니다. 공동 저장·상시 감시는 서버 연결 후 사용할 수 있습니다.");
+      setNotice(monitoring.shared ? "관측 영역을 저장했습니다." : "이 브라우저에 관측 영역을 저장했습니다. 다른 기기와 공유하려면 서버 연결이 필요합니다.");
     } catch (issue) { setError(issue.message); }
     finally { setBusy(false); }
   }
   async function remove() {
-    if (!window.confirm(`‘${saved.name}’ ROI를 삭제하시겠습니까?`)) return;
+    if (!window.confirm(`‘${saved.name}’ 관측 영역을 삭제하시겠습니까?`)) return;
     setBusy(true); setError("");
-    try { await monitoring.remove(saved); setDraft(null); setEditing(false); setNotice("ROI를 삭제했습니다."); }
+    try { await monitoring.remove(saved); setDraft(null); setEditing(false); setNotice("관측 영역을 삭제했습니다."); }
     catch (issue) { setError(issue.message); }
     finally { setBusy(false); }
   }
@@ -244,17 +249,53 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
     const selected = rois.find((roi) => roi.id === id);
     if (selected && currentDraft?.id !== id) replaceDraft(structuredClone(selected));
   }
+  function addCameraRoi(position, changes) {
+    if (busy || !equipment) return null;
+    if (dirty && !window.confirm("저장하지 않은 관측 영역 설정을 버리고 새 영역을 추가하시겠습니까?")) {
+      throw new Error("기존 영역의 설정을 저장하거나 취소한 뒤 다시 추가하세요.");
+    }
+    const point = normalizeObservationPoint({ name: "새 관측 영역", equipmentId, localPosition: { x: position.x, y: position.y, z: position.z },
+      ...changes, model });
+    const resolved = resolveImageObservation(point, equipment, projectionSensors);
+    const issue = imageObservationIssue(resolved, equipment, projectionSensors);
+    if (issue) throw new Error(issue);
+    setDraft(observationPointToRoi(resolved)); setEditing(true); setError("");
+    setNotice("이름과 경보 기준을 확인한 뒤 저장하세요.");
+    return point.id;
+  }
+  async function captureReference(measurementId) {
+    const point = currentDraft && roiToObservationPoint(currentDraft);
+    const sensor = projectionSensors.find((entry) => entry.id === point?.imageBinding?.sensorId);
+    if (!sensor) { setError("관측 영역에 연결된 비전 카메라를 확인하세요."); return; }
+    setCaptureBusy(true); setError("");
+    try {
+      const frame = sensorProjectionFrame(sensor, textures, telemetry.now, telemetry.demo);
+      if (!frame?.url) throw new Error("현재 표시 중인 카메라 영상을 먼저 불러오세요.");
+      const image = await captureObservationImage(sensor, frame);
+      const referenceFrame = { ...image, sourceRect: point.imageBinding.sourceRect,
+        sourceQuad: point.imageBinding.sourceQuad ?? null, coordinateOrigin: "TOP_LEFT" };
+      setDraft((current) => {
+        const next = roiToObservationPoint(current);
+        next.measurements = next.measurements.map((item) => item.id === measurementId
+          ? { ...item, analysisConfig: { schemaVersion: 1, ...item.analysisConfig, referenceFrame } } : item);
+        return observationPointToRoi(next);
+      });
+      setNotice("현재 카메라 영상을 기준 사진으로 저장했습니다. 관측 영역 저장을 눌러 확정하세요.");
+    } catch (issue) { setError(issue.message); }
+    finally { setCaptureBusy(false); }
+  }
   const roiDetailContent = <>
     {(error || monitoring.error) && currentDraft && <p className={styles.error} role="alert">{error || monitoring.error}</p>}
     {notice && <p role="status" className={styles.hint}>{notice}</p>}
-    {currentDraft && !editing && <RoiDashboard roi={currentDraft} sensors={sceneProps.sensors} readings={readings} now={telemetry.now} connection={telemetry.status} demo={telemetry.demo} geometryChanged={geometryChanged}
+    {currentDraft && !editing && <RoiDashboard roi={currentDraft} sensors={sceneProps.sensors} readings={readings} now={telemetry.now} connection={telemetry.status} demo={telemetry.demo} geometryChanged={geometryChanged} equipment={equipment} projectId={projectId} model={model}
       onEdit={() => { setDraft(structuredClone(currentDraft)); setEditing(true); setNotice(""); setError(""); }} />}
     {currentDraft && editing && <form onSubmit={persist} className={styles.form} aria-label="관측 영역 설정">
-      {geometryChanged && <p role="alert" className={styles.error}>모델이 변경되었습니다. 현재 표면에 ROI를 다시 지정하세요.</p>}
+      {geometryChanged && <p role="alert" className={styles.error}>설비 모델이 변경되었습니다. 관측 영역을 다시 지정하세요.</p>}
       <div className={styles.draftHeading}><strong>{saved ? `${currentDraft.name} 설정` : "새 관측 영역 설정"}</strong><button type="button" disabled={busy} onClick={cancelEditing}>취소</button></div>
       {spherePoint ? <>
         <ObservationReadout point={spherePoint} sensors={sceneProps.sensors} readings={dirty || geometryChanged ? [] : readings} now={telemetry.now} />
-        <fieldset disabled={busy || drawing} className={styles.fields}><ObservationRoiFields equipment={equipment} compact allowPositionEdit selectedPoint={spherePoint} sensors={(sceneProps.sensors ?? []).filter((sensor) => sensor.equipmentIds?.includes(equipmentId))}
+        <fieldset disabled={busy || drawing || captureBusy} className={styles.fields}><ObservationRoiFields equipment={equipment} compact allowPositionEdit virtualCameraOnly={Boolean(spherePoint.virtualCameraRegion)} selectedPoint={spherePoint} sensors={(sceneProps.sensors ?? []).filter((sensor) => sensor.equipmentIds?.includes(equipmentId))}
+          onCaptureReference={captureReference} captureBusy={captureBusy}
           onPlace={(configuration) => { setCreation({ ...configuration, placementId: crypto.randomUUID() }); setDrawingFor(equipmentId); }}
           onChange={(_id, changes) => setDraft((current) => observationPointToRoi(resolveImageObservation({ ...roiToObservationPoint(current), ...changes }, equipment, sceneProps.sensors ?? [])))} /></fieldset>
       </> : <>
@@ -262,22 +303,22 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
         <small className={styles.hint}>{reading.measuredAt ? `측정 ${new Date(reading.measuredAt).toLocaleTimeString("ko-KR")}` : "이 영역에 대응하는 센서 데이터를 기다리고 있습니다."}</small>
         <fieldset disabled={busy} className={styles.fields}><RoiFields draft={currentDraft} setDraft={setDraft} /></fieldset>
       </>}
-      <div className={styles.actions}><button type="submit" disabled={busy}>{busy ? "저장 중…" : "ROI 저장"}</button>
-        {saved && <button type="button" disabled={busy} onClick={remove}>ROI 삭제</button>}</div>
+      <div className={styles.actions}><button type="submit" disabled={busy}>{busy ? "저장 중…" : "관측 영역 저장"}</button>
+        {saved && <button type="button" disabled={busy} onClick={remove}>관측 영역 삭제</button>}</div>
     </form>}
     {drawing && error && <p role="alert" className={styles.error}>{error}</p>}
   </>;
-  return <section className={styles.workspace} aria-label="설비 ROI 관측">
+  return <section className={styles.workspace} aria-label="설비 관측 영역">
     <EquipmentObservationScene {...sceneProps} cameraController={viewerCamera} focusEquipmentId={equipmentId} sensors={projectionSensors} observationPoints={displayPoints} pointOptions={sceneProps.pointOptions ?? {
       selectedId: audioOpen ? audioRoiId : currentDraft?.id,
       editing:drawing, placing:drawing, textureKind:creation?.textureKind, placementId:creation?.placementId,
-      placementLabel:creation?.textureKind ? `${creation.textureKind === "VISION" ? "비전" : "열화상"} 텍스처 위에 관측 영역을 지정하세요. 원본 카메라가 자동 연결됩니다.` : "모델 표면을 클릭해 관측 영역을 지정하세요.",
+      placementLabel:creation?.textureKind ? `${creation.textureKind === "VISION" ? "카메라" : "열화상"} 영상에서 관측 영역을 지정하세요. 촬영한 카메라가 자동으로 연결됩니다.` : "설비 위에서 관측할 위치를 선택하세요.",
       onAdd:(id,localPosition,targetNormal,imageBinding,thermalBinding)=>{
         const point = normalizeObservationPoint({ ...(creation?.pointId ? roiToObservationPoint(currentDraft) : { name:"새 관측 영역" }),
           geometryType:creation?.geometryType, measurements:bindObservationMeasurements(creation?.measurements, { imageBinding, thermalBinding }),
           equipmentId:id, localPosition, targetNormal, imageBinding: imageBinding ?? null, imageAnalysis: null, thermalBinding: thermalBinding ?? null, model });
         setDraft(observationPointToRoi(resolveImageObservation(point,equipment,projectionSensors))); setEditing(true); setError("");
-        setNotice("임시 관측 영역입니다. 설정을 확인한 뒤 ROI 저장을 눌러주세요.");
+        setNotice("영역을 지정했습니다. 이름과 경보 기준을 확인한 뒤 저장하세요.");
       },
       onPlaced:()=>{ setDrawingFor(null); setCreation(null); },
       onSelect: (id) => { const selected = rois.find((roi) => roi.id === id); if (!selected || !replaceDraft(structuredClone(selected))) return;
@@ -290,29 +331,29 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
       onError: setError, onCancel: () => { setDrawingFor(null); setPickingFor(null); },
     }} />
     {!editorMode && equipment && <VirtualCameraViewport equipment={equipment} cameras={sceneProps.viewerPreset?.virtualCameras?.[equipmentId] ?? []}
-      cameraController={viewerCamera} activeId={activeVirtualCameraId} onActiveChange={changeVirtualCamera} points={displayPoints}
+      cameraController={viewerCamera} activeId={activeVirtualCameraId} onActiveChange={changeVirtualCamera} points={displayPoints} sensors={projectionSensors} onAdd={addCameraRoi}
       panelOpen={dataOpen || open || panel === "DETAIL"} selectedRoiId={currentDraft?.id} onRoiSelect={selectCameraRoi} roiDetails={roiDetailContent} />}
     {!editorMode && <ViewerOverlaySlot name="tools"><MonitoringQuickTools panel={panel} thermalActive={thermalActive} alarmCount={activeAlarms.length} disabled={busy} onPanelChange={selectPanel} onThermalToggle={toggleThermal} /></ViewerOverlaySlot>}
     {dataOpen && <ViewerOverlaySlot name="panel"><aside className={`${styles.panel} ${styles.dataPanel} ${sharedPanelLayout ? styles.viewerPanel : ""}`} data-section={panel} aria-label={{ AUDIO: "소리 듣기", THERMAL: "열화상", ALARMS: "경고 이벤트" }[panel]} data-camera-safe-ui="right"><MonitoringDataPanel section={panel} equipment={equipment} key={`${equipmentId}:${panel}`} projectId={projectId} equipmentId={equipmentId} telemetry={telemetry} opacity={opacity} setOpacity={setOpacity} point={point} picking={picking} setPicking={(active) => { setPickingFor(active ? equipmentId : null); setDrawingFor(null); setError(""); }} layerError={layerError || error} model={model} sensorView={Boolean(sceneProps.sensorViewId)} availability={availability} thermalReadouts={thermalReadouts} rois={compatibleRois.filter((roi) => roi.equipmentId === equipmentId)} onRoiSelect={setAudioRoiId} onClose={() => selectPanel(null)} /></aside></ViewerOverlaySlot>}
     {picking && <InteractionGuide message="소리를 들을 모델 표면을 클릭하세요. Esc로 취소합니다." />}
-    {open && <ViewerOverlaySlot name="panel"><aside className={`${styles.panel} ${sharedPanelLayout ? styles.viewerPanel : ""}`} aria-label="ROI 조회 및 설정" data-camera-safe-ui="right">
+    {open && <ViewerOverlaySlot name="panel"><aside className={`${styles.panel} ${sharedPanelLayout ? styles.viewerPanel : ""}`} aria-label="관측 영역 조회 및 설정" data-camera-safe-ui="right">
       <header className={styles.panelHeader}>
         <strong>관측 영역</strong>
         <div className={styles.panelHeaderActions}>
           {!currentDraft && <button type="button" disabled={!equipmentId || busy || Boolean(sceneProps.sensorViewId)} aria-pressed={drawing} onClick={() => {
             if (drawing || creation) { setDrawingFor(null); setCreation(null); return; }
-            if (dirty && !window.confirm("저장하지 않은 ROI 설정을 버리고 새 영역을 지정하시겠습니까?")) return;
+            if (dirty && !window.confirm("저장하지 않은 관측 영역 설정을 버리고 새 영역을 지정하시겠습니까?")) return;
             setDraft(null); setCreation({}); setNotice(""); setError("");
           }}>{drawing || creation ? "영역 지정 취소" : "새 영역 지정"}</button>}
           {currentDraft && !drawing && <button type="button" disabled={busy} onClick={() => replaceDraft(null)}>목록으로 돌아가기</button>}
           <button type="button" disabled={busy} onClick={() => selectPanel(null)}>닫기</button>
         </div>
       </header>
-      {!equipmentId && <p>설비를 선택하면 ROI를 만들 수 있습니다.</p>}
-      {editing && spherePoint?.geometryType === "SPHERE" && <div className={styles.radiusControl} role="group" aria-label="ROI 구체 크기">
+      {!equipmentId && <p>설비를 선택하면 관측 영역을 만들 수 있습니다.</p>}
+      {editing && spherePoint?.geometryType === "SPHERE" && <div className={styles.radiusControl} role="group" aria-label="입체 관측 범위 크기">
         <span>반경 <strong>{currentRadius.toFixed(2)} m</strong></span>
-        <button type="button" aria-label="ROI 반경 줄이기" disabled={busy || currentRadius <= .01} onClick={() => resizeRoi(-.05)}>−</button>
-        <button type="button" aria-label="ROI 반경 늘리기" disabled={busy || currentRadius >= 100} onClick={() => resizeRoi(.05)}>+</button>
+        <button type="button" aria-label="관측 범위 줄이기" disabled={busy || currentRadius <= .01} onClick={() => resizeRoi(-.05)}>−</button>
+        <button type="button" aria-label="관측 범위 늘리기" disabled={busy || currentRadius >= 100} onClick={() => resizeRoi(.05)}>+</button>
       </div>}
       {drawing && <p className={styles.hint}>표면을 클릭하세요. Esc로 취소합니다.</p>}
       {!drawing && !currentDraft && <>
@@ -320,8 +361,8 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
       <div className={styles.list}>{scoped.map((roi) => <button type="button" key={roi.id} disabled={busy} aria-pressed={currentDraft?.id === roi.id} data-status={statuses[roi.id]} onClick={() => { if (replaceDraft(structuredClone(roi))) setFocusVersion((value) => value + 1); }}>
         <span>{roi.name}</span><small>{ROI_STATUSES[statuses[roi.id]].label}</small>
       </button>)}</div>
-      {!scoped.length && !monitoring.loading && <p className={styles.hint}>저장된 ROI가 없습니다.</p>}
-      {monitoring.loading && <p role="status">ROI 불러오는 중…</p>}
+      {!scoped.length && !monitoring.loading && <p className={styles.hint}>저장된 관측 영역이 없습니다.</p>}
+      {monitoring.loading && <p role="status">관측 영역 불러오는 중…</p>}
       {(error || monitoring.error) && <p className={styles.error} role="alert">{error || monitoring.error}</p>}
       {monitoring.error && <button type="button" onClick={monitoring.refresh}>목록 새로고침</button>}
       </>}

@@ -1,8 +1,7 @@
 import * as THREE from "three";
 
-// Three.js sorts by groupOrder before renderOrder, and opaque/transparent
-// objects have separate queues. ROI must be in the last transparent group;
-// disabling depth tests alone would still let later image overlays cover it.
+// Draw after translucent textures, but respect the depth written by opaque
+// equipment. An open door or a translucent shell leaves the ROI visible.
 export function createRoiOverlay(object) {
   const group = object.isGroup ? object : new THREE.Group();
   if (group !== object) {
@@ -15,11 +14,17 @@ export function createRoiOverlay(object) {
     for (const material of Array.isArray(node.material) ? node.material : [node.material]) {
       if (!material) continue;
       material.transparent = true;
-      material.depthTest = false;
+      material.depthTest = true;
       material.depthWrite = false;
       material.fog = false;
       material.toneMapped = false;
-      if (node.isMesh) { material.side = THREE.DoubleSide; material.forceSinglePass = true; }
+      if (node.isMesh) {
+        material.side = THREE.DoubleSide;
+        material.forceSinglePass = true;
+        material.polygonOffset = true;
+        material.polygonOffsetFactor = -2;
+        material.polygonOffsetUnits = -2;
+      }
       material.needsUpdate = true;
     }
   });

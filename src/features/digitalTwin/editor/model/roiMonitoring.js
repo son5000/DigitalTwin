@@ -1,13 +1,25 @@
-import { getEquipmentCoordinateFrame, mapSurfaceCoordinates, validateCoordinateFrame } from "./equipmentCoordinateFrame.js";
+import { getEquipmentCoordinateFrame, mapSurfaceCoordinates, modelToScanSlot, scanSlotForModelPosition, scanSlotFrame, validateCoordinateFrame } from "./equipmentCoordinateFrame.js";
 import { observationPlane, planeFields } from "./observationGeometry.js";
 
 export function roiToReferencePayload(roi, equipment) {
   const coordinateFrame = getEquipmentCoordinateFrame(equipment);
-  if (!coordinateFrame) return roi;
+  const surface = roi.surface;
+  const slot = !roi.imageBinding && surface?.center ? scanSlotForModelPosition(equipment, surface.center) : null;
+  const withinSlot = slot && (surface.vertices ?? []).every((vertex) => {
+    const local = modelToScanSlot(vertex, slot), tolerance = .002;
+    return local.x >= -tolerance && local.x <= slot.dimensions.width + tolerance
+      && local.y >= -tolerance && local.y <= slot.dimensions.height + tolerance
+      && local.z <= tolerance && local.z >= -slot.dimensions.depth - tolerance;
+  });
+  const slotReference = withinSlot ? { scanSlot: { side: slot.side, index: slot.index }, slotFrame: scanSlotFrame(equipment, slot),
+    slotSurface: { ...surface, coordinateSpace: "SCAN_SLOT",
+      center: Object.values(modelToScanSlot(surface.center, slot)),
+      ...(surface.vertices ? { vertices: surface.vertices.map((vertex) => Object.values(modelToScanSlot(vertex, slot))) } : {}) } } : {};
+  if (!coordinateFrame) return { ...roi, ...slotReference };
   validateCoordinateFrame(coordinateFrame, roi.equipmentId);
   const { observationPoint: _point, ...record } = roi;
   void _point;
-  return { ...record, schemaVersion: 2, coordinateFrame, surface: mapSurfaceCoordinates(roi.surface, coordinateFrame) };
+  return { ...record, schemaVersion: 2, coordinateFrame, surface: mapSurfaceCoordinates(roi.surface, coordinateFrame), ...slotReference };
 }
 
 export function roiFromReferencePayload(roi) {
@@ -55,6 +67,7 @@ export function observationPointToRoi(point) {
       coordinateSpace: "EQUIPMENT_LOCAL", representation: point.representation ?? "BOTH",
       ...(point.model ? { model: point.model } : {}) },
     opacity: point.opacity ?? .25, measurements: point.measurements ?? [], observationPoint: point,
+    ...(point.virtualCameraRegion ? { virtualCameraRegion: point.virtualCameraRegion } : {}),
     ...(point.imageBinding ? { imageBinding:point.imageBinding, imageAnalysis:point.imageAnalysis } : {}),
     ...(point.thermalBinding ? { thermalBinding: point.thermalBinding } : {}),
     displayMetrics: [], rules: [], monitoringEnabled: false,
@@ -64,6 +77,7 @@ export function observationPointToRoi(point) {
 export function roiToObservationPoint(roi) {
   const [x, y, z] = roi.surface.center;
   return { ...roi.observationPoint, id: roi.id, equipmentId: roi.equipmentId, name: roi.name, revision: roi.revision,
+    ...(roi.virtualCameraRegion ? { virtualCameraRegion: roi.virtualCameraRegion } : {}),
     ...(roi.imageBinding ? { imageBinding:roi.imageBinding, imageAnalysis:roi.imageAnalysis } : {}),
     ...(roi.thermalBinding ? { thermalBinding: roi.thermalBinding } : {}),
     geometryType: roi.surface.type === "PLANE" ? "PLANE" : "SPHERE", localPosition: { x, y, z }, radius: roi.surface.radius, opacity: roi.opacity ?? .25,
@@ -76,16 +90,32 @@ export function roiAudioSelection(roi, equipment) {
   const payload = roiToReferencePayload(roi, equipment);
   return { type: "ROI", roiId: roi.id, revision: roi.revision, coordinateSpace: "EQUIPMENT_LOCAL",
     ...(payload.coordinateFrame ? { coordinateFrame: payload.coordinateFrame, schemaVersion: 2 } : {}),
+    ...(payload.scanSlot ? { scanSlot: payload.scanSlot, slotFrame: payload.slotFrame, slotSurface: payload.slotSurface } : {}),
     representation: roi.surface.representation, surface: payload.surface };
 }
 
-function validPlane(surface, imageBinding) {
+function validPlane(surface, imageBinding, virtualCameraRegion) {
   if (!Array.isArray(surface.vertices) || surface.vertices.length !== 4 || surface.vertices.some((v) => !Array.isArray(v) || v.length !== 3 || !v.every(Number.isFinite))) return false;
   if (imageBinding) {
     const r = imageBinding.sourceRect;
     return Boolean(imageBinding.sensorId && r && [r.x,r.y,r.width,r.height].every(Number.isFinite)
       && r.width > 0 && r.height > 0 && r.x >= 0 && r.y >= 0 && r.x+r.width <= 1+1e-7 && r.y+r.height <= 1+1e-7
       && JSON.stringify(surface.outline) === "[0,1,2,3]" && JSON.stringify(surface.triangles) === "[0,1,2,0,2,3]");
+  }
+  if (virtualCameraRegion?.cameraId) {
+    const rect = virtualCameraRegion.rect;
+    const corners = virtualCameraRegion.vertices;
+    if (!rect || ![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite)
+      || rect.x < 0 || rect.y < 0 || rect.width <= 0 || rect.height <= 0
+      || rect.x + rect.width > 1 + 1e-7 || rect.y + rect.height > 1 + 1e-7
+      || !Array.isArray(corners) || corners.length !== 4
+      || !corners.every((corner, index) => Array.isArray(corner) && corner.length === 3
+        && corner.every((value, axis) => Number.isFinite(value) && Math.abs(value - surface.vertices[index][axis]) < 1e-5))) return false;
+    const edgeX = surface.vertices[1].map((value, axis) => value - surface.vertices[0][axis]);
+    const edgeY = surface.vertices[3].map((value, axis) => value - surface.vertices[0][axis]);
+    const cross = [edgeX[1] * edgeY[2] - edgeX[2] * edgeY[1], edgeX[2] * edgeY[0] - edgeX[0] * edgeY[2], edgeX[0] * edgeY[1] - edgeX[1] * edgeY[0]];
+    return cross.some((value) => Math.abs(value) > 1e-10)
+      && JSON.stringify(surface.outline) === "[0,1,2,3]" && JSON.stringify(surface.triangles) === "[0,1,2,0,2,3]";
   }
   const fields = planeFields(surface);
   if (![fields.planeWidth, fields.planeHeight].every((n) => Number.isFinite(n) && n >= .01 && n <= 100)) return false;
@@ -102,7 +132,7 @@ export function validateRoi(roi) {
     if (surface.coordinateSpace !== "EQUIPMENT_LOCAL" || !["ACTUAL", "PROXY", "BOTH"].includes(surface.representation)
       || !Array.isArray(surface.center) || surface.center.length !== 3 || !surface.center.every(Number.isFinite)
       || (isSphereRoi(roi) && (!Number.isFinite(surface.radius) || surface.radius < .01 || surface.radius > 100))
-      || (surface.type === "PLANE" && !validPlane(surface,roi.imageBinding))
+      || (surface.type === "PLANE" && !validPlane(surface, roi.imageBinding, roi.virtualCameraRegion ?? roi.observationPoint?.virtualCameraRegion))
       || !Array.isArray(roi.measurements) || roi.measurements.some((item) => !item.id || !item.metric || !Array.isArray(item.rules)
         || item.rules.some((rule) => !["gt", "gte", "lt", "lte"].includes(rule.operator) || !Number.isFinite(rule.threshold) || !["WARNING", "DANGER"].includes(rule.severity)))) {
       throw new Error("관측 영역의 위치, 크기와 측정 항목을 확인하세요.");
