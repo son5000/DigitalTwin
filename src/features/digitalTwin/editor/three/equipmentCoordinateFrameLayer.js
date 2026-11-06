@@ -1,9 +1,12 @@
 import * as THREE from "three";
 import { equipmentBounds, frontLowerLeft, getEquipmentCoordinateFrame } from "../model/equipmentCoordinateFrame.js";
+import { getEnclosure, getEnclosureDoorEntries, getEnclosureScanSlot } from "../model/equipmentEnclosure.js";
 import { disposeObject3D } from "./disposeObject3D.js";
 
 export function bindEquipmentCoordinateFrame({ renderer, camera, controls, renderedEquipment, getEquipment, getStage, getBinding, theme = "dark" }) {
   let preview = null, picker = null, down = null, previousKey = "", helper = null;
+  let previousSlotKey = "", slotHelper = null;
+  let slotMarkers = [], hoveredSlot = null;
   const canvas = renderer.domElement;
   const raycaster = new THREE.Raycaster();
   function bounds() {
@@ -43,12 +46,32 @@ export function bindEquipmentCoordinateFrame({ renderer, camera, controls, rende
     picker = null; canvas.style.cursor = ""; callback({ x: point.x, y: point.y, z: point.z });
   }
   function keydown(event) { if (event.key === "Escape") cancel(); }
+  function clearHover() { if (hoveredSlot) hoveredSlot.tooltip.visible = false; hoveredSlot = null; }
+  function showSlotAt(event) {
+    if (!slotHelper?.visible || picker || event.buttons) { clearHover(); return; }
+    const rect = canvas.getBoundingClientRect();
+    let nearest = null, nearestDistance = 14 * 14;
+    for (const item of slotMarkers) {
+      const point = item.marker.getWorldPosition(new THREE.Vector3()).project(camera);
+      if (point.z < -1 || point.z > 1) continue;
+      const x = (point.x + 1) * rect.width / 2, y = (1 - point.y) * rect.height / 2;
+      const distance = (event.clientX - rect.left - x) ** 2 + (event.clientY - rect.top - y) ** 2;
+      if (distance < nearestDistance) { nearest = item; nearestDistance = distance; }
+    }
+    if (nearest === hoveredSlot) return;
+    clearHover(); hoveredSlot = nearest;
+    if (hoveredSlot) hoveredSlot.tooltip.visible = true;
+  }
+  function pointerMove(event) { showSlotAt(event); }
   canvas.addEventListener("pointerdown", pointerDown, true);
   canvas.addEventListener("pointerup", pointerUp, true);
   canvas.addEventListener("pointercancel", cancel);
+  canvas.addEventListener("pointermove", pointerMove);
+  canvas.addEventListener("pointerleave", clearHover);
   window.addEventListener("keydown", keydown);
   window.addEventListener("blur", cancel);
   function clear() { if (helper) { helper.removeFromParent(); disposeObject3D(helper); helper = null; } }
+  function clearSlots() { clearHover(); slotMarkers = []; if (slotHelper) { slotHelper.removeFromParent(); disposeObject3D(slotHelper); slotHelper = null; } }
   function label(axis, text, color, position) {
     const image = document.createElement("canvas"); image.width = 320; image.height = 64;
     const context = image.getContext("2d");
@@ -75,6 +98,28 @@ export function bindEquipmentCoordinateFrame({ renderer, camera, controls, rende
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false, depthWrite: false, toneMapped: false, fog: false }));
     sprite.position.copy(position); sprite.userData.coordinateLabel = true; sprite.userData.pixelWidth = width; sprite.userData.pixelHeight = 28; helper.add(sprite);
   }
+  function slotTooltip(door, slot, marker, size) {
+    const image = document.createElement("canvas"); image.width = 480; image.height = 96;
+    const context = image.getContext("2d"); context.scale(2, 2);
+    const light = theme === "light";
+    context.fillStyle = light ? "rgba(247,250,251,.97)" : "rgba(9,18,25,.95)";
+    context.strokeStyle = light ? "rgba(50,72,84,.36)" : "rgba(205,225,234,.28)";
+    context.beginPath(); context.roundRect(.5, .5, 239, 45, 5); context.fill(); context.stroke();
+    context.fillStyle = "#e7b66d"; context.fillRect(1, 1, 3, 44);
+    context.fillStyle = light ? "#18313d" : "#eef5f7";
+    context.font = "650 11px system-ui, sans-serif";
+    context.fillText(`${door.label} · 기준점`, 12, 18);
+    context.fillStyle = light ? "#48616b" : "#b9cbd1";
+    context.font = "10px ui-monospace, SFMono-Regular, Consolas, monospace";
+    context.fillText(`X ${slot.origin.x.toFixed(3)}  Y ${slot.origin.y.toFixed(3)}  Z ${slot.origin.z.toFixed(3)} m`, 12, 35);
+    const texture = new THREE.CanvasTexture(image); texture.colorSpace = THREE.SRGBColorSpace;
+    texture.generateMipmaps = false; texture.minFilter = THREE.LinearFilter; texture.magFilter = THREE.LinearFilter;
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false, depthWrite: false, toneMapped: false, fog: false }));
+    sprite.position.set(size * 1.5, size * 2.5, 0);
+    sprite.userData.coordinateLabel = true; sprite.userData.pixelWidth = 240; sprite.userData.pixelHeight = 48;
+    sprite.visible = false; marker.add(sprite);
+    return sprite;
+  }
   return {
     bounds,
     preview(value) { preview = value; },
@@ -88,8 +133,8 @@ export function bindEquipmentCoordinateFrame({ renderer, camera, controls, rende
     },
     update() {
       const equipment = getEquipment(), stage = getStage(), entry = renderedEquipment.get(equipment?.id);
-      const enabled = entry && ["ASSET", "SENSOR", "POINT"].includes(stage);
-      if (!enabled) { if (picker) cancel(); if (helper) helper.visible = false; return; }
+      const enabled = entry && ["ASSET", "SCAN", "SENSOR", "POINT"].includes(stage);
+      if (!enabled) { if (picker) cancel(); clearHover(); if (helper) helper.visible = false; if (slotHelper) slotHelper.visible = false; return; }
       const frame = preview ?? getEquipmentCoordinateFrame(equipment);
       const key = JSON.stringify([equipment.id, frame, equipment.dimensions]);
       if (key !== previousKey || !helper) {
@@ -98,23 +143,58 @@ export function bindEquipmentCoordinateFrame({ renderer, camera, controls, rende
         helper.position.fromArray(frame?.origin ?? [fallback.x, fallback.y, fallback.z]); helper.rotation.fromArray([...(frame?.rotation ?? [0, 0, 0]), "XYZ"]);
         const size = Math.max(.15, Math.min(1, (equipment.dimensions?.height ?? 1) * .24));
         const axes = new THREE.AxesHelper(size); helper.add(axes);
-        label("X", "오른쪽", "#f08b8b", new THREE.Vector3(size * 1.5, 0, 0));
-        label("Y", "위", "#85cf8e", new THREE.Vector3(0, size * 1.25, 0));
         label("Z", "정면", "#79b8ef", new THREE.Vector3(0, 0, size * 1.5));
         label("O", "기준점 · 0, 0, 0", theme === "light" ? "#78909c" : "#a8bac3", new THREE.Vector3(0, -size * .18, 0));
         helper.traverse((object) => { object.userData.monitoringOverlay = true; object.raycast = () => {}; object.renderOrder = 1000; if (object.material) { object.material.depthTest = false; object.material.depthWrite = false; } });
         entry.object.add(helper);
       }
       helper.visible = true;
+      const slots = getEnclosure(equipment).enabled ? getEnclosureDoorEntries(equipment).map((door) => ({
+        door, slot: getEnclosureScanSlot(equipment, door.index, door.side),
+      })).filter(({ slot }) => slot) : [];
+      const slotKey = JSON.stringify([equipment.id, slots.map(({ door, slot }) => [door.label, slot.origin, slot.rotationY, slot.dimensions])]);
+      if (slotKey !== previousSlotKey) {
+        previousSlotKey = slotKey; clearSlots();
+        if (slots.length) {
+          slotHelper = new THREE.Group();
+          for (const { door, slot } of slots) {
+            const marker = new THREE.Group();
+            marker.position.set(slot.origin.x, slot.origin.y, slot.origin.z);
+            marker.rotation.y = slot.rotationY;
+            const size = Math.max(.04, Math.min(.1, Math.min(slot.dimensions.width, slot.dimensions.height) * .14));
+            marker.add(new THREE.AxesHelper(size));
+            const point = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), new THREE.MeshBasicMaterial({ color: "#e7b66d" }));
+            marker.add(point);
+            const tooltip = slotTooltip(door, slot, marker, size);
+            slotMarkers.push({ marker, point, tooltip });
+            slotHelper.add(marker);
+          }
+          slotHelper.traverse((object) => {
+            object.userData.monitoringOverlay = true; object.raycast = () => {}; object.renderOrder = 1000;
+            if (object.material) for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+              material.depthTest = false; material.depthWrite = false;
+            }
+          });
+          entry.object.add(slotHelper);
+        }
+      }
+      if (slotHelper) slotHelper.visible = true;
       // Keep axis labels readable at any working zoom without resizing the datum.
       helper.updateWorldMatrix(true, false);
+      slotHelper?.updateWorldMatrix(true, true);
       const viewportHeight = Math.max(1, canvas.clientHeight);
-      helper.children.filter((object) => object.userData.coordinateLabel).forEach((sprite) => {
+      for (const group of [helper, slotHelper]) group?.traverse((sprite) => {
+        if (!sprite.userData.coordinateLabel) return;
         const distance = camera.position.distanceTo(sprite.getWorldPosition(new THREE.Vector3()));
-        const height = 2 * distance * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / camera.zoom * 22 / viewportHeight;
+        const height = 2 * distance * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / camera.zoom * sprite.userData.pixelHeight * .8 / viewportHeight;
         sprite.scale.set(height * sprite.userData.pixelWidth / sprite.userData.pixelHeight, height, 1);
       });
+      for (const { marker, point } of slotMarkers) {
+        const distance = camera.position.distanceTo(marker.getWorldPosition(new THREE.Vector3()));
+        const radius = 2 * distance * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / camera.zoom * 4 / viewportHeight;
+        point.scale.setScalar(radius);
+      }
     },
-    dispose() { cancel(); clear(); canvas.removeEventListener("pointerdown", pointerDown, true); canvas.removeEventListener("pointerup", pointerUp, true); canvas.removeEventListener("pointercancel", cancel); window.removeEventListener("keydown", keydown); window.removeEventListener("blur", cancel); },
+    dispose() { cancel(); clear(); clearSlots(); canvas.removeEventListener("pointerdown", pointerDown, true); canvas.removeEventListener("pointerup", pointerUp, true); canvas.removeEventListener("pointercancel", cancel); canvas.removeEventListener("pointermove", pointerMove); canvas.removeEventListener("pointerleave", clearHover); window.removeEventListener("keydown", keydown); window.removeEventListener("blur", cancel); },
   };
 }

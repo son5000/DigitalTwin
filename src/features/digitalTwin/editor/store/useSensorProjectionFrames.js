@@ -3,7 +3,7 @@ import { getSensorFrame, monitoringApiBase } from "../api/monitoringClient";
 import { activeVisionSample } from "../model/sensorImageTransform";
 import { activeThermalSample, loadThermalSample } from "../model/thermalFrame";
 
-export default function useSensorProjectionFrames(sensors = []) {
+export default function useSensorProjectionFrames(sensors = [], suspended = false) {
   // Moving a sensor must neither restart requests nor reload its scene.
   const key = JSON.stringify(sensors.filter((sensor) => sensor.textureProjection?.enabled).flatMap((sensor) => {
     const kind = sensor.textureProjection.kind === "THERMAL" ? "THERMAL" : "VISION";
@@ -14,6 +14,7 @@ export default function useSensorProjectionFrames(sensors = []) {
   }));
   const [state, setState] = useState({ key: "", frames: [] });
   useEffect(() => {
+    if (suspended) return undefined;
     const selected = JSON.parse(key);
     if (!selected.length) return;
     const controller = new AbortController(); let timer;
@@ -34,6 +35,6 @@ export default function useSensorProjectionFrames(sensors = []) {
     }
     void refresh();
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [key]);
-  return state.key === key ? state.frames : [];
+  }, [key, suspended]);
+  return !suspended && state.key === key ? state.frames : [];
 }

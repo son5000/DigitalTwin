@@ -36,13 +36,16 @@ export function calibrationPayload(projectId, equipment, sensor, assets = []) {
   const mounted = getSensorMountPose(sensor, equipment);
   const coordinateFrame = getEquipmentCoordinateFrame(equipment);
   const referencePose = coordinateFrame ? sensorReferencePose(sensor, equipment, mounted) : { position: mounted?.position ?? sensor.position, rotation: mounted?.rotation ?? sensor.rotation };
-  const mountingIssue = sensor.surfaceMount && (!mounted || mounted.adjusted) ? "부착면과 센서 위치를 다시 확인하세요." : "";
-  const payload = { schemaVersion: coordinateFrame ? 2 : 1, projectId, equipmentId: equipment.id, sensorId: sensor.serverSensorId,
+  const slot = sensor.scanSlotMount ? getEnclosureScanSlot(equipment, sensor.scanSlotMount.index, sensor.scanSlotMount.side) : null;
+  const mountingIssue = (sensor.surfaceMount || sensor.scanSlotMount) && (!mounted || mounted.adjusted) ? "부착면·서랍과 센서 위치를 다시 확인하세요." : "";
+  const payload = { schemaVersion: slot ? 3 : coordinateFrame ? 2 : 1, projectId, equipmentId: equipment.id, sensorId: sensor.serverSensorId,
     ...(coordinateFrame ? { coordinateFrame } : {}),
     serialNumber: sensor.serialNumber, bindingId: sensor.id, capabilities: getSensorCapabilities(sensor), model: modelReference(equipment, assets),
     coordinateSystem: { unit: "m", handedness: "RIGHT", up: "+Y", rotationUnit: "rad", rotationOrder: "XYZ", sensorForward: "-Y", sensorUp: "-Z" },
     pose: { space: coordinateFrame || sensor.mountMode === "EQUIPMENT" ? "EQUIPMENT_LOCAL" : "WORLD", position: vector(referencePose.position), rotation: vector(referencePose.rotation) },
     ...(sensor.surfaceMount ? { surfaceMount: sensor.surfaceMount, mountingIssue } : {}),
+    ...(sensor.scanSlotMount ? { scanSlotMount: slot ? { coordinateSpace: "SCAN_SLOT", equipmentId: equipment.id, side: slot.side, index: slot.index,
+      position: vector(sensor.scanSlotMount.position), slotFrame: scanSlotFrame(equipment, slot) } : null, mountingIssue } : {}),
     ...(sensor.textureProjection ? { textureProjection: normalizeSensorProjection(sensor.textureProjection), imageTransform: imageAnalysisTransform(sensor),
       ...(normalizeSensorProjection(sensor.textureProjection).kind === "VISION" ? { imageProcessing: imageProcessingPayload(projectId, equipment, sensor, assets) } : {}) } : {}),
     equipmentTransform: { position: vector(equipment.position), rotation: vector(equipment.rotation) },

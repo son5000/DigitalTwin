@@ -640,7 +640,7 @@ export default function FloorPlan3DScene({
     const sensorWorldPosition = (device) => {
       const mounted = device.mountMode === "EQUIPMENT" ? equipmentMap.get(device.surfaceMount?.equipmentId ?? device.equipmentIds?.[0]) : null;
       const pose = mounted ? getSensorMountPose(device, mounted.equipment) : null;
-      if (device.surfaceMount && !pose) return null;
+      if ((device.surfaceMount || device.scanSlotMount) && !pose) return null;
       const position = pose?.position.clone() ?? new THREE.Vector3(device.position.x, device.position.y, device.position.z);
       const quaternion = new THREE.Quaternion().setFromEuler(pose?.rotation ?? new THREE.Euler(device.rotation.x, device.rotation.y, device.rotation.z));
       if (mounted) {

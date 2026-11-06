@@ -33,7 +33,8 @@ export async function writeProjectArchive(entries, onProgress = () => {}) {
   const zip = new Zip((failure, data) => {
     if (failure) { error = failure; return; }
     size += data.length;
-    parts.push(data);
+    // Do not retain every typed output buffer alongside the final ZIP Blob.
+    parts.push(new Blob([data]));
   });
   for (const { path, blob } of entries) {
     if (!validPath(path) || names.has(path) || encoder.encode(path).length > 65535) invalid();
@@ -99,6 +100,17 @@ export async function readProjectArchive(blob) {
       const start = entry.start + 30 + nameLength + extraLength;
       if (start + entry.compressed > directoryOffset) invalid();
       if (decoder.decode(await blob.slice(entry.start + 30, entry.start + 30 + nameLength).arrayBuffer()) !== path) invalid();
+      if (entry.method === 0) {
+        // Exported scans use STORE. Validate them in bounded chunks, then keep
+        // a slice of the original ZIP instead of copying every scan into RAM.
+        let crc = -1;
+        for (let offset = 0; offset < entry.size; offset += CHUNK_BYTES) {
+          const bytes = new Uint8Array(await blob.slice(start + offset, Math.min(start + offset + CHUNK_BYTES, start + entry.size)).arrayBuffer());
+          crc = updateCrc(crc, bytes);
+        }
+        if (((crc ^ -1) >>> 0) !== entry.crc) throw new Error(`파일 무결성 확인에 실패했습니다: ${path}`);
+        return blob.slice(start, start + entry.size, type);
+      }
       const parts = [];
       let size = 0, crc = -1;
       const receive = (bytes) => {

@@ -48,7 +48,7 @@ export default function RoiDashboard({ roi, sensors = [], readings, now, connect
         </dd>
       </div>)}
     </dl>
-    {measurement?.metric === "GENERAL" && equipment && <GeneralObservationDashboard key={roi.id} roi={roi} point={point} rows={rows} equipment={equipment} projectId={projectId} model={model} />}
+    {measurement?.metric === "GENERAL" && equipment && <GeneralObservationDashboard key={roi.id} roi={roi} point={point} rows={rows} equipment={equipment} projectId={projectId} model={model} demo={demo} />}
     {measurement?.metric === "vision.gaugeValue" && <dl className={styles.geometrySummary}>
       <div><dt>바늘 시작</dt><dd>{Number.isFinite(profile.scale?.startAngleDeg) ? `${profile.scale.startAngleDeg}° · ${profile.scale.startValue}${measurement.unit ? ` ${measurement.unit}` : ""}` : "미설정"}</dd></div>
       <div><dt>바늘 끝</dt><dd>{Number.isFinite(profile.scale?.endAngleDeg) ? `${profile.scale.endAngleDeg}° · ${profile.scale.endValue}${measurement.unit ? ` ${measurement.unit}` : ""}` : "미설정"}</dd></div>

@@ -44,11 +44,12 @@ export function createObservationBadge(marker, point, index, status, theme = "da
   label.userData.observationBadge = true;
   label.userData.pixelHeight = BADGE_HEIGHT;
   let expanded;
+  let currentStatus = status;
   label.userData.setExpanded = (next) => {
     if (expanded === next) return;
     expanded = next;
     const light = theme === "light";
-    const operational = STATUS[status.level] ?? STATUS.EMPTY;
+    const operational = STATUS[currentStatus.level] ?? STATUS.EMPTY;
     const statusColor = operational[light ? "light" : "dark"];
     const background = light ? "rgba(247,250,251,.96)" : "rgba(9,18,25,.94)";
     const border = light ? "rgba(50,72,84,.30)" : "rgba(205,225,234,.24)";
@@ -87,6 +88,13 @@ export function createObservationBadge(marker, point, index, status, theme = "da
     label.userData.pixelWidth = width;
     texture.repeat.set(width / MAX_BADGE_WIDTH, 1);
     texture.needsUpdate = true;
+  };
+  label.userData.setStatus = (next) => {
+    if (next.level === currentStatus.level) return;
+    currentStatus = next;
+    const wasExpanded = expanded;
+    expanded = undefined;
+    label.userData.setExpanded(wasExpanded);
   };
   label.userData.setExpanded(false);
   // Group priority is sorted before object priority, including transform handles.

@@ -4,8 +4,10 @@ import { createRoiRepository, roiStorageKey } from "../../digitalTwin/editor/api
 import { customAssetRepository } from "../../customAssets/storage/customAssetRepository";
 import { getCustomAssetIdFromTemplate } from "../../customAssets/core/customAssetTypes";
 import { isObservationRoi, roiToObservationPoint, validateRoi } from "../../digitalTwin/editor/model/roiMonitoring";
+import { calibrationPayload } from "../../digitalTwin/editor/model/monitoringContract.js";
 import { PROJECT_STORAGE_KEY, readProjects } from "./projectRepository";
 import { decodeProjectFile, encodeProjectZip, safeBundleName } from "./projectBundleFiles.js";
+import { monitoringApiBase } from "../../digitalTwin/editor/api/monitoringClient.js";
 
 function visit(value, callback) {
   if (!value || typeof value !== "object" || value instanceof Blob) return;
@@ -66,6 +68,22 @@ export async function exportProjectBundle(project, { onProgress = () => {}, stor
     externalReferences: [...references], requires: ["동일 버전의 뷰어 빌드와 기본 제공 리소스", "실시간 데이터 사용 시 센서 서버 연결"] }, onProgress);
 }
 
+// The backend owns durable storage. It must validate the ZIP and return the
+// same project ID plus a new revision before the editor reports success.
+export async function sendProjectBundle(project, blob, signal) {
+  if (!monitoringApiBase) throw new Error("프로젝트 서버 주소가 설정되지 않았습니다.");
+  const response = await fetch(`${monitoringApiBase}/projects/${encodeURIComponent(project.id)}/bundle`, {
+    method: "PUT", credentials: "same-origin", headers: { "Content-Type": "application/zip" }, body: blob,
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(600000)]) : AbortSignal.timeout(600000),
+  });
+  if (!response.ok) throw new Error(response.status === 404 ? "서버의 프로젝트 ZIP 저장 기능이 준비되지 않았습니다."
+    : `서버에 프로젝트를 저장하지 못했습니다 (${response.status}).`);
+  const result = await response.json();
+  if (result?.projectId !== project.id || !Number.isInteger(result.revision) || result.revision < 1)
+    throw new Error("서버의 프로젝트 저장 확인값을 검증할 수 없습니다.");
+  return result;
+}
+
 export async function importProjectBundle(file, storage = window.localStorage, { onProgress = () => {} } = {}) {
   const source = await decodeProjectFile(file, onProgress);
   if (source?.format !== "digital-twin-project" || ![1, 2].includes(source.version) || !Array.isArray(source.project?.layout?.hierarchy?.nodes)
@@ -79,6 +97,8 @@ export async function importProjectBundle(file, storage = window.localStorage, {
     if (typeof asset?.id !== "string" || !asset.id || replacements.has(asset.id)) throw new Error("첨부 자산의 ID가 올바르지 않습니다.");
     replacements.set(asset.id, `import-${crypto.randomUUID()}`);
   }
+  if (replacements.has(source.project.id)) throw new Error("프로젝트와 첨부 자산의 ID가 중복됩니다.");
+  replacements.set(source.project.id, projectId);
   function rewrite(value) {
     if (typeof value === "string") {
       if (replacements.has(value)) return replacements.get(value);
@@ -112,6 +132,17 @@ export async function importProjectBundle(file, storage = window.localStorage, {
       }
     }
     const layout = bundle.project.layout;
+    const equipmentById = new Map(Object.values(layout.equipmentByFloorId ?? {}).flat().map((equipment) => [equipment.id, equipment]));
+    if (Array.isArray(layout.sensorBindings)) {
+      layout.sensorBindings = layout.sensorBindings.map((sensor) => {
+        const equipment = equipmentById.get(sensor.equipmentIds?.[0]);
+        if (!equipment || !sensor.calibration && !sensor.calibrationConfirmationModel) return sensor;
+        const payload = calibrationPayload(projectId, equipment, sensor, layout.equipmentAssetBindings ?? []);
+        return { ...sensor, ...(sensor.calibrationConfirmationModel ? { calibrationConfirmationModel: payload.model.version } : {}),
+          ...(sensor.calibration ? { calibration: { ...sensor.calibration, payload, signature: JSON.stringify(payload), storage: "LOCAL", revision: 0 } } : {}) };
+      });
+      if (layout.observationConfig) layout.observationConfig.sensorBindings = layout.sensorBindings;
+    }
     if (source.version === 1) {
       const existingPoints = layout.observationConfig?.observationPoints ?? layout.observationPoints ?? [];
       const additions = bundle.rois.filter((roi) => isObservationRoi(roi) && !existingPoints.some((point) => point.id === roi.id)).map(roiToObservationPoint);

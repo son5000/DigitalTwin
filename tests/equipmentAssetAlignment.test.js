@@ -3,11 +3,11 @@ import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 import * as THREE from "three";
-import { createAlignmentTransform, normalizeAssetBinding } from "../src/features/digitalTwin/editor/model/equipmentDetailModel.js";
-import { getEnclosureScanSlot, resizeEnclosureDoor } from "../src/features/digitalTwin/editor/model/equipmentEnclosure.js";
+import { createAlignmentTransform, normalizeAssetBinding, normalizeSensorBinding } from "../src/features/digitalTwin/editor/model/equipmentDetailModel.js";
+import { getEnclosureScanSlot, getSensorMountPose, resizeEnclosureDoor } from "../src/features/digitalTwin/editor/model/equipmentEnclosure.js";
 import { modelToScanSlot, resultPositionToModel, scanSlotForModelPosition, scanSlotToModel } from "../src/features/digitalTwin/editor/model/equipmentCoordinateFrame.js";
 import { roiToReferencePayload } from "../src/features/digitalTwin/editor/model/roiMonitoring.js";
-import { modelReference } from "../src/features/digitalTwin/editor/model/monitoringContract.js";
+import { calibrationPayload, modelReference, validateCalibration } from "../src/features/digitalTwin/editor/model/monitoringContract.js";
 
 let server;
 let applyAssetAlignment;
@@ -152,6 +152,30 @@ test("앞뒤 서랍의 원점·상대좌표는 왕복 변환되고 서버 모델
   assert.deepEqual(reference.scanSlot, { side: "FRONT", index: 1 });
   assert.deepEqual(reference.alignment.position, { x: .05, y: .02, z: -.03 });
   assert.equal(reference.slotFrame.id, "CABINET:FRONT:1");
+});
+
+test("서랍 안 센서의 실측 좌표는 배치·서버 보정·수신 히트맵에 같은 기준을 사용한다", () => {
+  const cabinet = { id: "CABINET", dimensions: { width: 1.2, height: 2.4, depth: 1.2 },
+    enclosure: { enabled: true, doorCount: 3, doorLayout: "STACKED", bodyLayout: "BACK_TO_BACK", rear: { doorCount: 1 } } };
+  for (const side of ["FRONT", "REAR"]) {
+    const slot = getEnclosureScanSlot(cabinet, 0, side);
+    const local = { x: .12, y: .23, z: -.08 };
+    const sensor = normalizeSensorBinding({ id: `S-${side}`, equipmentIds: [cabinet.id], serverSensorId: `SERVER-${side}`,
+      serialNumber: `SERIAL-${side}`, mountMode: "EQUIPMENT", scanSlotMount: { equipmentId: cabinet.id, side, index: 0, position: local },
+      position: { x: 0, y: 0, z: 0 } });
+    assert.deepEqual(normalizeSensorBinding(JSON.parse(JSON.stringify(sensor))).scanSlotMount, sensor.scanSlotMount);
+    const model = scanSlotToModel(local, slot);
+    almostEqual(getSensorMountPose(sensor, cabinet).position.toArray(), Object.values(model));
+    const payload = validateCalibration(calibrationPayload("PROJECT", cabinet, sensor));
+    assert.equal(payload.schemaVersion, 3);
+    assert.deepEqual(payload.scanSlotMount.position, Object.values(local));
+    assert.equal(payload.scanSlotMount.slotFrame.id, `CABINET:${side}:0`);
+    almostEqual(payload.pose.position, Object.values(model));
+    almostEqual(resultPositionToModel({ equipmentId: cabinet.id, coordinateSpace: "SCAN_SLOT",
+      scanSlot: { side, index: 0 }, position: Object.values(local) }, cabinet), Object.values(model));
+    const outside = { ...sensor, scanSlotMount: { ...sensor.scanSlotMount, position: { ...local, x: slot.dimensions.width + .01 } } };
+    assert.throws(() => validateCalibration(calibrationPayload("PROJECT", cabinet, outside)), /서랍/);
+  }
 });
 
 test("서랍 안 일반 관측 영역만 서랍 상대좌표를 전달하고 비전 영역은 기존 이미지 좌표를 유지한다", () => {

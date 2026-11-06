@@ -1,0 +1,4 @@
+.preview { display: grid; gap: 6px; width: 100%; min-width: 0; }
+.preview canvas { display: block; width: 100%; max-height: 210px; aspect-ratio: 4 / 3; object-fit: contain; background: #10182b; border-radius: 5px; }
+.scale { display: flex; align-items: center; gap: 7px; color: var(--portal-muted, #a9b8c4); font-size: 11px; font-variant-numeric: tabular-nums; }
+.scale i { flex: 1; height: 6px; border-radius: 2px; background: linear-gradient(90deg, #000080, #0000ff 13%, #00ffff 38%, #ffff00 63%, #ff0000 88%, #800000); }

@@ -20,8 +20,7 @@
 .controlDock details[open] summary::after { transform: rotate(135deg); }
 .controlDock [data-viewer-control="layers"] > div { width: min(240px, calc(100vw - 126px)); max-height: min(180px, 25dvh); overflow: auto; padding-bottom: 8px; }
 .controlDock [data-viewer-control="doors"] { order: 1; flex: 0 1 auto; height: var(--viewer-control-height); gap: 8px; padding: 0; scroll-padding: 0; scrollbar-width: thin; }
-.controlDock [data-viewer-control="doors"] button { min-height: 0; height: calc(var(--viewer-control-height) - 2px); flex: 0 0 auto; }
-.controlDock [data-viewer-control="doors"][data-single="true"] button { height: var(--viewer-control-height); }
+.controlDock [data-viewer-control="doors"] button { min-height: var(--viewer-control-height); height: var(--viewer-control-height); flex: 0 0 auto; }
 .controlDock > div:last-child { position: static; order: 2; height: var(--viewer-control-height); margin-left: 0; padding: 0; flex-shrink: 0; border-radius: 6px; box-shadow: none; pointer-events: auto; }
 .controlDock > div:last-child button { width: calc(var(--viewer-control-height) - 2px); height: calc(var(--viewer-control-height) - 2px); font-size: 18px; }
 .controlDock > div:last-child output { min-width: 52px; font-size: 12px; }

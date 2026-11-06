@@ -11,7 +11,7 @@ export function normalizeEquipmentEnvironment(source = {}) {
     gridColor: color(source.gridColor, "#1f6c98"),
     groundMode: ["VISIBLE", "TRANSLUCENT", "SECTION", "HIDDEN"].includes(source.groundMode) ? source.groundMode : "VISIBLE",
     groundOpacity: number(source.groundOpacity, 0.28, 0, 1),
-    groundSize: number(source.groundSize, 20, 0.1, 10000),
+    groundSize: number(source.groundSize, 5, 0.1, 10000),
     groundHeight: number(source.groundHeight, 0, -1000, 1000),
     gridVisible: source.gridVisible !== false,
     gridSpacing: number(source.gridSpacing, 0.5, 0.01, 1000),
@@ -31,7 +31,7 @@ export function normalizeEquipmentView(view) {
 export function normalizeVirtualCameraDoorState(state) {
   if (!state || !Array.isArray(state.frontOpen) || !Array.isArray(state.rearOpen)
     || [...state.frontOpen, ...state.rearOpen].some((open) => typeof open !== "boolean")) return null;
-  return { frontOpen: state.frontOpen.slice(0, 2), rearOpen: state.rearOpen.slice(0, 2) };
+  return { frontOpen: state.frontOpen.slice(0, 5), rearOpen: state.rearOpen.slice(0, 5) };
 }
 
 export function normalizeScanLighting(source = {}) {

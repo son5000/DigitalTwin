@@ -44,6 +44,24 @@ test("가상 카메라는 앞뒤 문 상태를 저장하고 이전 시점은 현
   assert.deepEqual(captureEnclosureDoorState(withDoorOverrides(equipment, enclosureDoorOverrideFromState(equipment, cameras[0].doorState))), state);
 });
 
+test("가상 카메라는 3층 이상 문을 닫은 상태까지 저장하고 복원한다", () => {
+  const equipment = { id: "EQ1", dimensions: { width: 1, height: 3, depth: 1 }, enclosure: {
+    enabled: true, doorCount: 3, doorLayout: "STACKED", stackOrder: "BOTTOM_UP",
+    doors: [{ open: false }, { open: false }, { open: true }],
+  } };
+  const closed = withDoorOverrides(equipment, enclosureDoorOverrideFromState(equipment, {
+    frontOpen: [false, false, false], rearOpen: [],
+  }));
+  const captured = captureEnclosureDoorState(closed);
+  const view = { position: [0, 1, 3], target: [0, 1, 0], up: [0, 1, 0] };
+  const [camera] = createViewerPreset(JSON.parse(JSON.stringify(createViewerPreset({ virtualCameras: {
+    EQ1: [{ id: "closed", name: "외관", view, doorState: captured }],
+  } })))).virtualCameras.EQ1;
+  assert.deepEqual(camera.doorState.frontOpen, [false, false, false]);
+  assert.deepEqual(captureEnclosureDoorState(withDoorOverrides(equipment,
+    enclosureDoorOverrideFromState(equipment, camera.doorState))).frontOpen, [false, false, false]);
+});
+
 test("가상 카메라 시점은 프로젝트 설정을 JSON으로 복원한다", () => {
   const view = { position: [2, 1, 3], target: [0, 0, 0], up: [0, 1, 0], fov: 60 };
   const cameras = createViewerPreset(JSON.parse(JSON.stringify(createViewerPreset({ virtualCameras: { EQ1: [
@@ -73,7 +91,7 @@ test("설비별 배경·지면은 독립적으로 저장되고 잘못된 값은 
 test("모델 관제 화면의 환경과 카메라 기본값을 사용한다", () => {
   assert.deepEqual(normalizeEquipmentEnvironment(), {
     backgroundColor: "#f5f5f5", groundColor: "#a1a1a1", gridColor: "#1f6c98",
-    groundMode: "VISIBLE", groundOpacity: 0.28, groundSize: 20, groundHeight: 0,
+    groundMode: "VISIBLE", groundOpacity: 0.28, groundSize: 5, groundHeight: 0,
     gridVisible: true, gridSpacing: 0.5,
   });
   assert.equal(normalizeEquipmentView({ position: [0, 1, 3], target: [0, 1, 0], up: [0, 1, 0] }).fov, 60);

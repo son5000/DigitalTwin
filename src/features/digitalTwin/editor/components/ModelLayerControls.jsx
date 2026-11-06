@@ -17,7 +17,7 @@ export default function ModelLayerControls({ value = {}, onChange, hasScan, scan
     </div>)}
     {showSceneOverlays && <div className={styles.overlayOptions}>
       {[["SENSORS", "센서 · 카메라 모형"], ["OBSERVATIONS", "관측 영역 · 이름표"]].map(([key, label]) => <label key={key}>
-        <input type="checkbox" checked={value[key]?.visible ?? true} onChange={(event) => onChange({ ...value, [key]: { visible: event.target.checked } })} />{label}
+        <input type="checkbox" checked={value[key]?.visible ?? false} onChange={(event) => onChange({ ...value, [key]: { visible: event.target.checked } })} />{label}
       </label>)}
     </div>}
     </div>

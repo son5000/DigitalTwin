@@ -42,6 +42,7 @@
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
 .actions button, .back { min-height: 42px; padding: 0 16px; border: 1px solid #c8daf8; border-radius: 8px; background: white; color: #2458d6; font-size: 13px; }
 .actions .primary { background: #2f6bff; border-color: #2f6bff; color: #fff; }
+.actions .developer { border-color: #d5deeb; background: #f5f7fb; color: #405774; }
 .actions button:hover, .back:hover { filter: brightness(.96); }
 .newCard { min-height: 330px; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 24px; border-style: dashed; border-color: #9cbdf2; color: #2458d6; }
 .newCard > span { font-size: 42px; margin-bottom: 16px; }

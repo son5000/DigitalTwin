@@ -16,7 +16,7 @@ export default function SensorConnectionFields({ sensor, equipment, sensors, ass
   const payload = calibrationPayload(projectId, equipment, sensor, assets);
   const configured = sensor.calibration?.signature === JSON.stringify(payload);
   const frameKey = referenceFrameKey(payload.coordinateFrame);
-  const confirmed = sensor.calibrationConfirmed === true && (!payload.coordinateFrame || sensor.calibrationConfirmationFrame === frameKey) && (!sensor.surfaceMount || sensor.calibrationConfirmationModel === payload.model.version);
+  const confirmed = sensor.calibrationConfirmed === true && (!payload.coordinateFrame || sensor.calibrationConfirmationFrame === frameKey) && (!(sensor.surfaceMount || sensor.scanSlotMount) || sensor.calibrationConfirmationModel === payload.model.version);
   async function connect(demo = false) {
     const serialNumber = sensor.serialNumber?.trim();
     if (!serialNumber) { setMessage("시리얼 번호를 입력하세요."); return; }

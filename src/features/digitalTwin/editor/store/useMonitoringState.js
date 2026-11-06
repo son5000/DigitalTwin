@@ -160,7 +160,7 @@ export default function useMonitoringState({ equipment }) {
     ...item, ...changes,
     heatmap: changes.heatmap ? { ...item.heatmap, ...changes.heatmap } : item.heatmap,
     sensorType: changes.sourceType ?? changes.sensorType ?? item.sensorType,
-    calibrationConfirmed: ["surfaceMount", "position", "rotation", "mountMode", "fieldOfView", "aspectRatio", "near", "far", "capabilities"].some((key) => key in changes) ? false : changes.calibrationConfirmed ?? item.calibrationConfirmed,
+    calibrationConfirmed: ["surfaceMount", "scanSlotMount", "position", "rotation", "mountMode", "fieldOfView", "aspectRatio", "near", "far", "capabilities"].some((key) => key in changes) ? false : changes.calibrationConfirmed ?? item.calibrationConfirmed,
     position: changes.position ? { ...item.position, ...changes.position } : item.position,
     rotation: changes.rotation ? { ...item.rotation, ...changes.rotation } : item.rotation,
   }) : item)), []);

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { EQUIPMENT_SETUP_STEPS, getEquipmentSetup, updateEquipmentSetup, getSensorReadingState, getSetupStepIssue, getEquipmentSetupSaveSummary } from "../src/features/digitalTwin/editor/model/equipmentSetup.js";
+import { EQUIPMENT_SETUP_STEPS, getEquipmentSetup, getEquipmentSetupSteps, updateEquipmentSetup, getSetupStepValidation, getSensorReadingState, getSetupStepIssue, getEquipmentSetupSaveSummary } from "../src/features/digitalTwin/editor/model/equipmentSetup.js";
 import { createViewerPreset, resolveEquipmentRepresentation } from "../src/features/digitalTwin/editor/model/viewerPreset.js";
 
 test("설비별 단계는 저장 후 복원하며 완료와 건너뜀을 구분한다", () => {
@@ -16,6 +16,23 @@ test("설비별 단계는 저장 후 복원하며 완료와 건너뜀을 구분�
   equipment.metadata.detailSetup = updateEquipmentSetup(equipment, "BASIC", "PENDING");
   assert.equal(getEquipmentSetup(equipment).completed, 0);
   assert.equal(getEquipmentSetup(equipment).currentStep, "BASIC");
+});
+
+test("스캔과 외관을 함께 쓰면 2.5단계에서 스캔을 따로 확인한다", () => {
+  const equipment = { id: "A", shapeTemplateId: "CABINET_SINGLE", metadata: { modelComposition: "BOTH" } };
+  const assets = [];
+  assert.deepEqual(getEquipmentSetupSteps(equipment, assets).map(({ id }) => id), ["BASIC", "ASSET", "SCAN", "SENSOR", "VIRTUAL_CAMERA", "POINT", "REVIEW"]);
+  assert.equal(getSetupStepValidation("ASSET", { equipment, assets }), null);
+  assert.match(getSetupStepValidation("SCAN", { equipment, assets }).message, /스캔/);
+  equipment.metadata.detailSetup = updateEquipmentSetup(equipment, "ASSET", "DONE", assets);
+  assert.equal(getEquipmentSetup(equipment, assets).currentStep, "SCAN");
+  equipment.metadata.detailSetup = updateEquipmentSetup(equipment, "SCAN", "DONE", assets);
+  assert.equal(getEquipmentSetup(equipment, assets).currentStep, "SENSOR");
+  equipment.metadata.modelComposition = "SHAPE";
+  assert.equal(getEquipmentSetupSteps(equipment, assets).length, 6);
+  assert.equal(getEquipmentSetupSaveSummary([equipment], assets).pendingCount, 5);
+  equipment.metadata.modelComposition = "BOTH";
+  assert.equal(getEquipmentSetup(equipment, assets).steps.SCAN, "DONE");
 });
 
 test("거리별 모델 옵션은 전역 모드 및 선택 여부와 독립적이며 자산 누락 시 복구한다", () => {

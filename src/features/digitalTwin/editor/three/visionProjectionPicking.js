@@ -12,10 +12,11 @@ export function pickVisionProjection(targets, raycaster, accepts = () => true) {
   for (const target of targets) {
     const { overlay } = target;
     if (!isProjectionVisible(overlay)) continue;
-    overlay.updateWorldMatrix(true, false);
+    const pickObject = target.pickOverlay ?? overlay;
+    pickObject.updateWorldMatrix(true, false);
     const intersections = [];
     // Projection overlays deliberately opt out of ordinary scene picking.
-    (overlay.isPoints ? THREE.Points : THREE.Mesh).prototype.raycast.call(overlay, raycaster, intersections);
+    (pickObject.isPoints ? THREE.Points : THREE.Mesh).prototype.raycast.call(pickObject, raycaster, intersections);
     for (const hit of intersections) hits.push({ ...hit, target });
   }
   hits.sort((a,b)=>a.distance-b.distance);

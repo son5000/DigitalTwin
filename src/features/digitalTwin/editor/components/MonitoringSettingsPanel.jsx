@@ -13,7 +13,7 @@ import { UNIFIED_EQUIPMENT_TEMPLATE_MAP } from "@/features/digitalTwin/editor/co
 import { CloseIcon } from "@/components/icons";
 
 import NumericField from "./NumericField";
-import { EQUIPMENT_SETUP_STEPS, SETUP_REQUIREMENTS, getEquipmentSetup, updateEquipmentSetup, getSetupStepValidation } from "../model/equipmentSetup";
+import { SETUP_REQUIREMENTS, getEquipmentModelMode, getEquipmentSetup, getEquipmentSetupSteps, updateEquipmentSetup, getSetupStepValidation } from "../model/equipmentSetup";
 import styles from "./MonitoringSettingsPanel.module.css";
 import SensorConnectionFields from "./SensorConnectionFields";
 import EquipmentAssetFilesPanel from "./EquipmentAssetFilesPanel";
@@ -30,7 +30,7 @@ export default function MonitoringSettingsPanel({
   onUpdateAsset, onRemoveAsset,
   onSelectPoint, onUpdatePoint, onRemovePoint,
   onAddSensor, onSelectSensor, onUpdateSensor, onRemoveSensor,
-  workspaceViewControllerRef, cameraController, onUpdateEquipment, onUploadAssetFiles, viewerPreset, onEquipmentRepresentationChange, onViewerPresetChange, onStartInitialViewFraming, uploadNotice, onClose,
+  workspaceViewControllerRef, cameraController, onUpdateEquipment, onUploadAssetFiles, viewerPreset, onEquipmentRepresentationChange, onViewerPresetChange, onStartInitialViewFraming, onRequestSave, saveDisabled = false, uploadNotice, onClose,
 }) {
   const [sensorCount, setSensorCount] = useState(1);
   const [sensorSection, setSensorSection] = useState("TEXTURE");
@@ -38,6 +38,8 @@ export default function MonitoringSettingsPanel({
   const [uploading, setUploading] = useState(false);
   const [stepError, setStepError] = useState(null);
   const [sensorRemovalNotice, setSensorRemovalNotice] = useState("");
+  const [cameraInfo, setCameraInfo] = useState(null);
+  const [cameraNotice, setCameraNotice] = useState("");
   const sensorSelectRef = useRef(null);
   const panelRef = useRef(null);
   const errorId = useId();
@@ -45,10 +47,29 @@ export default function MonitoringSettingsPanel({
   const scopedAssets = useMemo(() => assetBindings.filter((item) => item.equipmentId === selectedEquipment?.id), [assetBindings, selectedEquipment?.id]);
   const scopedSensors = useMemo(() => sensorBindings.filter((item) => item.equipmentIds.includes(selectedEquipment?.id)), [selectedEquipment?.id, sensorBindings]);
   const scopedPoints = useMemo(() => observationPoints.filter((item) => item.equipmentId === selectedEquipment?.id), [observationPoints, selectedEquipment?.id]);
+  const reviewEquipmentId = selectedEquipment?.id;
+  const reviewStep = selectedEquipment ? getEquipmentSetup(selectedEquipment, scopedAssets).currentStep : null;
+  const reviewSavedView = reviewEquipmentId && viewerPreset?.equipmentViews?.[reviewEquipmentId];
+
+  useEffect(() => {
+    if (!reviewEquipmentId || reviewStep !== "REVIEW") return;
+    let frame;
+    let attempts = 0;
+    const showStartView = () => {
+      const controller = cameraController?.current;
+      if (controller?.equipmentId === reviewEquipmentId && controller.ready()) {
+        if (reviewSavedView) controller.preview(reviewSavedView);
+        else controller.fit();
+        setCameraInfo(controller.capture());
+      } else if (attempts++ < 120) frame = requestAnimationFrame(showStartView);
+    };
+    frame = requestAnimationFrame(showStartView);
+    return () => cancelAnimationFrame(frame);
+  }, [cameraController, reviewEquipmentId, reviewStep, reviewSavedView]);
 
   useEffect(() => {
     if (!stepError || stepError.equipmentId !== selectedEquipment?.id
-      || stepError.step !== getEquipmentSetup(selectedEquipment).currentStep
+      || stepError.step !== getEquipmentSetup(selectedEquipment, scopedAssets).currentStep
       || (stepError.sensorId && stepError.sensorId !== sensorSelection?.id)
       || (stepError.pointId && stepError.pointId !== pointSelection?.id)) return;
     const panel = panelRef.current;
@@ -79,7 +100,7 @@ export default function MonitoringSettingsPanel({
       cancelAnimationFrame(request); delete target.dataset.validationError;
       focus.removeAttribute("aria-invalid"); focus.removeAttribute("aria-describedby");
     };
-  }, [stepError, selectedEquipment, sensorSelection?.id, pointSelection?.id, sensorSection, errorId]);
+  }, [stepError, selectedEquipment, scopedAssets, sensorSelection?.id, pointSelection?.id, sensorSection, errorId]);
 
   if (!selectedEquipment) return <section className={styles.panel}><div className={styles.emptyState}><strong>관측 설비를 등록하세요</strong><p>상단 ‘설비 추가’에서 카탈로그 설비를 선택하거나 OBJ·PLY 파일을 직접 등록할 수 있습니다.</p></div></section>;
   const selectedAsset = scopedAssets.find((item) => item.id === assetSelection?.id);
@@ -87,10 +108,12 @@ export default function MonitoringSettingsPanel({
   const modelAsset = activeScans.find((item) => item.id === selectedAsset?.id) ?? activeScans.at(-1);
   const selectedSensor = scopedSensors.find((item) => item.id === sensorSelection?.id);
   const selectedPoint = scopedPoints.find((item) => item.id === pointSelection?.id);
-  const setup = getEquipmentSetup(selectedEquipment);
+  const activeSteps = getEquipmentSetupSteps(selectedEquipment, scopedAssets);
+  const modelMode = getEquipmentModelMode(selectedEquipment, scopedAssets);
+  const setup = getEquipmentSetup(selectedEquipment, scopedAssets);
   const tab = setup.currentStep;
-  const stepIndex = EQUIPMENT_SETUP_STEPS.findIndex((step) => step.id === tab);
-  const step = EQUIPMENT_SETUP_STEPS[stepIndex];
+  const stepIndex = activeSteps.findIndex((step) => step.id === tab);
+  const step = activeSteps[stepIndex];
   function setStep(id, status) {
     const issue = status === "DONE" ? getSetupStepValidation(id, { equipment: selectedEquipment, assets: scopedAssets, sensors: scopedSensors, points: scopedPoints, viewerPreset }) : null;
     setStepError(issue ? { ...issue, equipmentId: selectedEquipment.id } : null);
@@ -98,10 +121,30 @@ export default function MonitoringSettingsPanel({
       if (issue.sensorId) onSelectSensor(issue.sensorId);
       if (issue.pointId) onSelectPoint(issue.pointId);
       if (issue.section) setSensorSection(issue.section);
-      if (issue.step !== tab) onUpdateEquipment?.({ metadata: { detailSetup: updateEquipmentSetup(selectedEquipment, issue.step) } });
+      if (issue.step !== tab) onUpdateEquipment?.({ metadata: { detailSetup: updateEquipmentSetup(selectedEquipment, issue.step, undefined, scopedAssets) } });
+      return false;
+    }
+    onUpdateEquipment?.({ metadata: { detailSetup: updateEquipmentSetup(selectedEquipment, id, status, scopedAssets) } });
+    return true;
+  }
+  function cameraAction(action, value) {
+    const controller = cameraController?.current;
+    if (controller?.equipmentId !== selectedEquipment.id || !controller.ready()) {
+      setCameraNotice("모델을 불러온 뒤 시작 화면을 설정하세요.");
       return;
     }
-    onUpdateEquipment?.({ metadata: { detailSetup: updateEquipmentSetup(selectedEquipment, id, status) } });
+    controller[action]?.(value);
+    setCameraInfo(controller.capture());
+    setCameraNotice("");
+  }
+  function startViewFraming() {
+    const controller = cameraController?.current;
+    if (controller?.equipmentId !== selectedEquipment.id || !controller.ready()) {
+      setCameraNotice("모델을 불러온 뒤 시작 화면을 설정하세요.");
+      return;
+    }
+    onStartInitialViewFraming?.(selectedEquipment.id);
+    setCameraNotice("");
   }
   function uploadPhoto(event) {
     const file = event.target.files?.[0]; event.target.value = "";
@@ -124,19 +167,19 @@ export default function MonitoringSettingsPanel({
 
   return <section ref={panelRef} className={styles.panel} onChangeCapture={() => setStepError(null)}>
     <header>
-      <div className={styles.panelHeading}><span>{stepIndex + 1} / {EQUIPMENT_SETUP_STEPS.length} 단계 · 완료 {setup.completed} · 건너뜀 {setup.skipped}</span><h2>{selectedEquipment.name}</h2></div>
+      <div className={styles.panelHeading}><span>{step.number ?? stepIndex + 1} / 6 단계 · 완료 {setup.completed}/{activeSteps.length} · 건너뜀 {setup.skipped}</span><h2>{selectedEquipment.name}</h2></div>
       {onClose && <button type="button" className={styles.panelClose} aria-label="설비 상세 닫기" onClick={onClose}><CloseIcon size={18} /></button>}
-      <progress aria-label="설비 설정 완료 단계" value={setup.completed} max={5} />
+      <progress aria-label="설비 설정 완료 단계" value={setup.completed} max={activeSteps.length} />
     </header>
     <label className={styles.stepPicker}>
       <span>설정 단계</span>
       <select value={tab} onChange={(event) => setStep(event.target.value)}>
-        {EQUIPMENT_SETUP_STEPS.map(({ id, label }, index) => <option key={id} value={id}>{index + 1}. {label} · {STATUS_TEXT[setup.steps[id]]}</option>)}
+        {activeSteps.map(({ id, label, number }, index) => <option key={id} value={id}>{number ?? index + 1}. {label} · {STATUS_TEXT[setup.steps[id]]}</option>)}
       </select>
     </label>
     <div className={styles.stepBody} key={tab}>
-    <p className={styles.stepDescription} data-setup-field="step-start">{step.description}</p>
-    <p className={styles.requirements}>{SETUP_REQUIREMENTS[tab]}</p>
+    <p className={styles.stepDescription} data-setup-field="step-start">{tab === "ASSET" ? modelMode === "SCAN" ? "스캔 파일의 실제 크기와 설치 위치를 맞추고 관제 표시를 설정하세요." : modelMode === "BOTH" ? "외관의 구조·문과 관제 표시를 설정하세요. 스캔은 다음 단계에서 연결합니다." : "외관 도형의 구조·문과 기준좌표, 관제 표시를 설정하세요." : step.description}</p>
+    <p className={styles.requirements}>{tab === "ASSET" && modelMode === "BOTH" ? "외관 구조, 문 크기와 표시 방식을 먼저 설정하세요. 스캔 파일은 다음 2.5단계에서 연결합니다." : tab === "ASSET" && modelMode === "SCAN" ? "스캔 파일을 등록하고 실제 크기·방향·위치와 기준좌표를 확인하세요." : tab === "ASSET" ? "외관의 실제 크기와 기준좌표를 확인하세요." : SETUP_REQUIREMENTS[tab]}</p>
 
     {tab === "BASIC" ? <div className={styles.content}>
       <div data-setup-field="model-files"><EquipmentAssetFilesPanel key={[modelAsset?.id, modelAsset?.assetId, modelAsset?.relatedSourceKey, modelAsset?.textureSourceKey].join(":")} binding={modelAsset} onUpdateAsset={onUpdateAsset} onUpload={uploadFile} uploading={uploading} uploadNotice={uploadNotice} /></div>
@@ -152,10 +195,28 @@ export default function MonitoringSettingsPanel({
 
     </div> : null}
 
-    {tab === "ASSET" ? <div className={styles.content}><EquipmentModelSetupPanel workspaceViewControllerRef={workspaceViewControllerRef} equipmentCount={equipment.length} equipment={selectedEquipment} binding={modelAsset} bindings={scopedAssets} onUpdateEquipment={onUpdateEquipment} onUpdateAsset={onUpdateAsset} onRemoveAsset={onRemoveAsset} onUploadAssetFiles={onUploadAssetFiles} viewerPreset={viewerPreset} onViewerPresetChange={onViewerPresetChange} onEquipmentRepresentationChange={onEquipmentRepresentationChange} cameraController={cameraController} onStartInitialViewFraming={onStartInitialViewFraming} /></div> : null}
+    {["ASSET", "SCAN"].includes(tab) ? <div className={styles.content}><EquipmentModelSetupPanel phase={tab} equipment={selectedEquipment} binding={modelAsset} bindings={scopedAssets} onUpdateEquipment={onUpdateEquipment} onUpdateAsset={onUpdateAsset} onRemoveAsset={onRemoveAsset} onUploadAssetFiles={onUploadAssetFiles} viewerPreset={viewerPreset} onViewerPresetChange={onViewerPresetChange} onEquipmentRepresentationChange={onEquipmentRepresentationChange} cameraController={cameraController} /></div> : null}
 
     {tab === "REVIEW" ? <div className={styles.content}>
-      <div className={styles.review}>{EQUIPMENT_SETUP_STEPS.slice(0, -1).map(({ id, label }) => <button type="button" key={id} onClick={() => setStep(id)}>{label} · {STATUS_TEXT[setup.steps[id]]} →</button>)}</div>
+      <section className={styles.finalView} aria-labelledby="final-view-title">
+        <span className={styles.finalViewEyebrow}>최초 관제 화면</span>
+        <h3 id="final-view-title">고객 뷰어는 이 구도로 시작합니다</h3>
+        <p>왼쪽에서 설비가 보일 방향과 크기를 확인하세요. {reviewSavedView ? "지정한 시점이 뷰어를 열 때 적용됩니다." : "별도 시점을 지정하지 않으면 설비 전체가 보이도록 맞춥니다."}</p>
+        <div className={styles.finalViewActions}>
+          <button type="button" onClick={startViewFraming}>{reviewSavedView ? "다른 시작 화면 지정" : "시작 화면 직접 지정"}</button>
+          {reviewSavedView && <button type="button" onClick={() => cameraAction("preview", reviewSavedView)}>지정한 화면 다시 보기</button>}
+        </div>
+        <details className={styles.finalViewTools}><summary>시점 조정 도구</summary>
+          <p>원하는 방향과 배율로 맞춘 뒤 시작 화면을 지정하세요. 확정할 때는 설정 패널이 닫힌 전체 화면에서 확인합니다.</p>
+          <div className={styles.actionRow}>{[["front", "정면"], ["back", "후면"], ["left", "좌측"], ["right", "우측"], ["top", "위에서"]].map(([value, label]) => <button type="button" key={value} onClick={() => cameraAction("direction", value)}>{label}</button>)}<button type="button" onClick={() => cameraAction("fit")}>모델 전체 맞춤</button><button type="button" onClick={() => cameraAction("zoom", 1.2)}>확대 +</button><button type="button" onClick={() => cameraAction("zoom", 1 / 1.2)}>축소 −</button></div>
+          <NumericField displayPrecision={2} label="화면 배율" unit="배" min={0.1} step={0.1} value={cameraInfo?.zoom ?? reviewSavedView?.zoom ?? 1} onChange={(value) => cameraAction("zoomLevel", value)} />
+          <NumericField displayPrecision={2} label="카메라 화각" unit="°" min={10} value={cameraInfo?.fov ?? reviewSavedView?.fov ?? 60} onChange={(value) => cameraAction("fov", Math.max(10, Math.min(100, value)))} />
+          {reviewSavedView && <button type="button" onClick={() => { onViewerPresetChange({ equipmentViews: { ...viewerPreset?.equipmentViews, [selectedEquipment.id]: null } }); setCameraInfo(null); setCameraNotice("시작 화면을 기본 맞춤으로 변경했습니다."); }}>기본 맞춤 화면 사용</button>}
+        </details>
+        {cameraNotice && <p role="status">{cameraNotice}</p>}
+      </section>
+      <p className={styles.finalSavePrompt}>이 시작 구도와 연결 정보를 저장하시겠습니까?</p>
+      <div className={styles.review}>{activeSteps.slice(0, -1).map(({ id, label }) => <button type="button" key={id} onClick={() => setStep(id)}>{label} · {STATUS_TEXT[setup.steps[id]]} →</button>)}</div>
       <p className={styles.help}>연결 정보를 확인하세요. 설정을 완료한 뒤 실제 측정값이 들어오는지도 확인해야 합니다.</p>
       <dl className={styles.summary}><div><dt>센서</dt><dd>{scopedSensors.length}개 · 서버 식별 완료 {scopedSensors.filter((sensor) => sensor.serverSensorId).length}개</dd></div><div><dt>관측 영역</dt><dd>{scopedPoints.length}개 · 표시 항목 {scopedPoints.reduce((n, point) => n + point.measurements.filter((item) => item.visible).length, 0)}개</dd></div></dl>
     </div> : null}
@@ -228,8 +289,9 @@ export default function MonitoringSettingsPanel({
     </div>
     <footer className={styles.stepFooter}>
       {stepError?.equipmentId === selectedEquipment.id && stepError.step === tab && <p id={errorId} role="alert">{stepError.message}</p>}
-      <div><button type="button" disabled={stepIndex === 0} onClick={() => setStep(EQUIPMENT_SETUP_STEPS[stepIndex - 1].id)}>이전</button><button type="button" onClick={() => setStep(tab, "SKIPPED")}>건너뛰기</button><button type="button" onClick={() => setStep(tab, "PENDING")}>다시 편집</button><button type="button" disabled={uploading} onClick={() => setStep(tab, "DONE")}>{stepIndex === EQUIPMENT_SETUP_STEPS.length - 1 ? "검토 완료" : "완료 후 다음"}</button></div>
-      <small>입력 후 프로젝트를 저장해 보관하세요.</small>
+      {tab === "REVIEW" ? <div><button type="button" onClick={() => setStep(activeSteps[stepIndex - 1].id)}>이전 단계</button><button type="button" disabled={uploading || saveDisabled} onClick={() => { if (setStep("REVIEW", "DONE")) onRequestSave?.(selectedEquipment.id); }}>이대로 저장</button></div>
+        : <div><button type="button" disabled={stepIndex === 0} onClick={() => setStep(activeSteps[stepIndex - 1].id)}>이전</button><button type="button" onClick={() => setStep(tab, "SKIPPED")}>건너뛰기</button><button type="button" onClick={() => setStep(tab, "PENDING")}>다시 편집</button><button type="button" disabled={uploading} onClick={() => setStep(tab, "DONE")}>완료 후 다음</button></div>}
+      {tab !== "REVIEW" && <small>입력 후 프로젝트를 저장해 보관하세요.</small>}
     </footer>
   </section>;
 }

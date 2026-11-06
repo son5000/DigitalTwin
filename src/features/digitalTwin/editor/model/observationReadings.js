@@ -45,7 +45,8 @@ export function observationReadings(point, sensors = [], readings = [], now = Da
     const sensor = sensors.find((sensor) => sensor.id === item.sensorId);
     const reading = readings.filter((reading) => (reading.roiId === point.id || reading.observationPointId === point.id)
       && reading.equipmentId === point.equipmentId && reading.revision === (point.revision ?? 0)
-      && reading.measurementId === item.id && (item.metric === "ultrasound.db" || (sensor?.serverSensorId && reading.sensorId === sensor.serverSensorId))
+      && reading.measurementId === item.id && (item.metric === "ultrasound.db" || reading.dataSource === "SIMULATION"
+        || (sensor?.serverSensorId && reading.sensorId === sensor.serverSensorId))
       && isFreshMeasurement(reading, now)).sort((a, b) => Date.parse(b.measuredAt) - Date.parse(a.measuredAt))[0];
     if (["vision.switchState", "vision.valveState"].includes(item.metric) && !preview) {
       const profile = item.analysisConfig ?? {};

@@ -11,7 +11,7 @@ import { createSensorHeatmap } from "./sensorHeatmap.js";
 import { resolveImageObservation } from "../model/imageObservation.js";
 
 // Own only sensor markers, point markers and links. Never dispose equipment/scans.
-export function createSensorSceneLayer({ root, renderedEquipment, origin, theme = "dark", addCameraFrustum = () => {} }) {
+export function createSensorSceneLayer({ root, renderedEquipment, origin, theme = "dark", defaultOverlayVisible = true, addCameraFrustum = () => {} }) {
   const markers = new Map();
   const objects = [];
   const pointMarkers = new Map();
@@ -51,7 +51,7 @@ export function createSensorSceneLayer({ root, renderedEquipment, origin, theme 
     sensors.filter((sensor) => sensor.equipmentIds?.some((id) => renderedEquipment.has(id))).forEach((sensor) => {
       const host = sensor.mountMode === "EQUIPMENT" ? renderedEquipment.get(sensor.surfaceMount?.equipmentId ?? sensor.equipmentIds?.[0]) : null;
       const mountPose = host ? getSensorMountPose(sensor, host.item) : null;
-      if (sensor.surfaceMount && !mountPose) return;
+      if ((sensor.surfaceMount || sensor.scanSlotMount) && !mountPose) return;
       const base = host ? new THREE.Vector3() : new THREE.Vector3(-(Number(origin.x) || 0), -(Number(origin.y) || 0), -(Number(origin.z) || 0));
       const position = base.clone().add(new THREE.Vector3(Number(sensor.position?.x) || 0, Number(sensor.position?.y) || 0, Number(sensor.position?.z) || 0));
       const marker = createSensorMarker(sensor, sensor.id === selectedSensorId);
@@ -106,6 +106,8 @@ export function createSensorSceneLayer({ root, renderedEquipment, origin, theme 
       marker.userData.equipmentId = point.equipmentId;
       marker.userData.representation = point.representation ?? "BOTH";
       marker.userData.imagePoint = point.imageBinding ? point : null;
+      marker.userData.observationPoint = point;
+      marker.userData.statusLevel = status.level;
       marker.userData.imageBindingIssue = point.imageBindingIssue;
       const overlay = createRoiOverlay(marker);
       const index = pointIndices.get(point.equipmentId) ?? 0; pointIndices.set(point.equipmentId, index + 1);
@@ -133,14 +135,26 @@ export function createSensorSceneLayer({ root, renderedEquipment, origin, theme 
       objects.push(line);
     });
   }
+  function updateReadings(readings, now, previewReadings, selectedPointId, sensors) {
+    for (const [id, marker] of pointMarkers) {
+      const point = marker.userData.observationPoint;
+      const status = observationStatus(observationReadings(point, sensors, readings, now, previewReadings));
+      if (status.level === marker.userData.statusLevel) continue;
+      marker.userData.statusLevel = status.level;
+      marker.material.color.setHex(roiColor(status.level));
+      const outline = id === selectedPointId ? (theme === "light" ? 0x056bc8 : 0x89ecff) : roiColor(status.level);
+      marker.traverse((child) => { if (child.userData.roiOutline) child.material.color.setHex(outline); });
+      pointBadges.get(id)?.userData.setStatus(status);
+    }
+  }
   function updateVisibility(hiddenSensorId = null, imageVisible = () => true, displayLayers = {}) {
     for (const object of objects) {
       const entry = renderedEquipment.get(object.userData.sensorEquipmentId);
       const layers = displayLayers[object.userData.sensorEquipmentId];
       object.visible = Boolean(entry && !entry.loading)
-        && !(object.userData.sensorId && layers?.SENSORS?.visible === false)
-        && !(object.userData.sourceDeviceId && layers?.SENSORS?.visible === false)
-        && !(object.userData.observationPointId && layers?.OBSERVATIONS?.visible === false)
+        && !(object.userData.sensorId && !(layers?.SENSORS?.visible ?? defaultOverlayVisible))
+        && !(object.userData.sourceDeviceId && !(layers?.SENSORS?.visible ?? defaultOverlayVisible))
+        && !(object.userData.observationPointId && !(layers?.OBSERVATIONS?.visible ?? defaultOverlayVisible))
         && !pointMarkers.get(object.userData.observationPointId)?.userData.imageBindingIssue
         && (!object.userData.imagePoint || imageVisible(object.userData.imagePoint.imageBinding.sensorId))
         && (!object.userData.observationPointId || !object.userData.representation || object.userData.representation === "BOTH"
@@ -155,7 +169,7 @@ export function createSensorSceneLayer({ root, renderedEquipment, origin, theme 
   }
   function updateObservationLabels(camera, renderer, selectedId, hoveredId, hidden, displayLayers = {}) {
     for (const [id, badge] of pointBadges) {
-      if (hidden || displayLayers[pointMarkers.get(id)?.userData.sensorEquipmentId]?.OBSERVATIONS?.visible === false) { badge.visible = false; continue; }
+      if (hidden || !(displayLayers[pointMarkers.get(id)?.userData.sensorEquipmentId]?.OBSERVATIONS?.visible ?? defaultOverlayVisible)) { badge.visible = false; continue; }
       updateObservationBadge(badge, camera, renderer, id === selectedId || id === hoveredId);
     }
   }
@@ -170,7 +184,7 @@ export function createSensorSceneLayer({ root, renderedEquipment, origin, theme 
       marker.position.set(point.localPosition.x,point.localPosition.y,point.localPosition.z);
     }
     for (const sensor of sensors) {
-      const marker = markers.get(sensor.id), entry = renderedEquipment.get(sensor.surfaceMount?.equipmentId);
+      const marker = markers.get(sensor.id), entry = renderedEquipment.get(sensor.surfaceMount?.equipmentId ?? (sensor.scanSlotMount ? sensor.equipmentIds?.[0] : undefined));
       if (!marker || !entry) continue;
       const pose = getSensorMountPose(sensor, entry.item);
       if (pose) { marker.position.copy(pose.position); marker.rotation.copy(pose.rotation); marker.updateWorldMatrix(true, false); }
@@ -185,5 +199,5 @@ export function createSensorSceneLayer({ root, renderedEquipment, origin, theme 
       line.geometry.computeBoundingSphere(); line.computeLineDistances();
     }
   }
-  return { markers, pointMarkers, update, updateObservationLabels, updateMountedPoses, updateVisibility, dispose: clear };
+  return { markers, pointMarkers, update, updateReadings, updateObservationLabels, updateMountedPoses, updateVisibility, dispose: clear };
 }

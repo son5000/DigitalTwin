@@ -32,7 +32,7 @@ export default function SensorProjectionFields({ sensor, equipment, assets = [],
   const sample = p.kind === "VISION" ? activeVisionSample(sensor) : null;
   const thermalSample = p.kind === "THERMAL" ? activeThermalSample(sensor) : null;
   const source = p.kind === "THERMAL" ? thermalImage.source || mediaUrl(frame?.url, sensor.dataSource === "DEMO") : mediaUrl(sample?.url ?? editingSensor.frameUrl, sensor.dataSource === "DEMO");
-  const surfaces = getEnclosureSurfaces(equipment);
+  const surfaces = getEnclosureSurfaces(equipment).filter((surface) => !surface.id.endsWith("-doors-outside") || (p.kind === "VISION" && p.target === "PROXY"));
   const imageSurface = resolveImageSurface(equipment, p);
   const update = (changes) => onChange(sensor.id, { textureProjection: normalizeSensorProjection({ ...p, equipmentId: equipment.id, ...changes }) });
   async function loadSample() {

@@ -15,6 +15,18 @@
 .audioPlayback { display: grid; gap: 8px; padding-top: 6px; }
 .audioPlayback button { justify-self: start; }
 .audioPlayback input[type="range"] { width: 100%; }
+.audioSignal { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 2px 8px; padding: 8px 0; border-top: 1px solid var(--roi-border); border-bottom: 1px solid var(--roi-border); }
+.audioSignal > span { color: var(--roi-muted); }
+.audioSignal strong { grid-row: span 2; font-size: 23px; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.audioSignal strong small { font-size: 11px; font-weight: 500; }
+.audioSignal > small { color: var(--roi-muted); }
+.audioSpectrum { display: grid; gap: 4px; }
+.audioSpectrum > div { display: flex; justify-content: space-between; gap: 8px; }
+.audioSpectrum small { color: var(--roi-muted); }
+.audioSpectrum svg { width: 100%; max-height: 116px; background: color-mix(in srgb, var(--roi-bg) 85%, var(--roi-border)); border-radius: 4px; }
+.audioSpectrum text { fill: var(--roi-muted); font-size: 10px; }
+.audioSpectrumAxis { fill: none; stroke: var(--roi-border); stroke-width: 1; }
+.audioSpectrumTrace { fill: none; stroke: var(--portal-blue, #53c5e4); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .thermalReadout { display: grid; gap: 10px; padding: 3px 0 9px; }
 .thermalReadoutHeading { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; color: var(--roi-muted); font-size: 11px; }
 .thermalReadoutHeading span { min-width: 0; overflow-wrap: anywhere; }

@@ -4,7 +4,7 @@ import { validateTelemetry } from "../model/monitoringContract";
 import { demoReading } from "../model/monitoringDemo";
 
 const EMPTY = { textures: [], hotspots: [], readings: [], alarms: [] };
-export default function useEquipmentTelemetry(projectId, equipmentId, rois) {
+export default function useEquipmentTelemetry(projectId, equipmentId, rois, suspended = false) {
   const [demo, setDemo] = useState(false);
   const [state, setState] = useState({ ...EMPTY, key: "", status: "DISCONNECTED", error: "" });
   const [now, setNow] = useState(Date.now);
@@ -12,7 +12,7 @@ export default function useEquipmentTelemetry(projectId, equipmentId, rois) {
   useEffect(() => { roisRef.current = rois; }, [rois]);
   const key = `${projectId}:${equipmentId}:${demo}`;
   useEffect(() => {
-    if (!equipmentId) return;
+    if (!equipmentId || suspended) return;
     let active = true, stream, timer, requestId = 0;
     const controller = new AbortController();
     const ruleStarts = new Map(), lastStatuses = new Map();
@@ -69,7 +69,7 @@ export default function useEquipmentTelemetry(projectId, equipmentId, rois) {
     void Promise.resolve().then(() => { if (active) void start(); });
     const clock = setInterval(() => setNow(Date.now()), 1000);
     return () => { active = false; controller.abort(); stream?.close(); clearInterval(timer); clearInterval(clock); };
-  }, [key, projectId, equipmentId, demo]);
+  }, [key, projectId, equipmentId, demo, suspended]);
 
   async function acknowledge(alarm) {
     if (!demo) await acknowledgeAlarm(projectId, equipmentId, alarm.id);

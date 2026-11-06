@@ -6,6 +6,9 @@ export { validTemperatureGrid, temperaturePixels } from "./thermalFrame.js";
 
 export function sensorProjectionFrame(sensor, records, now = Date.now(), demo = false) {
   const settings = normalizeSensorProjection(sensor.textureProjection);
+  const simulated = (records ?? []).find((record) => record.dataSource === "SIMULATION" && record.bindingId === sensor.id
+    && record.kind === settings.kind && isFreshMeasurement(record, now));
+  if (simulated) return simulated;
   const sample = settings.kind === "VISION" && activeVisionSample(sensor);
   if (sample) return { url: sample.url, kind: "VISION", dataSource: "SAMPLE", sample: true, loadedAt: sample.loadedAt };
   const thermalSample = settings.kind === "THERMAL" && activeThermalSample(sensor);

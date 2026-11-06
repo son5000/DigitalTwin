@@ -69,14 +69,24 @@ export function createSensorFrustumLayer({ renderer, renderedEquipment }) {
         const { marker, camera, line, target } = state;
         const entry = renderedEquipment.get(sensor.textureProjection?.equipmentId ?? sensor.equipmentIds?.[0]);
         line.visible = false;
-        if (!marker.visible || !entry || entry.loading) continue;
+        if (!marker.visible || !entry || entry.loading) { state.inputs = null; continue; }
         const roots = [entry.actual, entry.proxy].filter(Boolean);
+        marker.updateWorldMatrix(true, false);
+        entry.object.updateWorldMatrix(true, false);
+        const inputs = [sensor, entry.item, entry.actual, entry.proxy, entry.actual?.visible, entry.proxy?.visible,
+          entry.actual?.children.length, entry.proxy?.children.length,
+          marker.matrixWorld.elements.join(","), entry.object.matrixWorld.elements.join(",")];
+        if (state.inputs?.length === inputs.length && inputs.every((value, index) => value === state.inputs[index])) {
+          line.visible = state.hasGuide;
+          continue;
+        }
+        state.inputs = inputs;
         const surfaces = roots.flatMap(projectionMeshes).map(({ object }) => object).filter((object) => {
           for (let current = object; current; current = current.parent) if (!current.visible) return false;
           return (Array.isArray(object.material) ? object.material : [object.material])
             .some((material) => material?.visible && (!material.transparent || material.opacity > 0.001));
         });
-        if (!surfaces.length) continue;
+        if (!surfaces.length) { state.hasGuide = false; continue; }
         applySensorView(camera, marker, sensor);
         fitSensorCameraNear(camera, roots);
         const key = [camera.projectionMatrix.elements, camera.matrixWorld.elements];
@@ -90,7 +100,7 @@ export function createSensorFrustumLayer({ renderer, renderedEquipment }) {
             object.matrixWorld.elements, (Array.isArray(object.material) ? object.material : [object.material]).map((m) => Boolean(m?.visible && (!m.transparent || m.opacity > 0.001))));
         }
         const length = Math.min(camera.far, -bounds.min.z);
-        if (length <= camera.near) continue;
+        if (length <= camera.near) { state.hasGuide = false; continue; }
         const signature = JSON.stringify(key);
         if (state.signature !== signature) {
           const scene = new THREE.Scene();
@@ -124,6 +134,7 @@ export function createSensorFrustumLayer({ renderer, renderedEquipment }) {
           state.signature = signature;
         }
         line.visible = true;
+        state.hasGuide = true;
       }
     },
     dispose() { states.forEach((state) => state.target.dispose()); states.clear(); depthMaterial.dispose(); hiddenMaterial.dispose(); },

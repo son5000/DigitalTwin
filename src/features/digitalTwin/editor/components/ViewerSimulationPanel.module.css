@@ -1,0 +1,27 @@
+.dock { --sim-bg: var(--portal-panel, #182732); --sim-surface: var(--portal-surface, #243746); --sim-text: var(--portal-text, #eaf2f6); --sim-muted: var(--portal-muted, #a9b8c4); --sim-border: var(--portal-border, #456071); position: absolute; z-index: 32; top: 58px; left: max(80px, calc(env(safe-area-inset-left) + 68px)); width: min(320px, calc(100% - 96px)); color: var(--sim-text); font-size: 12px; line-height: 1.45; }
+.dock :is(button, input, select) { font: inherit; color: inherit; }
+.dock :is(button, select, input[type="number"]) { min-height: 36px; border: 1px solid var(--sim-border); border-radius: 6px; background: var(--sim-surface); }
+.dock button { padding: 6px 10px; cursor: pointer; }
+.dock :is(button, input, select):focus-visible { outline: 2px solid var(--portal-blue, #469beb); outline-offset: 2px; }
+.trigger { display: flex; align-items: center; gap: 10px; box-shadow: 0 2px 10px rgb(0 0 0 / 18%); }
+.trigger span { color: var(--sim-muted); font-size: 11px; }
+.panel { display: grid; gap: 12px; margin-top: 7px; max-height: min(72vh, 680px); overflow: auto; overscroll-behavior: contain; padding: 14px; border: 1px solid var(--sim-border); border-radius: 8px; background: var(--sim-bg); box-shadow: 0 8px 28px rgb(0 0 0 / 26%); }
+.panel header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; padding-bottom: 10px; border-bottom: 1px solid var(--sim-border); }
+.panel header div { display: grid; gap: 3px; }
+.panel header strong { font-size: 14px; }
+.panel small, .note, .panel output { color: var(--sim-muted); }
+.content { display: grid; gap: 12px; }
+.content > label:not(.switch), .fields label { display: grid; gap: 5px; }
+.content select, .content input[type="number"] { width: 100%; box-sizing: border-box; padding: 5px 8px; }
+.fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.fields label { min-width: 0; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; }
+.fields label span { color: var(--sim-muted); }
+.fields label input { grid-column: 1 / -1; }
+.switch { display: flex; align-items: center; gap: 8px; min-height: 32px; cursor: pointer; }
+.switch input { accent-color: var(--portal-blue, #469beb); }
+.note { margin: 0; padding-top: 8px; border-top: 1px solid var(--sim-border); }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.actions .primary { border-color: var(--portal-blue, #469beb); background: color-mix(in srgb, var(--portal-blue, #469beb) 24%, var(--sim-surface)); font-weight: 650; }
+.panel output { font-variant-numeric: tabular-nums; }
+@media (max-width: 760px) { .dock { top: 56px; left: max(72px, calc(env(safe-area-inset-left) + 64px)); width: min(320px, calc(100% - 84px)); } }
+@media (pointer: coarse) { .dock :is(button, select, input[type="number"]), .switch { min-height: 44px; } }

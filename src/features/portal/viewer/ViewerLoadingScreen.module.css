@@ -1,0 +1,73 @@
+.backdrop {
+  position: absolute;
+  z-index: 35;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: color-mix(in srgb, var(--portal-bg, #07101f) 88%, transparent);
+  color: var(--portal-text, #e7f0fb);
+  cursor: wait;
+}
+
+.fullPage { position: fixed; z-index: 100; background: var(--portal-bg, #07101f); }
+
+.panel {
+  width: min(360px, 100%);
+  padding: 22px 24px 24px;
+  border: 1px solid var(--portal-border, rgb(155 191 230 / 15%));
+  border-radius: 8px;
+  background: var(--portal-panel, #0c1a30);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 18%);
+}
+
+.project {
+  margin: 0 0 8px;
+  color: var(--portal-muted, #8ca3bf);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel h1 {
+  margin: 0;
+  color: var(--portal-text, #e7f0fb);
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: -.02em;
+}
+
+.detail {
+  min-height: 18px;
+  margin: 12px 0 14px;
+  color: var(--portal-muted, #8ca3bf);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.track {
+  height: 3px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--portal-surface, #11233d);
+}
+
+.track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--portal-blue, #3475e8);
+}
+
+.determinate { transition: width 250ms ease; }
+.indeterminate { width: 36%; animation: travel 1.35s ease-in-out infinite; }
+
+@keyframes travel { from { transform: translateX(-100%); } to { transform: translateX(280%); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .indeterminate { animation: none; }
+  .determinate { transition: none; }
+}

@@ -79,6 +79,18 @@
 .photo { display: grid; gap: 6px; }
 .photo img { width: 100%; max-height: 160px; object-fit: contain; border-radius: 6px; }
 .review { display: grid; gap: 6px; }
+.finalView { display: grid; gap: 9px; padding: 14px; border: 1px solid rgb(var(--color-accent-rgb) / 35%); border-radius: 8px; background: rgb(var(--color-accent-rgb) / 6%); }
+.finalViewEyebrow { color: var(--color-accent-strong); font-size: 11px; font-weight: 700; letter-spacing: .05em; }
+.finalView h3 { margin: 0; color: var(--color-heading); font-size: 16px; line-height: 1.35; }
+.finalView p { margin: 0; color: var(--color-text-subtle); font-size: 12px; line-height: 1.5; }
+.finalViewActions { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr)); gap: 6px; }
+.finalViewActions button, .finalViewTools button { min-height: 34px; padding: 6px 9px; border: 1px solid var(--color-border); border-radius: 5px; color: var(--color-heading); background: var(--color-input); font-size: 12px; }
+.finalViewActions button:first-child { border-color: var(--color-accent); color: var(--color-accent-strong); font-weight: 700; }
+.finalViewTools { display: grid; gap: 8px; border-top: 1px solid var(--color-border); padding-top: 9px; }
+.finalViewTools summary { color: var(--color-text-subtle); font-size: 12px; cursor: pointer; }
+.finalViewTools[open] { display: grid; }
+.finalViewTools[open] > :not(summary) { margin-top: 8px; }
+.finalSavePrompt { margin: 2px 0; color: var(--color-heading); font-size: 13px; font-weight: 700; line-height: 1.45; }
 
 @media (max-width: 380px) {
   .actionRow, .checkGrid { grid-template-columns: 1fr; }
@@ -136,6 +148,30 @@ details.settingsGroup[open] > :not(summary) + * { margin-top: 12px; }
 .drawerHeightGrid > * { min-width: 0; --inspector-field-columns: minmax(0, 1fr); }
 .modelSetupGroup { display: grid; min-width: 0; gap: 10px; padding-top: 2px; }
 .modelSetupGroup > h3 { margin: 0; padding: 7px 2px 6px; border-bottom: 1px solid var(--color-border-strong); color: var(--color-heading); font-size: 14px; line-height: 1.4; }
+.optionalModelSettings { display: block; border-top: 1px solid var(--color-border); padding-top: 10px; }
+.optionalModelSettings > summary { color: var(--color-heading); font-size: 13px; font-weight: 700; cursor: pointer; }
+.optionalModelSettings[open] > :not(summary) { margin-top: 10px; }
+.scanSlotList { display: grid; gap: 6px; }
+.scanSlotItem { display: grid; gap: 7px; min-width: 0; padding: 8px; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-input); }
+.scanSlotItem[data-selected="true"] { border-color: var(--color-accent); box-shadow: inset 3px 0 var(--color-accent); background: var(--state-selected); }
+.scanSlotHeader { display: flex; min-width: 0; align-items: baseline; gap: 8px; }
+.scanSlotHeader strong { flex: none; color: var(--color-heading); font-size: 12px; }
+.scanSlotHeader span { min-width: 0; overflow: hidden; color: var(--color-text-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.scanSlotItem > p { margin: 0; }
+.scanSlotActions { display: flex; min-width: 0; gap: 4px; }
+.scanSlotActions > * { flex: 1 1 0; min-width: 0; }
+.scanSlotItem .scanSlotActions button, .scanSlotItem .scanSlotActions .uploadButton { min-height: 32px; padding: 4px 2px; font-size: 12px; white-space: nowrap; }
+.scanSlotItem .scanSlotActions button[aria-pressed="true"] { border-color: var(--color-accent); color: var(--color-accent-strong); background: var(--state-selected); }
+.scanEditingContext { position: sticky; top: 0; z-index: 3; display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: center; gap: 3px 8px; min-width: 0; padding: 8px 10px; border: 1px solid var(--color-accent); border-radius: 6px; background: var(--state-selected); }
+.scanEditingContext > span { color: var(--color-accent-strong); font-size: 11px; font-weight: 700; white-space: nowrap; }
+.scanEditingContext > strong { min-width: 0; color: var(--color-heading); font-size: 13px; white-space: nowrap; }
+.scanEditingContext > small { min-width: 0; overflow: hidden; color: var(--color-text-subtle); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.scanEditingContext > .scanEditingOrigin { grid-column: 1 / -1; white-space: normal; }
+.stepBody:has(.scanEditingContext), .panel:has(.scanEditingContext) { scroll-padding-top: 88px; }
+.scanEditingContext ~ .settingsGroup { scroll-margin-top: 88px; }
+.scanAdvanced { display: grid; gap: 8px; padding-top: 7px; border-top: 1px solid var(--color-border); }
+.scanAdvanced > summary { color: var(--color-text-subtle); font-size: 12px; cursor: pointer; }
+.scanAdvanced[open] > :not(summary) { margin-top: 8px; }
 .subsectionTitle { margin: 0; color: var(--color-text-muted); font-size: 12px; font-weight: 700; line-height: 1.4; }
 .numberHint { margin: 0; padding: 6px 12px 0; color: var(--color-text-muted); font-size: 12px; line-height: 1.5; }
 .roiReadout { display: grid; gap: 0; max-height: 190px; overflow-y: auto; font-size: 12px; }

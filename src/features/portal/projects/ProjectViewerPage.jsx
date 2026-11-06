@@ -8,6 +8,7 @@ import { ChevronRightIcon, CloseIcon } from "@/components/icons/actionIcons";
 import { getRuntimeCustomAsset } from "@/features/customAssets/core/customAssetRegistry";
 import WorldTreePanel from "../viewer/WorldTreePanel";
 import ScanLoadStatus from "../viewer/ScanLoadStatus";
+import ViewerLoadingScreen from "../viewer/ViewerLoadingScreen";
 import { createEquipmentRoiTree, createWorldTree, getTreeAncestors, getViewerEquipmentContext, worldNodeKey } from "../viewer/worldTreeModel";
 import { getBuildingObservationData } from "../viewer/buildingObservationData";
 import { normalizeFloorDisplayGap, resolveFloorSelectionGap } from "@/features/digitalTwin/editor/model/floorDisplay";
@@ -75,7 +76,7 @@ export default function ProjectViewerPage({ projectId, requestedEquipmentId = nu
     window.addEventListener("storage", refresh);
     return () => { clearTimeout(timer); window.removeEventListener("storage", refresh); };
   }, [projectId, localImport]);
-  if (result.loading) return <main className={styles.page}><p role="status">프로젝트를 불러오는 중입니다.</p></main>;
+  if (result.loading) return <ViewerLoadingScreen projectLoading />;
   return result.project ? <SavedWorldViewer project={result.project} requestedEquipmentId={requestedEquipmentId} operationsSection={operationsSection} operationsRecord={operationsRecord} /> : <main className={styles.page}><div className={styles.main}><p role="alert" className={styles.notice}>{result.error}</p><button className={styles.back} onClick={() => navigateTo("/projects")}>프로젝트 목록</button></div></main>;
 }
 
@@ -351,7 +352,6 @@ function SavedWorldViewer({ project, requestedEquipmentId, operationsSection, op
       <main className={viewerStyles.world} data-scene-area aria-label={`${details.name} 관측 뷰어`}>
         <div ref={setToolsHost} className={viewerStyles.sceneTools} />
         <div className={viewerStyles.scene}>
-          <ScanLoadStatus equipmentId={equipmentId} popup />
           {equipmentOverview ? <EquipmentObservationScene key="equipment-overview" overview equipmentList={overviewEquipment} terrainEnvironment={terrainEnvironment} gridSettings={layout.gridSettings ?? DEFAULT_GRID_SETTINGS}
             snapshotRequest={snapshotRequest} onSnapshot={setSnapshot} cameraMemory={viewerCameraMemory}
             theme={theme} onCameraControlsChange={setCameraControls} onZoomChange={setZoom} />
@@ -365,6 +365,8 @@ function SavedWorldViewer({ project, requestedEquipmentId, operationsSection, op
               equipmentAssetBindings={layout.equipmentAssetBindings ?? EMPTY_ITEMS} viewerPreset={layout.viewerPreset} modelLayers={worldModelLayers}
               interactionMode={SITE_INTERACTION_MODES.NAVIGATE} allowWorldSelection={false} viewMode={viewMode} theme={theme} transformTools={DISABLED_TRANSFORM_TOOLS} gridSettings={DEFAULT_GRID_SETTINGS}
               onSelectBuilding={selectBuilding} onSelectEquipment={selectEquipment} onSelectFloor={selectFloor} onEnterBuilding={selectBuilding} onEnterFloor={selectFloor} />}
+          {(!equipmentScope || equipmentOverview || ((showEquipment || equipmentDetail) && detailEquipment.length > 0)) && snapshot?.request !== snapshotRequest
+            && <ViewerLoadingScreen equipmentId={equipmentId} projectName={details.name} />}
         </div>
 
         {!showEquipment && !equipmentDetail && activeEquipment && (layout.equipmentAssetBindings ?? []).some((binding) => binding.equipmentId === activeEquipment.id && ["OBJ", "PLY"].includes(binding.assetType)) && <ModelLayerControls hasScan shapeLabel={activeEquipment.enclosure?.enabled ? "설비 함체" : "설비 외형"} value={worldModelLayers[activeEquipment.id]} onChange={(value) => setWorldModelLayers((current) => ({ ...current, [activeEquipment.id]: value }))} />}

@@ -98,6 +98,7 @@ export default function ProjectsPage() {
                 <div className={styles.actions}>
                   {details.isDraft ? <button className={styles.primary} onClick={() => enterProject(project.id)}>이어서 편집</button> : null}
                   {project.layout.observationWorkflow?.configured !== false ? <button className={details.isDraft ? undefined : styles.primary} onClick={() => navigateTo(`/viewer?project=${encodeURIComponent(project.id)}`)}>뷰어 열기</button> : null}
+                  <button className={styles.developer} onClick={() => navigateTo(`/viewer?project=${encodeURIComponent(project.id)}&developer=1`)} aria-label={`${details.name} 개발자 뷰어 열기`} title="테스트 데이터를 주입할 수 있는 뷰어">개발자 뷰어</button>
                   {!details.isDraft ? <button onClick={() => enterProject(project.id)}>편집하기</button> : null}
                   <button disabled={bundleState.busy} onClick={() => exportBundle(project)}>ZIP 내보내기</button>
                 </div>

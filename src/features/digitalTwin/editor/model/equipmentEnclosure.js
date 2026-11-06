@@ -175,6 +175,26 @@ export function getEnclosureDoorEntries(equipment) {
   });
 }
 
+export function isCombinedDoorSurface(surfaceId, panelId) {
+  if (surfaceId === "front-doors-outside") return /^door-\d+$/.test(panelId ?? "");
+  if (surfaceId === "rear-doors-outside") return /^rear-door-\d+$/.test(panelId ?? "");
+  return false;
+}
+
+// One image spans the closed door opening. Each moving door uses its own
+// transformed face with the same opening-wide UV coordinates.
+export function getCombinedDoorPanelSurface(equipment, surfaceId, panelId) {
+  if (!isCombinedDoorSurface(surfaceId, panelId)) return null;
+  const side = surfaceId === "front-doors-outside" ? "FRONT" : "REAR";
+  const index = Number(panelId.match(/\d+$/)?.[0]);
+  const cell = getEnclosureDoorCell(equipment, index, side);
+  const c = getEnclosure(equipment);
+  const door = getEnclosureSurfaces(equipment).find((surface) => surface.id === `${panelId}-outside`);
+  if (!cell || !door) return null;
+  return { ...door, origin: door.origin.clone().addScaledVector(door.right, -(cell.left + c.width / 2 - c.thickness))
+    .addScaledVector(door.up, -(cell.bottom - c.thickness)), width: c.width - 2 * c.thickness, height: c.height - 2 * c.thickness };
+}
+
 // Surface axes are metres from the face's lower-left corner, viewed head-on.
 // A hidden door keeps its physical transform so its sensors never detach.
 export function getEnclosureSurfaces(equipment) {
@@ -193,6 +213,13 @@ export function getEnclosureSurfaces(equipment) {
     const origin = surface.origin.clone().addScaledVector(surface.right, surface.width).addScaledVector(surface.normal, -t);
     add(`${surface.id}-outside`, surface.label.replace(/안쪽|내벽/, "바깥쪽"), origin.toArray(), surface.right.clone().negate().toArray(), surface.up.toArray(), surface.normal.clone().negate().toArray(), surface.width, surface.height);
   }
+  for (const [side, set] of [["FRONT", c], ["REAR", c.rear]]) {
+    if (!set.doorCount) continue;
+    const front = side === "FRONT";
+    add(front ? "front-doors-outside" : "rear-doors-outside", `${front ? "앞" : "뒤"} · 전체 문 바깥쪽`,
+      [front ? -w / 2 + t : w / 2 - t, t, front ? d / 2 : -d / 2],
+      [front ? 1 : -1, 0, 0], [0, 1, 0], [0, 0, front ? 1 : -1], w - 2 * t, h - 2 * t);
+  }
   for (const { index, side, id, label } of getEnclosureDoorEntries(equipment)) {
     const door = getEnclosureDoor(equipment, index, side);
     for (const inside of [true, false]) {
@@ -207,6 +234,20 @@ export function getEnclosureSurfaces(equipment) {
 }
 
 export function getSensorMountPose(sensor, equipment) {
+  const slotMount = sensor?.scanSlotMount;
+  if (slotMount) {
+    if (slotMount.equipmentId && slotMount.equipmentId !== equipment?.id) return null;
+    const slot = getEnclosureScanSlot(equipment, slotMount.index, slotMount.side);
+    if (!slot) return null;
+    const local = slotMount.position;
+    if (!local || ![local.x, local.y, local.z].every(Number.isFinite)) return null;
+    const adjusted = local.x < 0 || local.x > slot.dimensions.width || local.y < 0 || local.y > slot.dimensions.height
+      || local.z > 0 || local.z < -slot.dimensions.depth;
+    const direction = slot.side === "REAR" ? -1 : 1;
+    const position = new THREE.Vector3(slot.origin.x + local.x * direction, slot.origin.y + local.y, slot.origin.z + local.z * direction);
+    const rotation = new THREE.Euler(sensor.rotation?.x ?? 0, sensor.rotation?.y ?? 0, sensor.rotation?.z ?? 0);
+    return { position, rotation, slot, adjusted };
+  }
   const mount = sensor?.surfaceMount;
   const surface = mount?.equipmentId === equipment?.id ? getEnclosureSurfaces(equipment).find((item) => item.id === mount.surfaceId) : null;
   if (!surface) return null;

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { monitoringApiBase, requestPointAudio } from "../api/monitoringClient.js";
 import { roiAudioSelection } from "../model/roiMonitoring.js";
 import { DEFAULT_FREQUENCY_BANDS } from "../model/observationProfiles.js";
+import { demoAudioBlob } from "../model/monitoringDemo.js";
 import styles from "./GeneralObservationDashboard.module.css";
 
 function spectrumBins(spectrum) {
@@ -14,7 +15,7 @@ function spectrumBins(spectrum) {
     .sort((a, b) => a.frequencyHz - b.frequencyHz);
 }
 
-export default function GeneralObservationDashboard({ roi, point, rows, equipment, projectId, model }) {
+export default function GeneralObservationDashboard({ roi, point, rows, equipment, projectId, model, demo = false }) {
   const item = point.measurements.find((entry) => entry.metric === "GENERAL");
   const bands = item?.analysisConfig?.bands ?? DEFAULT_FREQUENCY_BANDS;
   const [bandId, setBandId] = useState("");
@@ -24,6 +25,7 @@ export default function GeneralObservationDashboard({ roi, point, rows, equipmen
   const audioRef = useRef(null), queuedAudio = useRef(null);
   const band = bands.find((entry) => entry.id === bandId);
   const bins = useMemo(() => spectrumBins(rows.find((entry) => entry.metric === "ultrasound.db")?.spectrum), [rows]);
+  const signalValue = rows.find((entry) => entry.metric === "ultrasound.db")?.value;
   const visible = bins.filter((entry) => !band || entry.frequencyHz >= band.fromHz && entry.frequencyHz <= band.toHz);
   const sampled = visible.filter((_, index) => index % Math.max(1, Math.ceil(visible.length / 256)) === 0);
   const minDb = visible.length ? Math.floor(Math.min(...visible.map((entry) => entry.levelDb)) / 10) * 10 : 0;
@@ -31,7 +33,7 @@ export default function GeneralObservationDashboard({ roi, point, rows, equipmen
   const minHz = visible[0]?.frequencyHz ?? 0, maxHz = visible.at(-1)?.frequencyHz ?? 1;
   const trace = sampled.map((entry, index) => `${index ? "L" : "M"}${36 + (entry.frequencyHz - minHz) / Math.max(1, maxHz - minHz) * 580},${150 - (entry.levelDb - minDb) / Math.max(1, maxDb - minDb) * 130}`).join(" ");
   useEffect(() => {
-    if (!listening || !monitoringApiBase) return undefined;
+    if (!listening || !monitoringApiBase || demo) return undefined;
     const controller = new AbortController();
     let active = true, timer;
     const request = async () => {
@@ -49,7 +51,14 @@ export default function GeneralObservationDashboard({ roi, point, rows, equipmen
     };
     void request();
     return () => { active = false; clearTimeout(timer); controller.abort(); queuedAudio.current = null; };
-  }, [listening, band, roi, equipment, projectId, model]);
+  }, [listening, band, roi, equipment, projectId, model, demo]);
+  useEffect(() => {
+    if (!listening || !demo || !signalValue) return undefined;
+    const url = URL.createObjectURL(demoAudioBlob());
+    let active = true;
+    queueMicrotask(() => { if (active) setAudio({ url, measuredAt: new Date().toISOString() }); });
+    return () => { active = false; URL.revokeObjectURL(url); };
+  }, [listening, demo, bandId, signalValue]);
   return <section className={styles.section} aria-label="주파수와 소리">
     <div className={styles.heading}><strong>초음파 주파수</strong><label>들을 대역<select value={bandId} onChange={(event) => { setBandId(event.target.value); setAudio(null); }}>
       <option value="">전체 대역</option>{bands.map((entry) => <option value={entry.id} key={entry.id}>{entry.name} · {entry.fromHz.toLocaleString()}–{entry.toHz.toLocaleString()} Hz</option>)}
@@ -59,9 +68,9 @@ export default function GeneralObservationDashboard({ roi, point, rows, equipmen
       <text x="36" y="170">{Math.round(minHz).toLocaleString()} Hz</text><text x="616" y="170" textAnchor="end">{Math.round(maxHz).toLocaleString()} Hz</text>
       <text x="8" y="25">{maxDb}</text><text x="8" y="150">{minDb}</text>
     </svg> : <p className={styles.empty}>이 영역의 FFT 주파수 데이터 수신 대기</p>}
-    <div className={styles.audioRow}><button type="button" disabled={!monitoringApiBase} aria-pressed={listening} onClick={() => { setListening((value) => !value); setAudio(null); queuedAudio.current = null; }}>{listening ? "듣기 중지" : "이 영역의 소리 듣기"}</button>
-      {!monitoringApiBase && <small>관측 서버 연결 후 소리를 들을 수 있습니다.</small>}</div>
-    {listening && audio?.url && <audio ref={audioRef} key={`${audio.url}:${audio.measuredAt ?? ""}`} controls autoPlay src={audio.url} aria-label={`${band?.name ?? "전체 대역"} 관측 소리`} onEnded={() => { setAudio(queuedAudio.current); queuedAudio.current = null; }} />}
+    <div className={styles.audioRow}><button type="button" disabled={!demo && !monitoringApiBase} aria-pressed={listening} onClick={() => { setListening((value) => !value); setAudio(null); queuedAudio.current = null; }}>{listening ? "듣기 중지" : "이 영역의 소리 듣기"}</button>
+      {!demo && !monitoringApiBase && <small>관측 서버 연결 후 소리를 들을 수 있습니다.</small>}</div>
+    {listening && (!demo || signalValue != null) && audio?.url && <audio ref={audioRef} key={`${audio.url}:${audio.measuredAt ?? ""}`} controls autoPlay loop={demo} src={audio.url} aria-label={`${band?.name ?? "전체 대역"} 관측 소리`} onEnded={() => { setAudio(queuedAudio.current); queuedAudio.current = null; }} />}
     {error && <p role="alert" className={styles.error}>{error}</p>}
   </section>;
 }
