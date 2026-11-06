@@ -27,15 +27,43 @@
 .audioSpectrum text { fill: var(--roi-muted); font-size: 10px; }
 .audioSpectrumAxis { fill: none; stroke: var(--roi-border); stroke-width: 1; }
 .audioSpectrumTrace { fill: none; stroke: var(--portal-blue, #53c5e4); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.thermalReadout { display: grid; gap: 10px; padding: 3px 0 9px; }
-.thermalReadoutHeading { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; color: var(--roi-muted); font-size: 11px; }
-.thermalReadoutHeading span { min-width: 0; overflow-wrap: anywhere; }
-.thermalReadoutHeading small { flex-shrink: 0; }
-.thermalMetrics { display: grid; gap: 8px; margin: 0; }
-.thermalMetrics > div { display: flex; align-items: baseline; justify-content: flex-start; gap: 12px; min-width: 0; }
-.thermalMetrics dt { flex: 0 0 32px; color: var(--roi-muted); font-size: 12px; }
-.thermalMetrics dd { margin: 0; font-size: 24px; line-height: 1.3; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: left; }
-.thermalMetrics dd small { font-size: 11px; font-weight: 500; }
+.thermalReadout { display: grid; gap: 10px; min-width: 0; padding: 12px; border: 1px solid var(--roi-border); border-radius: 7px; background: var(--portal-surface, var(--roi-bg)); }
+.thermalReadoutHeading { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.thermalReadoutHeading strong { min-width: 0; font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; }
+.dataPanel .thermalCameraToggle { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 5px; color: var(--roi-muted); white-space: nowrap; font-size: 11px; cursor: pointer; }
+.thermalCameraToggle input { margin: 0; accent-color: var(--portal-blue, #469beb); }
+.thermalMetrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; margin: 0; }
+.thermalMetrics > div { min-width: 0; }
+.thermalMetrics dt { color: var(--roi-muted); font-size: 11px; }
+.thermalMetrics dd { margin: 0; font-size: 17px; line-height: 1.3; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.thermalMetrics dd small { font-size: 10px; font-weight: 500; }
+.dataPanel .thermalDetailButton { justify-self: start; min-height: 30px; padding: 3px 8px; font-size: 11px; }
+.thermalReadout canvas { max-height: 130px; }
+.thermalDetailDialog { --roi-bg: var(--portal-panel, var(--color-surface, #17242b)); --roi-text: var(--portal-text, var(--color-heading, #e5edf3)); --roi-muted: var(--portal-muted, var(--color-text-muted, #a9b8c4)); --roi-border: var(--portal-border, var(--color-border-strong, #456071)); width: min(620px, calc(100vw - 32px)); max-height: min(760px, calc(100dvh - 32px)); box-sizing: border-box; padding: 0; border: 1px solid var(--roi-border); border-radius: 9px; background: var(--roi-bg); color: var(--roi-text); box-shadow: 0 16px 48px rgb(0 0 0 / 30%); overflow: auto; }
+.thermalDetailDialog::backdrop { background: rgb(8 18 25 / 58%); }
+.thermalDetailHeader { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--roi-border); }
+.thermalDetailHeader small { color: var(--roi-muted); font-size: 11px; }
+.thermalDetailHeader h2 { margin: 1px 0 0; font-size: 17px; line-height: 1.35; }
+.thermalDetailHeader button { flex: 0 0 auto; min-height: 34px; padding: 5px 11px; border: 1px solid var(--roi-border); border-radius: 5px; background: var(--roi-bg); color: var(--roi-text); cursor: pointer; }
+.thermalDetailHeader button:focus-visible { outline: 2px solid var(--portal-blue, #469beb); outline-offset: 2px; }
+.thermalDetailBody { display: grid; gap: 18px; padding: 18px; }
+.thermalDetailBody .thermalMetrics dd { font-size: 24px; }
+.thermalDetailBody h3 { margin: 0 0 8px; font-size: 13px; }
+.thermalChart { display: grid; gap: 6px; }
+.thermalChartLegend { display: flex; gap: 14px; color: var(--roi-muted); font-size: 11px; }
+.thermalChartLegend span::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 5px; border-radius: 50%; background: #43a7df; }
+.thermalChartLegend span:nth-child(2)::before { background: #6bc99c; }
+.thermalChartLegend span:nth-child(3)::before { background: #f19c66; }
+.thermalChart svg { width: 100%; height: auto; background: var(--portal-surface, var(--roi-bg)); border-radius: 5px; }
+.thermalChart svg text { fill: var(--roi-muted); font-size: 10px; }
+.thermalChartGrid { fill: none; stroke: var(--roi-border); stroke-width: 1; }
+.thermalChartMin, .thermalChartAverage, .thermalChartMax { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.thermalChartMin { stroke: #43a7df; } .thermalChartAverage { stroke: #6bc99c; } .thermalChartMax { stroke: #f19c66; }
+.thermalChartDotMin { fill: #43a7df; } .thermalChartDotAverage { fill: #6bc99c; } .thermalChartDotMax { fill: #f19c66; }
+.thermalCameraInfo { display: grid; gap: 8px; margin: 0; padding-top: 14px; border-top: 1px solid var(--roi-border); }
+.thermalCameraInfo > div { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 12px; }
+.thermalCameraInfo dt { color: var(--roi-muted); }
+.thermalCameraInfo dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .thermalOpacity { margin-top: 12px; }
 .dataPanel article { padding: 8px; border: 1px solid var(--roi-border); border-radius: 5px; }
 .dataPanel article button { display: block; margin-top: 8px; }

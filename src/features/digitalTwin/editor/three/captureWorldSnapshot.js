@@ -45,7 +45,17 @@ export function createSnapshotScene({ scene, roots, selectionColors = [] }) {
     copy.scale.copy(source.scale);
     if (source.material) {
       const clean = (material) => {
-        const next = material.clone();
+        // A render target sampler cannot be cloned. Borrow shader textures while
+        // cloning the remaining uniforms without changing the live material.
+        const textures = material.isShaderMaterial
+          ? Object.entries(material.uniforms).filter(([, uniform]) => uniform.value?.isTexture) : [];
+        const source = textures.length ? Object.create(material) : material;
+        if (textures.length) {
+          source.uniforms = { ...material.uniforms };
+          for (const [name, uniform] of textures) source.uniforms[name] = { ...uniform, value: null };
+        }
+        const next = material.clone.call(source);
+        for (const [name, uniform] of textures) next.uniforms[name].value = uniform.value;
         materials.add(next);
         if (colors.some((color) => next.emissive?.equals(color))) next.emissive.set(0);
         if (source.userData.siteObjectId && next.emissiveIntensity === 0.14 && next.emissive?.equals(next.color)) next.emissive.set(0);

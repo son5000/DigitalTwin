@@ -17,7 +17,8 @@ function normalizedPoint(event) {
 }
 
 export default function VirtualCameraViewport({ equipment, cameras = [], cameraController, activeId, onActiveChange, editor = false, sensors = [], points = [], onAdd,
-  panelOpen = false, selectedRoiId = null, onRoiSelect, roiDetails }) {
+  panelOpen = false, selectedRoiId = null, onRoiSelect, roiDetails, overviewDetails, onViewReady,
+  thermalAvailable = false, thermalEnabled = false, onThermalChange, imageVersion = "" }) {
   const [image, setImage] = useState(null);
   const [error, setError] = useState("");
   const [configuration, setConfiguration] = useState(null);
@@ -26,8 +27,10 @@ export default function VirtualCameraViewport({ equipment, cameras = [], cameraC
   const [end, setEnd] = useState(null);
   const [expanded, setExpanded] = useState(false);
   const dialogRef = useRef(null);
+  const onViewReadyRef = useRef(onViewReady);
+  useEffect(() => { onViewReadyRef.current = onViewReady; }, [onViewReady]);
   const camera = cameras.find((item) => item.id === activeId);
-  const currentImage = image && image.camera === camera ? image.source : "";
+  const currentImage = image && image.camera === camera && image.thermal === thermalEnabled ? image.source : "";
   const savedPoints = points.filter((point) => point.virtualCameraRegion?.cameraId === camera?.id);
   const selectedPoint = savedPoints.find((point) => point.id === selectedRoiId);
   const canAdd = editor || Boolean(onAdd);
@@ -58,22 +61,42 @@ export default function VirtualCameraViewport({ equipment, cameras = [], cameraC
   }
   useEffect(() => {
     if (!camera) return undefined;
-    let frame = 0;
-    const timer = setTimeout(() => {
-      setImage(null);
+    let frame = 0, timer, attempts = 0, previewed = false, cancelled = false;
+    const retry = () => {
+      if (cancelled) return;
+      if (++attempts < 16) timer = setTimeout(capture, 250);
+      else setError("현재 시점의 이미지를 만들지 못했습니다. 잠시 후 가상 카메라를 다시 선택하세요.");
+    };
+    const capture = () => {
       const controller = cameraController?.current;
-      if (!controller?.ready() || controller.equipmentId !== equipment.id || !controller.previewVirtualCamera(camera)) {
-        setError("모델을 불러온 뒤 가상 카메라를 다시 선택하세요."); return;
+      if (!controller?.ready() || controller.equipmentId !== equipment.id) { retry(); return; }
+      if (!previewed) {
+        if (!controller.previewVirtualCamera(camera)) { retry(); return; }
+        previewed = true;
       }
       frame = requestAnimationFrame(() => {
+        if (cancelled) return;
         try {
-          const snapshot = controller.captureImage();
-          setImage(snapshot ? { camera, source: snapshot } : null); setError(snapshot ? "" : "현재 시점의 이미지를 만들지 못했습니다."); setStart(null); setEnd(null);
-        } catch { setImage(null); setError("현재 시점을 이미지로 만들지 못했습니다."); }
+          const snapshot = controller.captureImage({ thermal: thermalEnabled });
+          if (!snapshot) { retry(); return; }
+          setImage({ camera, source: snapshot, thermal: thermalEnabled });
+          if (!editor) {
+            const center = controller.pickImagePoint(.5, .5)?.position
+              ?? controller.projectImagePointToPlane(.5, .5)?.position ?? null;
+            onViewReadyRef.current?.({ cameraId: camera.id, center,
+              temperature: controller.temperatureForVirtualCamera(equipment.id) });
+          }
+          setError(""); setStart(null); setEnd(null);
+        } catch { setError("현재 시점의 이미지를 만들지 못했습니다."); }
       });
+    };
+    timer = setTimeout(() => {
+      setImage((previous) => previous?.camera === camera && previous.thermal === thermalEnabled ? previous : null);
+      setError("");
+      capture();
     }, 0);
-    return () => { clearTimeout(timer); cancelAnimationFrame(frame); };
-  }, [camera, cameraController, equipment.id]);
+    return () => { cancelled = true; clearTimeout(timer); cancelAnimationFrame(frame); };
+  }, [camera, cameraController, equipment.id, thermalEnabled, imageVersion, editor]);
   async function finish(event) {
     if (!start || !configuration) return;
     const final = normalizedPoint(event);
@@ -161,7 +184,12 @@ export default function VirtualCameraViewport({ equipment, cameras = [], cameraC
           <ObservationMetricChoices compact allowedMetrics={VIRTUAL_CAMERA_ROI_METRICS}
             values={configuration?.measurements.map((item) => item.metric) ?? []} onChange={selectMetric} /></div>}
         {editor ? imageView : <div className={styles.viewerBody}>
-          <div className={styles.previewColumn}>{imageView}<section className={styles.regionList} aria-label={`${camera.name} 관측 영역 목록`}>
+          <div className={styles.previewColumn}>
+            <div className={styles.previewToolbar}><strong>시점 이미지</strong>
+              {thermalAvailable && <button type="button" className={styles.thermalToggle} aria-pressed={thermalEnabled}
+                onClick={() => onThermalChange?.(!thermalEnabled)}>{thermalEnabled ? "열화상 표시 중" : "열화상 겹쳐 보기"}</button>}
+            </div>
+            {imageView}<section className={styles.regionList} aria-label={`${camera.name} 관측 영역 목록`}>
             <div className={styles.regionHeading}><strong>관측 영역</strong><span>{savedPoints.length}개</span></div>
             <select className={styles.regionSelect} aria-label="관측 영역 선택" value={selectedPoint?.id ?? ""} disabled={!savedPoints.length}
               onChange={(event) => onRoiSelect?.(event.target.value)}>
@@ -169,7 +197,7 @@ export default function VirtualCameraViewport({ equipment, cameras = [], cameraC
               {savedPoints.map((point) => <option key={point.id} value={point.id}>{point.name}</option>)}
             </select>
           </section></div>
-          <aside className={styles.roiDetails} aria-label="관측 영역 상세">{adding ? <p>확인할 항목을 고른 뒤 왼쪽 이미지에서 영역을 드래그하세요.</p> : selectedPoint ? roiDetails : <p>영역을 선택하면 측정값과 설정이 표시됩니다.</p>}</aside>
+          <aside className={styles.roiDetails} aria-label={selectedPoint ? "관측 영역 상세" : "가상 카메라 전체 지표"}>{adding ? <p>확인할 항목을 고른 뒤 왼쪽 이미지에서 영역을 드래그하세요.</p> : selectedPoint ? roiDetails : overviewDetails ?? <p>시점 지표를 준비하고 있습니다.</p>}</aside>
         </div>}
         {error && <p className={styles.feedback} role="status">{error}</p>}
       </section>

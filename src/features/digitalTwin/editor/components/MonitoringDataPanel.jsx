@@ -9,7 +9,40 @@ import ViewerThermalPreview from "./ViewerThermalPreview.jsx";
 import styles from "./MonitoringRoiWorkspace.module.css";
 
 const STATUS = { DISCONNECTED: "서버 미연결", CONNECTING: "연결 중", CONNECTED: "수신 중", RECONNECTING: "재연결 중", ERROR: "연결 오류", DEMO: "수신 중" };
-export default function MonitoringDataPanel({ section = "AUDIO", equipment, projectId, equipmentId, telemetry, opacity, setOpacity, point, picking, setPicking, layerError, model, sensorView, availability, thermalReadouts = [], rois, readings = [], sensors = [], simulationTargetRoiId = "", onSimulationTargetChange, onRoiSelect, onClose }) {
+const measuredTime = (value) => value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString("ko-KR") : "수신 전";
+
+function ThermalMetrics({ summary }) {
+  if (!summary) return <p className={styles.hint}>온도 데이터 수신 대기</p>;
+  return <dl className={styles.thermalMetrics}>
+    <div><dt>최저</dt><dd>{summary.min.toFixed(1)}<small> ℃</small></dd></div>
+    <div><dt>평균</dt><dd>{summary.average.toFixed(1)}<small> ℃</small></dd></div>
+    <div><dt>최고</dt><dd>{summary.max.toFixed(1)}<small> ℃</small></dd></div>
+  </dl>;
+}
+
+function ThermalHistoryChart({ history = [] }) {
+  if (!history.length) return <p className={styles.hint}>수신된 온도 기록이 없습니다.</p>;
+  const values = history.flatMap((row) => [row.min, row.average, row.max]).filter(Number.isFinite);
+  if (!values.length) return null;
+  const low = Math.floor(Math.min(...values) - 1), high = Math.ceil(Math.max(...values) + 1);
+  const y = (value) => 110 - (value - low) / Math.max(1, high - low) * 88;
+  const x = (index) => history.length === 1 ? 175 : 30 + index / (history.length - 1) * 290;
+  const line = (key) => history.map((row, index) => `${index ? "L" : "M"}${x(index)},${y(row[key]).toFixed(1)}`).join(" ");
+  return <div className={styles.thermalChart}>
+    <div className={styles.thermalChartLegend}><span>최저</span><span>평균</span><span>최고</span></div>
+    <svg viewBox="0 0 340 140" role="img" aria-label={`온도 변화 기록 ${history.length}건, 최저·평균·최고 온도`}>
+      <path d="M30 22 H320 M30 66 H320 M30 110 H320" className={styles.thermalChartGrid} />
+      <text x="25" y="25" textAnchor="end">{high}°</text><text x="25" y="113" textAnchor="end">{low}°</text>
+      <path d={line("min")} className={styles.thermalChartMin} /><path d={line("average")} className={styles.thermalChartAverage} /><path d={line("max")} className={styles.thermalChartMax} />
+      {history.length === 1 && <><circle cx="175" cy={y(history[0].min)} r="3" className={styles.thermalChartDotMin} /><circle cx="175" cy={y(history[0].average)} r="3" className={styles.thermalChartDotAverage} /><circle cx="175" cy={y(history[0].max)} r="3" className={styles.thermalChartDotMax} /></>}
+      <text x="30" y="133">{new Date(history[0].timestamp).toLocaleTimeString("ko-KR")}</text>
+      {history.length > 1 && <text x="320" y="133" textAnchor="end">{new Date(history.at(-1).timestamp).toLocaleTimeString("ko-KR")}</text>}
+    </svg>
+    {history.length === 1 && <small className={styles.hint}>현재 기록 1건 · 새 데이터가 들어오면 변화가 이어집니다.</small>}
+  </div>;
+}
+
+export default function MonitoringDataPanel({ section = "AUDIO", equipment, projectId, equipmentId, telemetry, opacity, setOpacity, point, picking, setPicking, layerError, model, sensorView, availability, thermalReadouts = [], thermalHistory = {}, hiddenThermalCameraIds = [], onThermalCameraVisibilityChange, rois, readings = [], sensors = [], onSimulationTargetChange, onRoiSelect, onClose }) {
   const [source, setSource] = useState("ROI");
   const [roiId, setRoiId] = useState("");
   const [audio, setAudio] = useState(null);
@@ -17,8 +50,17 @@ export default function MonitoringDataPanel({ section = "AUDIO", equipment, proj
   const [volume, setVolume] = useState(.8);
   const [muted, setMuted] = useState(false);
   const [error, setError] = useState("");
+  const [detailCameraId, setDetailCameraId] = useState(null);
+  const detailRef = useRef(null);
   const audioRef = useRef(null), queuedAudio = useRef(null), requestSequence = useRef(0);
-  const selectedRoi = rois.find((roi) => roi.id === (telemetry.simulated ? simulationTargetRoiId : roiId));
+  const audioRois = useMemo(() => rois.filter((roi) => isObservationRoi(roi) && (roi.measurements ?? []).some((item) => item.metric === "GENERAL")), [rois]);
+  const selectedRoi = audioRois.find((roi) => roi.id === roiId);
+  const detailCamera = thermalReadouts.find((item) => item.id === detailCameraId);
+  useEffect(() => {
+    const dialog = detailRef.current;
+    if (detailCameraId && detailCamera && !dialog?.open) dialog?.showModal();
+    else if ((!detailCameraId || !detailCamera) && dialog?.open) dialog.close();
+  }, [detailCameraId, detailCamera]);
   const audioReading = selectedRoi && isObservationRoi(selectedRoi)
     ? observationReadings(roiToObservationPoint(selectedRoi), sensors, readings, telemetry.now).find((row) => row.metric === "ultrasound.db") : null;
   const spectrum = Array.isArray(audioReading?.spectrum) ? audioReading.spectrum : audioReading?.spectrum?.bins ?? [];
@@ -73,17 +115,22 @@ export default function MonitoringDataPanel({ section = "AUDIO", equipment, proj
     <header className={styles.panelHeader}><strong>{title}</strong><button type="button" aria-label={`${title} 닫기`} onClick={onClose}>닫기</button></header>
     {section === "ALARMS" && <p className={styles.connectionStatus} role="status">{STATUS[telemetry.status]}</p>}
     {section === "THERMAL" && <>
-      {thermalReadouts.map((item) => <section key={item.id} className={styles.thermalReadout} aria-label={thermalReadouts.length > 1 ? `${item.identifier} 온도 분포` : "열화상 온도 분포"}>
-        {thermalReadouts.length > 1 && <div className={styles.thermalReadoutHeading}><span>{item.identifier}</span>{item.measuredAt && <small>{new Date(item.measuredAt).toLocaleTimeString("ko-KR")}</small>}</div>}
-        {item.summary ? <dl className={styles.thermalMetrics}>
-          <div><dt>최저</dt><dd>{item.summary.min.toFixed(1)}<small> ℃</small></dd></div>
-          <div><dt>평균</dt><dd>{item.summary.average.toFixed(1)}<small> ℃</small></dd></div>
-          <div><dt>최고</dt><dd>{item.summary.max.toFixed(1)}<small> ℃</small></dd></div>
-        </dl> : <p className={styles.hint}>온도 픽셀 데이터가 없어 온도 지표를 표시할 수 없습니다.</p>}
-        <ViewerThermalPreview grid={item.grid} summary={item.summary} />
+      {thermalReadouts.map((item) => <section key={item.id} className={styles.thermalReadout} aria-label={`${item.name} 온도 분포`}>
+        <div className={styles.thermalReadoutHeading}><strong>{item.name}</strong><label className={styles.thermalCameraToggle}><input type="checkbox" checked={!hiddenThermalCameraIds.includes(item.id)} onChange={(event) => onThermalCameraVisibilityChange?.(item.id, event.target.checked)} aria-label={`${item.name} 월드 열화상 표시`} />월드 표시</label></div>
+        <ThermalMetrics summary={item.summary} />
+        {item.grid && item.summary && <ViewerThermalPreview grid={item.grid} summary={item.summary} />}
+        <button type="button" className={styles.thermalDetailButton} onClick={() => setDetailCameraId(item.id)}>상세 보기</button>
       </section>)}
       {!thermalReadouts.length && <p className={styles.hint}>{telemetry.legend ? `온도 범위 ${telemetry.legend.min} ~ ${telemetry.legend.max} ℃` : "열화상 데이터 수신 대기"}</p>}
       {!availability.THERMAL && thermalReadouts.length > 0 && <p role="status" className={styles.hint}>최신 열화상 수신 대기</p>}
+      <dialog ref={detailRef} className={styles.thermalDetailDialog} onClose={() => setDetailCameraId(null)} aria-label={detailCamera ? `${detailCamera.name} 열화상 상세` : "열화상 상세"}>
+        {detailCamera && <><header className={styles.thermalDetailHeader}><div><small>열화상 카메라</small><h2>{detailCamera.name}</h2></div><button type="button" onClick={() => detailRef.current?.close()}>닫기</button></header>
+          <div className={styles.thermalDetailBody}><ThermalMetrics summary={detailCamera.summary} />
+            {detailCamera.grid && detailCamera.summary && <ViewerThermalPreview grid={detailCamera.grid} summary={detailCamera.summary} />}
+            <section><h3>온도 변화</h3><ThermalHistoryChart history={thermalHistory[detailCamera.id]} /></section>
+            <dl className={styles.thermalCameraInfo}><div><dt>식별 번호</dt><dd>{detailCamera.identifier}</dd></div><div><dt>통신 상태</dt><dd>{detailCamera.connectionStatus}</dd></div><div><dt>마지막 갱신</dt><dd>{measuredTime(detailCamera.measuredAt)}</dd></div></dl>
+          </div></>}
+      </dialog>
     </>}
     {(layerError || (section === "ALARMS" && telemetry.error)) && <p className={styles.error} role="alert">{layerError || telemetry.error}</p>}
     {section === "AUDIO" && <>
@@ -95,8 +142,8 @@ export default function MonitoringDataPanel({ section = "AUDIO", equipment, proj
       {sensorView && <p className={styles.hint}>자유 시점에서 위치를 선택하세요.</p>}
       {point && <small className={styles.hint}>선택 위치 · {referencePoint.position.map((value) => value.toFixed(2)).join(", ")} m</small>}
     </> : <>
-      <label>소리를 들을 영역<select aria-label="소리를 들을 ROI" value={selectedRoi?.id ?? ""} onChange={(event) => { setRoiId(event.target.value); onSimulationTargetChange?.(event.target.value); onRoiSelect(event.target.value); }}><option value="">관측 영역 선택</option>{rois.map((roi) => <option key={roi.id} value={roi.id}>{roi.name}</option>)}</select></label>
-      {!rois.length && <p className={styles.hint}>저장된 ROI가 없습니다.</p>}
+      <label>소리를 들을 영역<select aria-label="소리를 들을 ROI" value={selectedRoi?.id ?? ""} onChange={(event) => { setRoiId(event.target.value); onSimulationTargetChange?.(event.target.value); onRoiSelect(event.target.value); }}><option value="">관측 영역 선택</option>{audioRois.map((roi) => <option key={roi.id} value={roi.id}>{roi.name}</option>)}</select></label>
+      {!audioRois.length && <p className={styles.hint}>저장된 일반 관측 영역이 없습니다.</p>}
     </>}
     </div>
     {source === "ROI" && audioReading?.value !== null && audioReading?.value !== undefined && <div className={styles.audioSignal} role="status"><span>선택 영역의 초음파</span><strong>{audioReading.value.toFixed(1)} <small>dB</small></strong><small>{audioReading.state?.label ?? "수신 중"}</small></div>}

@@ -34,20 +34,20 @@ export default function RoiDashboard({ roi, sensors = [], readings, now, connect
       <button type="button" onClick={onEdit} aria-label={`${roi.name} 설정`}>설정</button>
     </div>
     <div className={styles.dashboardSummary}>
-      <span>{demo ? CONNECTION_LABELS.DEMO : CONNECTION_LABELS[connection] ?? "데이터 연결 대기"}</span>
+      <span>{receivedCount && connection === "DISCONNECTED" ? "관측 데이터 표시 중" : demo ? CONNECTION_LABELS.DEMO : CONNECTION_LABELS[connection] ?? "데이터 연결 대기"}</span>
       <strong>수신 {receivedCount} / {rows.length}</strong>
     </div>
     {geometryChanged && <p className={styles.error} role="alert">모델이 변경되어 측정값을 표시할 수 없습니다. 설정에서 관측 영역을 확인하세요.</p>}
-    <dl className={styles.metricCards}>
+    {measurement?.metric !== "GENERAL" && <dl className={styles.metricCards}>
       {rows.map((row) => <div key={row.id} data-status={row.state.level}>
         <dt>{row.name}</dt>
         <dd data-empty={row.value === null}>{formatValue(row)}</dd>
         <dd className={styles.metricMeta}>
-          <span>{point ? (row.sourceMode === "EQUIPMENT_REGION" ? "이 영역에서 감지" : sensors.find((sensor) => sensor.id === row.sensorId)?.name ?? "연결된 카메라 없음") : "영역 측정값"}</span>
+          <span>{point ? (row.sourceNames?.length ? row.sourceNames.join(", ") : row.sourceMode === "EQUIPMENT_REGION" ? "이 영역에서 감지" : sensors.find((sensor) => sensor.id === row.sensorId)?.name ?? "연결된 카메라 없음") : "영역 측정값"}</span>
           <span>{row.metric === "vision.gaugeValue" && Number.isFinite(row.needleAngleDeg) ? `바늘 ${row.needleAngleDeg.toFixed(1)}° · ` : ""}{row.value === null ? "데이터 없음" : row.state.label}</span>
         </dd>
       </div>)}
-    </dl>
+    </dl>}
     {measurement?.metric === "GENERAL" && equipment && <GeneralObservationDashboard key={roi.id} roi={roi} point={point} rows={rows} equipment={equipment} projectId={projectId} model={model} demo={demo} />}
     {measurement?.metric === "vision.gaugeValue" && <dl className={styles.geometrySummary}>
       <div><dt>바늘 시작</dt><dd>{Number.isFinite(profile.scale?.startAngleDeg) ? `${profile.scale.startAngleDeg}° · ${profile.scale.startValue}${measurement.unit ? ` ${measurement.unit}` : ""}` : "미설정"}</dd></div>
@@ -64,7 +64,7 @@ export default function RoiDashboard({ roi, sensors = [], readings, now, connect
       {!profile.colors?.length && <div><dt>색상별 상태</dt><dd>미설정</dd></div>}
     </dl>}
     {!rows.length && <p className={styles.hint}>표시할 측정 항목이 없습니다. 설정에서 항목을 지정하세요.</p>}
-    {rows.length > 0 && receivedCount < rows.length && <p className={styles.hint}>수신 대기 항목은 유효한 최신 측정값이 없습니다.</p>}
+    {measurement?.metric !== "GENERAL" && rows.length > 0 && receivedCount < rows.length && <p className={styles.hint}>수신 대기 항목은 유효한 최신 측정값이 없습니다.</p>}
     {legacy?.measuredAt && <small className={styles.hint}>최근 측정 {new Date(legacy.measuredAt).toLocaleString("ko-KR")}</small>}
     {point && <dl className={styles.geometrySummary}>
       <div><dt>관측 범위</dt><dd>{point.geometryType === "PLANE" ? "평면" : "입체"}</dd></div>

@@ -1,0 +1,5 @@
+.overview { display: grid; gap: 14px; min-width: 0; }
+.heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.heading h2 { margin: 0; font-size: 15px; }
+.heading span { color: var(--portal-muted, #a9b8c4); font-size: 11px; white-space: nowrap; }
+.description { margin: 0; padding-bottom: 12px; border-bottom: 1px solid var(--portal-border, #41505e); color: var(--portal-muted, #a9b8c4); font-size: 11px; line-height: 1.5; }

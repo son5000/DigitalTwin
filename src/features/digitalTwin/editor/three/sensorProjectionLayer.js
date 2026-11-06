@@ -2,9 +2,11 @@ import * as THREE from "three";
 import { applySensorView, fitSensorCameraNear } from "./sensorCamera.js";
 import { getCombinedDoorPanelSurface, getEnclosureSurfaces, isCombinedDoorSurface } from "../model/equipmentEnclosure.js";
 import { normalizeSensorProjection, sensorProjectionFrame, temperaturePixels } from "../model/sensorProjection.js";
-import { temperatureSummary } from "../model/thermalFrame.js";
+import { temperatureRegionSummary, temperatureSummary } from "../model/thermalFrame.js";
 import { isFreshMeasurement, mediaUrl } from "../model/monitoringContract.js";
 import { sensorImageTransform } from "../model/sensorImageTransform.js";
+import { observationPlane } from "../model/observationGeometry.js";
+import { projectPoint } from "../model/imageHomography.js";
 import { imageSurfaceMatrix, resolveImageSurface } from "../model/textureSurfaceMapping.js";
 import { isProjectionVisible, pickVisionProjection } from "./visionProjectionPicking.js";
 
@@ -218,6 +220,7 @@ export function bindSensorProjectionLayer({ renderer, renderedEquipment, markers
           ...roots.flatMap(([kind, root]) => [kind, root, root.visible, root.children.length]), marker?.matrixWorld.elements.join(","),
           ...occluderRoots.flatMap(([kind, root]) => [kind, root, root.visible, root.children.length]),
           entry.layerSource, options.mode, options.continuousVision, options.opacity, options.demo,
+          p.kind === "THERMAL" && options.hiddenThermalSensorIds?.includes(sensor.id),
           frameKey, frame?.temperatureGrid, state.ready, state.texture, Math.floor((options.now ?? Date.now()) / 1000)];
         if (state.input?.length === input.length && input.every((value, index) => value === state.input[index])) continue;
         state.input = input;
@@ -289,10 +292,16 @@ export function bindSensorProjectionLayer({ renderer, renderedEquipment, markers
           }
         }
         const enabled = (surfaceMapped && options.continuousVision) || !options.mode || options.mode === p.kind;
-        const show = Boolean(enabled && frame && state.ready && ((frame.sample && state.displayedFrame?.sample) || isFreshMeasurement(state.displayedFrame, options.now)));
+        const show = Boolean(enabled && !(p.kind === "THERMAL" && options.hiddenThermalSensorIds?.includes(sensor.id))
+          && frame && state.ready && ((frame.sample && state.displayedFrame?.sample) || isFreshMeasurement(state.displayedFrame, options.now)));
         if (enabled && state.error) errors.push(`${sensor.name}: ${state.error}`);
         else if (enabled && !frame) errors.push(`${sensor.name}: 최신 ${p.kind === "THERMAL" ? "온도 분포·열화상" : "영상"} 수신 대기`);
         else if (enabled && !state.targets.length) errors.push(`${sensor.name}: 적용할 모델이나 면을 다시 선택하세요.`);
+        if (p.kind === "THERMAL" && options.hiddenThermalSensorIds?.includes(sensor.id)) {
+          state.targets.forEach(({ overlay }) => { overlay.visible = false; });
+          state.uniformKey = "";
+          continue;
+        }
         entry.object.updateWorldMatrix(true, false);
         const imageSurface = surfaceMapped ? resolveImageSurface(entry.item, p) : null;
         if (!surfaceMapped) { applySensorView(state.camera, marker, sensor); fitSensorCameraNear(state.camera, occluderRoots.map(([, root]) => root)); state.depthMaterial.uniforms.cameraFar.value = state.camera.far; }
@@ -389,6 +398,109 @@ export function bindSensorProjectionLayer({ renderer, renderedEquipment, markers
       const foreground = raycaster.intersectObjects([entry.actual, entry.proxy].filter((o) => o?.visible), true)
         .find((h) => !h.object.userData.monitoringOverlay && visible(h.object) && (h.object.isMesh || h.object.isPoints));
       return foreground && foreground.distance < hit.distance - .001 ? null : hit;
+    },
+    sampleObservationTemperature(point) {
+      const entry = renderedEquipment.get(point?.equipmentId);
+      if (!entry || entry.loading || point?.geometryType !== "PLANE") return null;
+      const corners = observationPlane(point).vertices;
+      if (corners?.length !== 4) return null;
+      entry.object.updateWorldMatrix(true, false);
+      const worldCorners = corners.map((corner) => entry.object.localToWorld(new THREE.Vector3(...corner)));
+      const center = worldCorners.reduce((sum, corner) => sum.add(corner), new THREE.Vector3()).multiplyScalar(.25);
+      const sources = [];
+      let pending = false, min = Infinity, max = -Infinity, sum = 0, count = 0, measuredAt = null;
+      for (const sensor of getSensors() ?? []) {
+        const p = normalizeSensorProjection(sensor.textureProjection);
+        if (!p.enabled || p.kind !== "THERMAL" || p.opacity <= 0
+          || (p.equipmentId ?? sensor.equipmentIds?.[0]) !== point.equipmentId) continue;
+        const frame = sensorProjectionFrame(sensor, getOptions()?.textures, getOptions()?.now, getOptions()?.demo);
+        if (!frame?.temperatureGrid) continue;
+        const state = states.get(sensor.id);
+        if (!state?.ready || state.displayedFrame !== frame) { pending = true; continue; }
+        const layer = state.depthLayers.get("SCENE");
+        if (!layer?.occluders.length) continue;
+        const origin = state.camera.getWorldPosition(new THREE.Vector3());
+        const direction = center.clone().sub(origin), distance = direction.length();
+        if (distance < .001) continue;
+        const raycaster = new THREE.Raycaster(origin, direction.normalize(), 0, distance + .08);
+        raycaster.params.Points.threshold = .025;
+        layer.scene.updateMatrixWorld(true);
+        const occluders = layer.occluders.filter(({ depthObject }) => depthObject.visible);
+        const first = raycaster.intersectObjects(occluders.map(({ depthObject }) => depthObject), false)[0];
+        const receiver = occluders.find(({ depthObject }) => depthObject === first?.object)?.object;
+        if (!first || Math.abs(first.distance - distance) > .08
+          || !state.targets.some((target) => target.object === receiver && visible(target.object))) continue;
+        const transform = sensorImageTransform(sensor);
+        const sourceCorners = worldCorners.map((corner) => {
+          const clip = corner.clone().project(state.camera);
+          if (clip.z < -1 || clip.z > 1) return null;
+          const mapped = projectPoint(transform.targetUvToCropUv, [clip.x * .5 + .5, clip.y * .5 + .5]);
+          return mapped ? [p.cropX + mapped[0] * p.cropWidth, 1 - p.cropY - mapped[1] * p.cropHeight] : null;
+        });
+        if (sourceCorners.some((corner) => !corner)) continue;
+        const summary = temperatureRegionSummary(frame.temperatureGrid, sourceCorners);
+        if (!summary) continue;
+        min = Math.min(min, summary.min); max = Math.max(max, summary.max);
+        sum += summary.average * summary.count; count += summary.count;
+        sources.push({ sensorId: sensor.id, name: sensor.name });
+        const time = frame.measuredAt ?? frame.loadedAt;
+        if (Number.isFinite(Date.parse(time)) && (!measuredAt || Date.parse(time) > Date.parse(measuredAt))) measuredAt = time;
+      }
+      return count ? { summary: { min, max, average: sum / count, count }, sources, measuredAt,
+        sample: sources.every(({ sensorId }) => states.get(sensorId)?.displayedFrame?.sample) } : pending ? undefined : null;
+    },
+    sampleCameraTemperature(equipmentId, viewCamera) {
+      if (!renderedEquipment.get(equipmentId) || !viewCamera) return null;
+      const camera = viewCamera.clone();
+      camera.aspect = 640 / 400;
+      camera.updateProjectionMatrix();
+      camera.updateMatrixWorld(true);
+      const raycaster = new THREE.Raycaster();
+      const sources = [];
+      let min = Infinity, max = -Infinity, sum = 0, count = 0, measuredAt = null;
+      // Sample temperature pixels that project into the saved view. Use target
+      // bounds here to keep dense scan meshes off the UI thread.
+      for (const sensor of getSensors() ?? []) {
+        const state = states.get(sensor.id), frame = state?.displayedFrame, grid = frame?.temperatureGrid;
+        const current = sensorProjectionFrame(sensor, getOptions()?.textures, getOptions()?.now, getOptions()?.demo);
+        if (!state?.ready || !grid || frame !== current
+          || (sensor.textureProjection?.equipmentId ?? sensor.equipmentIds?.[0]) !== equipmentId) continue;
+        const boxes = state.targets.filter(({ object }) => visible(object))
+          .map(({ object }) => new THREE.Box3().setFromObject(object)).filter((box) => !box.isEmpty());
+        if (!boxes.length) continue;
+        const transform = sensorImageTransform(sensor);
+        const stride = Math.max(1, Math.ceil(Math.sqrt(grid.width * grid.height / 8192)));
+        let sourceCount = 0, sourceMin = Infinity, sourceMax = -Infinity, sourceSum = 0;
+        for (let y = 0; y < grid.height; y += stride) for (let x = 0; x < grid.width; x += stride) {
+          const value = grid.values[y * grid.width + x];
+          if (!Number.isFinite(value)) continue;
+          const uv = projectPoint(transform.sourceUvToTargetUv, [(x + .5) / grid.width, 1 - (y + .5) / grid.height]);
+          if (!uv || uv[0] < 0 || uv[0] > 1 || uv[1] < 0 || uv[1] > 1) continue;
+          raycaster.setFromCamera(new THREE.Vector2(uv[0] * 2 - 1, uv[1] * 2 - 1), state.camera);
+          let worldPoint = null, distance = Infinity;
+          for (const box of boxes) {
+            const hit = raycaster.ray.intersectBox(box, new THREE.Vector3());
+            if (hit && hit.distanceToSquared(raycaster.ray.origin) < distance) {
+              worldPoint = hit; distance = hit.distanceToSquared(raycaster.ray.origin);
+            }
+          }
+          if (!worldPoint) continue;
+          const screen = worldPoint.project(camera);
+          if (screen.x < -1 || screen.x > 1 || screen.y < -1 || screen.y > 1 || screen.z < -1 || screen.z > 1) continue;
+          sourceCount++;
+          sourceMin = Math.min(sourceMin, value);
+          sourceMax = Math.max(sourceMax, value);
+          sourceSum += value;
+        }
+        if (!sourceCount) continue;
+        min = Math.min(min, sourceMin); max = Math.max(max, sourceMax);
+        sum += sourceSum; count += sourceCount;
+        sources.push({ sensorId: sensor.id, name: sensor.name });
+        const time = frame.measuredAt ?? frame.loadedAt;
+        if (Number.isFinite(Date.parse(time)) && (!measuredAt || Date.parse(time) > Date.parse(measuredAt))) measuredAt = time;
+      }
+      return count ? { summary: { min, max, average: sum / count, count }, sources, measuredAt,
+        scope: "VISIBLE_FRAME_SAMPLES" } : null;
     },
     dispose() { disposed = true; states.forEach(clearState); states.clear(); },
   };

@@ -1,15 +1,45 @@
-.section { display: grid; gap: 12px; padding: 14px 0; border-top: 1px solid var(--portal-border, #41505e); }
-.heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.dashboard { display: grid; gap: 18px; min-width: 0; }
+.section { display: grid; gap: 10px; min-width: 0; }
+.section + .section { padding-top: 15px; border-top: 1px solid var(--portal-border, #41505e); }
+.heading, .chartHeading { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; min-width: 0; }
 .heading strong { font-size: 13px; }
-.heading label { display: grid; gap: 4px; min-width: 160px; font-size: 11px; color: var(--portal-muted, #a9b8c4); }
-.heading select { min-height: 32px; min-width: 0; border: 1px solid var(--portal-border, #41505e); border-radius: 4px; background: var(--portal-surface, #263844); color: var(--portal-text, #f1f5f8); }
-.chart { display: block; width: 100%; max-height: 210px; background: rgb(20 34 46 / 35%); border-radius: 4px; }
-.chart text { fill: var(--portal-muted, #a9b8c4); font-size: 11px; }
-.axis { fill: none; stroke: #708596; stroke-width: 1; }
-.trace { fill: none; stroke: #53c5e4; stroke-width: 2; stroke-linejoin: round; }
-.empty { margin: 0; padding: 24px 12px; text-align: center; color: var(--portal-muted, #a9b8c4); font-size: 12px; }
-.audioRow { display: flex; align-items: center; gap: 10px; }
-.audioRow small, .error { color: var(--portal-muted, #a9b8c4); font-size: 12px; }
-.audioRow button { min-height: 32px; }
+.heading > small, .sourceNames, .chartHeading span { min-width: 0; color: var(--portal-muted, #a9b8c4); font-size: 11px; overflow-wrap: anywhere; }
+.heading > small { text-align: right; }
+.thermalReadout { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 14px; height: 164px; padding: 3px 0; }
+.palette { position: relative; display: flex; justify-content: center; padding: 2px 0; }
+.paletteBar { display: block; width: 16px; height: 100%; border: 1px solid rgb(255 255 255 / 14%); border-radius: 3px; background: linear-gradient(to bottom, #800000 0%, #ff0000 12.5%, #ffff00 37.5%, #00ffff 62.5%, #0000ff 87.5%, #000080 100%); }
+.averageTick { position: absolute; right: 0; width: 6px; border-top: 2px solid var(--portal-text, #f1f5f8); }
+.temperatureValues { position: relative; min-width: 0; height: 100%; margin: 0; }
+.temperatureValues > div { position: absolute; left: 0; display: flex; align-items: baseline; gap: 8px; width: 100%; white-space: nowrap; }
+.temperatureValues > div::before { content: ""; position: absolute; left: -22px; top: 11px; width: 13px; border-top: 1px solid currentColor; }
+.temperatureMax { top: 0; color: #da6652; }
+.temperatureAverage { transform: translateY(-50%); color: var(--portal-text, #f1f5f8); }
+.temperatureAverage::before { display: none; }
+.temperatureMin { bottom: 0; color: #4a91d9; }
+.temperatureValues dt { width: 28px; flex: 0 0 auto; font-size: 11px; }
+.temperatureValues dd { margin: 0; color: var(--portal-text, #f1f5f8); font-size: 18px; font-weight: 650; line-height: 1.4; font-variant-numeric: tabular-nums; }
+.temperatureValues dd small { font-size: 11px; font-weight: 500; }
+.receivedAt { color: var(--portal-muted, #a9b8c4); font-size: 10px; line-height: 1.3; }
+.signalValue { color: var(--portal-text, #f1f5f8); font-size: 21px; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.signalValue small { font-size: 11px; font-weight: 500; }
+.signalValue[data-empty="true"] { color: var(--portal-muted, #a9b8c4); font-size: 12px; font-weight: 400; }
+.chartHeading { margin-top: 5px; }
+.chartHeading strong { font-size: 11px; font-weight: 600; }
+.chart { display: block; width: 100%; height: auto; background: color-mix(in srgb, var(--portal-panel, #17242b) 91%, var(--portal-border, #41505e)); border: 1px solid var(--portal-border, #41505e); border-radius: 4px; }
+.chart text { fill: var(--portal-muted, #a9b8c4); font-size: 9px; font-variant-numeric: tabular-nums; }
+.axis, .grid { fill: none; stroke: var(--portal-border, #41505e); stroke-width: 1; }
+.grid { opacity: .38; }
+.trace, .waveformLine { fill: none; stroke: var(--portal-blue, #53c5e4); stroke-width: 1.7; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.waveformLine { stroke-width: 1.25; }
+.peakGuide { fill: none; stroke: var(--portal-blue, #53c5e4); stroke-width: 1; stroke-dasharray: 3 3; opacity: .8; }
+.peakDot { fill: var(--portal-blue, #53c5e4); stroke: var(--portal-panel, #17242b); stroke-width: 1.5; }
+.zeroLine { fill: none; stroke: var(--portal-muted, #a9b8c4); stroke-width: 1; opacity: .8; }
+.peakReadout { display: flex; align-items: baseline; gap: 8px; margin-top: -5px; color: var(--portal-muted, #a9b8c4); font-size: 10px; font-variant-numeric: tabular-nums; }
+.peakReadout strong { margin-left: auto; color: var(--portal-text, #f1f5f8); font-size: 12px; }
+.empty { margin: 0; padding: 12px; border: 1px dashed var(--portal-border, #41505e); border-radius: 4px; color: var(--portal-muted, #a9b8c4); font-size: 11px; text-align: center; }
+.audioRow { display: flex; align-items: end; gap: 8px; min-width: 0; }
+.audioRow label { display: grid; flex: 1; gap: 4px; min-width: 0; font-size: 11px; color: var(--portal-muted, #a9b8c4); }
+.audioRow select { width: 100%; min-width: 0; min-height: 38px; padding: 0 5px; border: 1px solid var(--portal-border, #41505e); border-radius: 5px; background: var(--portal-surface, #263844); color: var(--portal-text, #f1f5f8); }
+.audioRow button { flex: 0 0 auto; white-space: nowrap; }
 .section audio { width: 100%; }
-@media (max-width: 600px) { .heading { align-items: stretch; flex-direction: column; } .heading label { width: 100%; } }
+.error { color: var(--portal-muted, #a9b8c4); font-size: 12px; }

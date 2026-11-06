@@ -31,12 +31,14 @@ function generalObservationReadings(point, item, readings, now, preview) {
   const ultrasound = latest("ultrasound.db");
   const thermal = latest("TEMPERATURE");
   const summary = roiTemperatures(thermal);
-  return [row("ultrasound.db", "초음파", "dB", ultrasound?.value, "ultrasound.db", null,
-    { spectrum: ultrasound?.spectrum ?? null, measuredAt: ultrasound?.measuredAt ?? null }),
+  const meanDb = Number.isFinite(ultrasound?.averageDb) ? ultrasound.averageDb : null;
+  return [row("ultrasound.db", meanDb !== null || ultrasound?.aggregation === "SPATIAL_MEAN" ? "평균 초음파" : "초음파", "dB", meanDb ?? ultrasound?.value, "ultrasound.db", null,
+    { spectrum: ultrasound?.spectrum ?? null, waveform: ultrasound?.waveform ?? null,
+      measuredAt: ultrasound?.measuredAt ?? null, sourceNames: ultrasound?.sourceNames ?? [] }),
     ...[["max", "최고 온도"], ["min", "최저 온도"], ["average", "평균 온도"]]
       .map(([statistic, name]) => row(`TEMPERATURE:${statistic}`, name, "°C",
         summary?.[statistic] ?? (statistic === "average" ? thermal?.value : null), "TEMPERATURE", statistic,
-        { measuredAt: thermal?.measuredAt ?? null }))];
+        { measuredAt: thermal?.measuredAt ?? null, sourceNames: thermal?.sourceNames ?? [] }))];
 }
 
 export function observationReadings(point, sensors = [], readings = [], now = Date.now(), preview = false) {

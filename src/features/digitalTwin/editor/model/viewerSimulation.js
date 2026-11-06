@@ -23,18 +23,31 @@ export function simulationSpectrum(levelDb, peakHz, sequence = 0) {
   });
 }
 
+function simulationWaveform(peakHz, sequence = 0) {
+  const sampleRateHz = 96000;
+  const frequencyHz = Math.max(1000, Math.min(40000, peakHz));
+  const samples = Array.from({ length: 960 }, (_, index) => {
+    const time = index / sampleRateHz;
+    const envelope = 0.62 + 0.2 * Math.sin(index / 110 + sequence * 0.5);
+    return Number((envelope * (0.72 * Math.sin(2 * Math.PI * frequencyHz * time)
+      + 0.18 * Math.sin(2 * Math.PI * frequencyHz * 0.47 * time + sequence))).toFixed(3));
+  });
+  return { sampleRateHz, samples };
+}
+
 export function createSimulationSnapshot({ equipmentId, modelVersion, rois, selectedRoiId, sensors, levelDb, averageTemperature, peakHz, gaugeValue, alternateState, ledColor, sequence, measuredAt, alarm }) {
   const selected = rois.find((roi) => roi.id === selectedRoiId && roi.equipmentId === equipmentId);
   const point = selected && isObservationRoi(selected) ? roiToObservationPoint(selected) : null;
   const grid = simulationTemperatureGrid(averageTemperature, sequence);
   const summary = temperatureSummary(grid);
+  const spectrum = simulationSpectrum(levelDb, peakHz, sequence);
+  const waveform = simulationWaveform(peakHz, sequence);
   const common = { equipmentId, roiId: selectedRoiId, observationPointId: selectedRoiId,
     revision: point?.revision ?? selected?.revision ?? 0, measuredAt, staleAfterMs: 60000, quality: "GOOD", dataSource: "SIMULATION" };
   const readings = point ? point.measurements.flatMap((item) => {
     const base = { ...common, measurementId: item.id };
     if (item.metric === "GENERAL") return [
-      { ...base, metric: "ultrasound.db", value: levelDb, spectrum: simulationSpectrum(levelDb, peakHz, sequence) },
-      { ...base, metric: "TEMPERATURE", value: summary.average, temperatureScope: "ROI", temperatureSummary: summary },
+      { ...base, metric: "ultrasound.db", value: levelDb, averageDb: levelDb, aggregation: "SPATIAL_MEAN", spectrum, waveform },
     ];
     if (item.metric === "vision.gaugeValue") return [{ ...base, metric: item.metric, sensorId: sensors.find((sensor) => sensor.id === item.sensorId)?.serverSensorId,
       value: gaugeValue, needleAngleDeg: gaugeAngleForValue(item.analysisConfig?.scale, gaugeValue) }];
@@ -55,7 +68,8 @@ export function createSimulationSnapshot({ equipmentId, modelVersion, rois, sele
   const hotspots = position && Number.isFinite(position.x) && Number.isFinite(position.y) && Number.isFinite(position.z)
     ? ["PROXY", "ACTUAL"].map((representation) => ({ equipmentId, modelVersion, representation,
       measuredAt, staleAfterMs: 60000, quality: "GOOD", position: [position.x, position.y, position.z],
-      db: levelDb, radius: Math.max(.06, Math.min(.5, point.radius ?? .12)) })) : [];
+      db: levelDb, radius: Math.max(.06, Math.min(.5, point.radius ?? .12)),
+      spectrum, waveform })) : [];
   const frames = sensors.filter((sensor) => sensor.textureProjection?.enabled && sensor.textureProjection.kind === "THERMAL"
     && (sensor.textureProjection.equipmentId ?? sensor.equipmentIds?.[0]) === equipmentId).map((sensor) => ({
       bindingId: sensor.id, sensorId: sensor.serverSensorId, kind: "THERMAL",

@@ -1,4 +1,4 @@
-import { Quaternion, Vector3 } from "three";
+import { Quaternion, Triangle, Vector3 } from "three";
 
 export function planeOrientation(normal = { x: 0, y: 0, z: 1 }, rotation = 0) {
   const n = new Vector3(normal.x, normal.y, normal.z);
@@ -24,6 +24,17 @@ export function observationPlane(point) {
   const vertices = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([x, y]) =>
     new Vector3(x * width / 2, y * height / 2, 0).applyQuaternion(orientation).add(center).toArray());
   return { type: "PLANE", center: center.toArray(), width, height, vertices, outline: [0, 1, 2, 3], triangles: [0, 1, 2, 0, 2, 3] };
+}
+
+export function observationContainsPosition(point, position, radius = .02) {
+  const coordinates = Array.isArray(position) ? position : [position?.x, position?.y, position?.z];
+  if (coordinates.length !== 3 || !coordinates.every(Number.isFinite)) return false;
+  const location = new Vector3(...coordinates);
+  const tolerance = Math.max(.02, Number.isFinite(radius) ? radius : .02);
+  if (point.geometryType !== "PLANE") return location.distanceTo(new Vector3(point.localPosition.x, point.localPosition.y, point.localPosition.z)) <= (point.radius ?? .15) + tolerance;
+  const vertices = observationPlane(point).vertices.map((vertex) => new Vector3(...vertex));
+  return [[0, 1, 2], [0, 2, 3]].some(([a, b, c]) =>
+    new Triangle(vertices[a], vertices[b], vertices[c]).closestPointToPoint(location, new Vector3()).distanceTo(location) <= tolerance);
 }
 
 // Derive editable plane axes from transmitted corners, including after a datum transform.

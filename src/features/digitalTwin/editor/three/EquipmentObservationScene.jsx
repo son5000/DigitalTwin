@@ -1,7 +1,7 @@
 import { updateEnclosureDoors } from "../generators/EnclosureGenerator";
 import EnclosureDoorControls from "../components/EnclosureDoorControls";
 import { advanceEnclosureDoors, captureEnclosureDoorState, enclosureDoorOverride, enclosureDoorOverrideFromState, getEnclosure, getEnclosureScanSlot, getEnclosureSurfaces, getSensorMountPose, projectSensorMount, withDoorOverrides } from "../model/equipmentEnclosure";
-import { modelToScanSlot, scanSlotToModel } from "../model/equipmentCoordinateFrame.js";
+import { modelToScanSlot, scanSlotForModelPosition, scanSlotToModel } from "../model/equipmentCoordinateFrame.js";
 import { createSensorSceneLayer } from "./sensorSceneLayer";
 import { createSensorFrustumLayer } from "./sensorFrustumLayer.js";
 import ModelLayerControls from "../components/ModelLayerControls";
@@ -929,6 +929,51 @@ export default function EquipmentObservationScene({
         camera.updateProjectionMatrix(); controls.update();
         return true;
       },
+      focusObservation: (point) => {
+        const entry = renderedEquipment.get(point?.equipmentId);
+        if (!entry || !point?.localPosition || sensorViewRef.current) return false;
+        const source = sceneInputsRef.current.equipmentList?.find((item) => item.id === point.equipmentId)
+          ?? (sceneInputsRef.current.equipment?.id === point.equipmentId ? sceneInputsRef.current.equipment : entry.item);
+        const matchedSlot = source.enclosure?.enabled ? scanSlotForModelPosition(source, point.localPosition) : null;
+        const slot = matchedSlot && modelToScanSlot(point.localPosition, matchedSlot).z < -.015 ? matchedSlot : null;
+        if (slot) {
+          const displayed = withDoorOverrides(source, doorOverridesRef.current[source.id]);
+          const set = slot.side === "REAR" ? getEnclosure(displayed).rear : getEnclosure(displayed);
+          if (!set.doors[slot.index]?.open) {
+            const override = enclosureDoorOverride(source, displayed, slot.index, true, slot.side);
+            const next = { ...doorOverridesRef.current, [source.id]: override };
+            doorOverridesRef.current = next; setDoorOverrides(next);
+            entry.item = withDoorOverrides(source, override);
+            entry.doorTarget = entry.item;
+            updateEnclosureDoors(entry.proxy, entry.item);
+            sensorLayer.updateMountedPoses(sensorStateRef.current?.sensors ?? []);
+          }
+        }
+        entry.object.updateWorldMatrix(true, false);
+        const roiPosition = entry.object.localToWorld(new THREE.Vector3(point.localPosition.x, point.localPosition.y, point.localPosition.z));
+        const bounds = new THREE.Box3().setFromObject(entry.proxy);
+        if (bounds.isEmpty()) bounds.setFromObject(entry.actual ?? entry.object);
+        if (bounds.isEmpty()) return false;
+        const sphere = bounds.getBoundingSphere(new THREE.Sphere());
+        const target = sphere.center.clone().lerp(roiPosition, .8);
+        const direction = slot ? new THREE.Vector3(0, 0, slot.side === "REAR" ? -1 : 1)
+          .applyQuaternion(entry.object.getWorldQuaternion(new THREE.Quaternion())).normalize()
+          : camera.position.clone().sub(controls.target).normalize();
+        if (direction.lengthSq() < .5) direction.set(0, .2, 1).normalize();
+        const halfFov = THREE.MathUtils.degToRad(camera.fov / 2);
+        const narrowHalfFov = Math.atan(Math.tan(halfFov) * Math.min(1, camera.aspect));
+        const distance = Math.max(2, sphere.radius * .45 / Math.sin(narrowHalfFov));
+        stopFit(); camera.zoom = 1.5;
+        camera.position.copy(target).addScaledVector(direction, distance);
+        camera.up.set(0, 1, 0);
+        controls.target.copy(target);
+        camera.near = Math.max(.001, distance / 1000);
+        camera.far = Math.max(100, distance * 30);
+        camera.updateProjectionMatrix(); controls.update();
+        return true;
+      },
+      temperatureForObservation: (point) => projectionLayer.sampleObservationTemperature(point),
+      temperatureForVirtualCamera: (equipmentId) => projectionLayer.sampleCameraTemperature(equipmentId, camera),
       placeSensorFromView: (sensorId) => {
         const entry = renderedEquipment.get(focusEquipment?.id);
         if (!entry || isDetailedLoading() || !sensorCallbacksRef.current.onSensorChange) return false;
@@ -941,8 +986,12 @@ export default function EquipmentObservationScene({
       pickCoordinateOrigin: coordinateLayer.pick,
       coordinateFront: (yaw) => { stopFit(); coordinateLayer.front(yaw); },
       ready: () => Boolean(viewObject()), capture: () => captureViewerCamera(camera, controls),
-      captureImage: () => {
+      captureImage: ({ thermal = false } = {}) => {
         if (isDetailedLoading()) return null;
+        if (thermal) {
+          projectionLayer.update();
+          if (!projectionLayer.isReady()) return null;
+        }
         return captureWorldSnapshot({ renderer, scene, roots: [equipmentRoot, floor], camera,
           selectionColors: [SCENE_THEMES[theme].selection, "#ffc14d"] });
       },
@@ -1139,7 +1188,7 @@ export default function EquipmentObservationScene({
       if (syncSensorView() || sensorsChanged) resize();
       if (!viewSensor) updateCameraFocus(focusRuntime);
       syncEquipmentRepresentations();
-      sensorLayer.updateVisibility(sensorViewRef.current, undefined, modelLayersRef.current);
+      sensorLayer.updateVisibility(sensorViewRef.current, undefined, modelLayersRef.current, monitoringOptionsRef.current?.highlightRoiId);
       frustumLayer.update(sensorStateRef.current?.sensors ?? []);
       if ((!editorStageRef.current || editorStageRef.current === "SENSOR" || (editorStageRef.current === "POINT" && selectedMarker?.userData.observationPointId)) && !pointOptionsRef.current?.placing && !sensorViewRef.current && !placingSensorRef.current && !projectionPickingRef.current && selectedMarker && sensorCallbacksRef.current.onSensorChange) {
         if (selectedMarker.visible && !transform.translate.object) attachDualTransformControls(transform, selectedMarker, sensorStateRef.current?.transformTools, { camera });
@@ -1150,7 +1199,7 @@ export default function EquipmentObservationScene({
       coordinateLayer.update();
       monitoringLayers.update();
       projectionLayer.update();
-      sensorLayer.updateVisibility(sensorViewRef.current, projectionLayer.isVisible, modelLayersRef.current);
+      sensorLayer.updateVisibility(sensorViewRef.current, projectionLayer.isVisible, modelLayersRef.current, monitoringOptionsRef.current?.highlightRoiId);
       if (!viewSensor) { controls.update(); updateViewerCameraRange(camera, worldBounds); }
       else { controls.enabled = false; renderer.setScissorTest(false); renderer.clear(); renderer.setScissorTest(true); }
       syncEnvironment();
@@ -1158,7 +1207,7 @@ export default function EquipmentObservationScene({
       light.intensity = lightingRef.current.key;
       fillLight.intensity = lightingRef.current.fill;
       camera.updateMatrixWorld();
-      sensorLayer.updateObservationLabels(camera, renderer, pointOptionsRef.current?.selectedId, hoveredPointId, Boolean(sensorViewRef.current), modelLayersRef.current);
+      sensorLayer.updateObservationLabels(camera, renderer, pointOptionsRef.current?.selectedId, hoveredPointId, Boolean(sensorViewRef.current), modelLayersRef.current, monitoringOptionsRef.current?.highlightRoiId);
       renderer.render(scene, camera);
       sampleFrames++;
       const elapsed = performance.now() - sampleStart;

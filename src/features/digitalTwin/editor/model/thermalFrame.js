@@ -42,6 +42,30 @@ export function temperatureSummary(grid) {
   return summary;
 }
 
+// Source UV coordinates use the image's top-left origin, like CSV rows.
+export function temperatureRegionSummary(grid, corners) {
+  if (!isTemperatureFrame(grid) || corners?.length !== 4 || corners.some((corner) => corner?.length !== 2 || !corner.every(Number.isFinite))) return null;
+  const xs = corners.map(([x]) => x), ys = corners.map(([, y]) => y);
+  const left = Math.max(0, Math.floor(Math.min(...xs) * grid.width));
+  const right = Math.min(grid.width - 1, Math.ceil(Math.max(...xs) * grid.width) - 1);
+  const top = Math.max(0, Math.floor(Math.min(...ys) * grid.height));
+  const bottom = Math.min(grid.height - 1, Math.ceil(Math.max(...ys) * grid.height) - 1);
+  let min = Infinity, max = -Infinity, sum = 0, count = 0;
+  for (let y = top; y <= bottom; y++) for (let x = left; x <= right; x++) {
+    const u = (x + .5) / grid.width, v = (y + .5) / grid.height;
+    let inside = false;
+    for (let i = 0, j = corners.length - 1; i < corners.length; j = i++) {
+      const [ax, ay] = corners[i], [bx, by] = corners[j];
+      if ((ay > v) !== (by > v) && u < (bx - ax) * (v - ay) / (by - ay) + ax) inside = !inside;
+    }
+    if (!inside) continue;
+    const value = grid.values[y * grid.width + x];
+    if (!Number.isFinite(value)) continue;
+    min = Math.min(min, value); max = Math.max(max, value); sum += value; count++;
+  }
+  return count ? { min, max, average: sum / count, count } : null;
+}
+
 export function parseTemperatureCsv(text) {
   if (typeof text !== "string" || text.length > MAX_THERMAL_CSV_BYTES) throw new Error("온도 CSV는 16MB 이하의 텍스트여야 합니다.");
   const trimmed = text.replace(/^\uFEFF/, "").trim();

@@ -147,14 +147,17 @@ export function createSensorSceneLayer({ root, renderedEquipment, origin, theme 
       pointBadges.get(id)?.userData.setStatus(status);
     }
   }
-  function updateVisibility(hiddenSensorId = null, imageVisible = () => true, displayLayers = {}) {
+  function updateVisibility(hiddenSensorId = null, imageVisible = () => true, displayLayers = {}, highlightedPointId = null) {
     for (const object of objects) {
       const entry = renderedEquipment.get(object.userData.sensorEquipmentId);
       const layers = displayLayers[object.userData.sensorEquipmentId];
       object.visible = Boolean(entry && !entry.loading)
+        && !(highlightedPointId && object.userData.sourceDeviceId)
         && !(object.userData.sensorId && !(layers?.SENSORS?.visible ?? defaultOverlayVisible))
         && !(object.userData.sourceDeviceId && !(layers?.SENSORS?.visible ?? defaultOverlayVisible))
-        && !(object.userData.observationPointId && !(layers?.OBSERVATIONS?.visible ?? defaultOverlayVisible))
+        && !(object.userData.observationPointId && (highlightedPointId
+          ? object.userData.observationPointId !== highlightedPointId
+          : !(layers?.OBSERVATIONS?.visible ?? defaultOverlayVisible)))
         && !pointMarkers.get(object.userData.observationPointId)?.userData.imageBindingIssue
         && (!object.userData.imagePoint || imageVisible(object.userData.imagePoint.imageBinding.sensorId))
         && (!object.userData.observationPointId || !object.userData.representation || object.userData.representation === "BOTH"
@@ -167,9 +170,9 @@ export function createSensorSceneLayer({ root, renderedEquipment, origin, theme 
       if (object.isGroup && object.userData.observationPointId) pointMarkers.get(object.userData.observationPointId).visible = object.visible;
     }
   }
-  function updateObservationLabels(camera, renderer, selectedId, hoveredId, hidden, displayLayers = {}) {
+  function updateObservationLabels(camera, renderer, selectedId, hoveredId, hidden, displayLayers = {}, highlightedPointId = null) {
     for (const [id, badge] of pointBadges) {
-      if (hidden || !(displayLayers[pointMarkers.get(id)?.userData.sensorEquipmentId]?.OBSERVATIONS?.visible ?? defaultOverlayVisible)) { badge.visible = false; continue; }
+      if (hidden || highlightedPointId || !(displayLayers[pointMarkers.get(id)?.userData.sensorEquipmentId]?.OBSERVATIONS?.visible ?? defaultOverlayVisible)) { badge.visible = false; continue; }
       updateObservationBadge(badge, camera, renderer, id === selectedId || id === hoveredId);
     }
   }
