@@ -135,6 +135,7 @@ export function captureWorldSnapshot({ renderer, camera: sourceCamera, includeTh
     viewport: renderer.getViewport(new THREE.Vector4()), scissor: renderer.getScissor(new THREE.Vector4()),
     scissorTest: renderer.getScissorTest(), xr: renderer.xr.enabled, autoClear: renderer.autoClear,
     clearColor: renderer.getClearColor(new THREE.Color()), clearAlpha: renderer.getClearAlpha(),
+    shadowNeedsUpdate: renderer.shadowMap.needsUpdate,
   };
   try {
     const camera = sourceCamera
@@ -142,6 +143,9 @@ export function captureWorldSnapshot({ renderer, camera: sourceCamera, includeTh
       : createSnapshotCamera(snapshot.content);
     renderer.xr.enabled = false;
     renderer.autoClear = true;
+    // Snapshot lights are clones; refresh their shadow map even when the live
+    // viewer caches shadows between camera movements.
+    renderer.shadowMap.needsUpdate = true;
     renderer.setViewport(0, 0, WIDTH, HEIGHT);
     renderer.setScissorTest(false);
     let thermalMap = null;
@@ -208,6 +212,7 @@ export function captureWorldSnapshot({ renderer, camera: sourceCamera, includeTh
     renderer.setScissorTest(previous.scissorTest);
     renderer.xr.enabled = previous.xr;
     renderer.autoClear = previous.autoClear;
+    renderer.shadowMap.needsUpdate = previous.shadowNeedsUpdate;
     renderer.setClearColor(previous.clearColor, previous.clearAlpha);
     target.dispose();
     dataTarget?.dispose();

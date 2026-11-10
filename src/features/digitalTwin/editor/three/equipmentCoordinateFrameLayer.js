@@ -108,10 +108,10 @@ export function bindEquipmentCoordinateFrame({ renderer, camera, controls, rende
     context.fillStyle = "#e7b66d"; context.fillRect(1, 1, 3, 44);
     context.fillStyle = light ? "#18313d" : "#eef5f7";
     context.font = "650 11px system-ui, sans-serif";
-    context.fillText(`${door.label} · 기준점`, 12, 18);
+    context.fillText(`${door.label} · 공간 기준 (0, 0, 0)`, 12, 18);
     context.fillStyle = light ? "#48616b" : "#b9cbd1";
     context.font = "10px ui-monospace, SFMono-Regular, Consolas, monospace";
-    context.fillText(`X ${slot.origin.x.toFixed(3)}  Y ${slot.origin.y.toFixed(3)}  Z ${slot.origin.z.toFixed(3)} m`, 12, 35);
+    context.fillText(`설비 X ${slot.origin.x.toFixed(2)}  Y ${slot.origin.y.toFixed(2)}  Z ${slot.origin.z.toFixed(2)} m`, 12, 35);
     const texture = new THREE.CanvasTexture(image); texture.colorSpace = THREE.SRGBColorSpace;
     texture.generateMipmaps = false; texture.minFilter = THREE.LinearFilter; texture.magFilter = THREE.LinearFilter;
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false, depthWrite: false, toneMapped: false, fog: false }));

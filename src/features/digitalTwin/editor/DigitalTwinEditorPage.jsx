@@ -1495,12 +1495,11 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                 selectedStructureId={editor.selectedFloorPlanStructureId} selectedEquipmentId={editor.selectedFloorEquipmentId}
                 selectedSpatialEntity={editor.selectedSpatialEntity} onSpatialSelect={handleSpatialSelect}
                 equipmentTranslucent={isFloorWorkspaceStep ? equipmentTranslucent : true}
-                theme={theme} observationPoints={editor.observationPoints} monitoringDevices={editor.monitoringDevices}
-                monitoringBindings={editor.monitoringBindings} monitoringMode={isMonitoringStep}
+                theme={theme} monitoringDevices={editor.monitoringDevices} monitoringMode={isMonitoringStep}
                 transformTools={editor.transformTools}
                 onPlanTransform={updateFloorPlanStructure} onEquipmentTransform={updateFloorEquipment}
                 onPlanAdd={handlePlanAdd} onEquipmentAdd={handleFloorEquipmentAdd}
-                onPlanSelect={handlePlanSelect} onEquipmentSelect={handleFloorEquipmentSelect} onObservationPointAdd={addObservationPoint}
+                onPlanSelect={handlePlanSelect} onEquipmentSelect={handleFloorEquipmentSelect}
                 onCancelPlacement={clearFloorPlacement}
                 externalStatus={editor.floorPlanValidationMessage}
                 shadowEnabled={editorPreferences.shadowEnabled}

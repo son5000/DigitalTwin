@@ -210,8 +210,9 @@ export function bindSensorProjectionLayer({ renderer, renderedEquipment, markers
       const options = getOptions() ?? {}, sensors = getSensors() ?? [];
       const projectionMode = forceThermal ? "THERMAL" : options.mode;
       const active = sensors.filter((sensor) => sensor.textureProjection?.enabled);
+      const activeIds = new Set(active.map((sensor) => sensor.id));
       const errors = [];
-      for (const [id, state] of states) if (!active.some((sensor) => sensor.id === id)) { clearState(state); states.delete(id); }
+      for (const [id, state] of states) if (!activeIds.has(id)) { clearState(state); states.delete(id); }
       for (const sensor of active) {
         const p = normalizeSensorProjection(sensor.textureProjection), surfaceMapped = p.kind === "VISION", marker = markers.get(sensor.id);
         const entry = renderedEquipment.get(p.equipmentId ?? sensor.equipmentIds?.[0]);
@@ -234,7 +235,9 @@ export function bindSensorProjectionLayer({ renderer, renderedEquipment, markers
           ...occluderRoots.flatMap(([kind, root]) => [kind, root, root.visible, root.children.length]),
           entry.layerSource, projectionMode, options.continuousVision, options.opacity, options.demo,
           p.kind === "THERMAL" && options.hiddenThermalSensorIds?.includes(sensor.id),
-          frameKey, frame?.temperatureGrid, state.ready, state.texture, Math.floor((options.now ?? Date.now()) / 1000)];
+          // sensorProjectionFrame already becomes null when a live frame expires.
+          // A wall-clock tick alone must not rebuild every sensor's depth pass.
+          frameKey, frame?.temperatureGrid, state.ready, state.texture];
         if (state.input?.length === input.length && input.every((value, index) => value === state.input[index])) continue;
         state.input = input;
         const geometryKey = JSON.stringify([roots.map(([kind, root]) => [kind, root.uuid, root.children.length]),

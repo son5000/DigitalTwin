@@ -7,10 +7,12 @@ const stores = new Map();
 function createStore(projectId) {
   const repository = createRoiRepository(projectId);
   let state = { rois: [], readings: [], loading: true, error: "", now: Date.now(), shared: repository.shared };
+  let roisSignature = JSON.stringify(state.rois);
+  let lastRoiRefresh = 0;
   let timer, controller, generation = 0, refreshing = false;
   const listeners = new Set();
   const emit = (patch) => { state = { ...state, ...patch }; listeners.forEach((listener) => listener()); };
-  async function refresh() {
+  async function fetchLatest(readingsOnly) {
     refreshing = true;
     const version = ++generation;
     controller?.abort();
@@ -18,12 +20,23 @@ function createStore(projectId) {
     const requestController = controller;
     const timeout = setTimeout(() => requestController.abort(), 10000);
     try {
-      const [rois, readings] = await Promise.all([repository.list(controller.signal), repository.readings(controller.signal)]);
-      if (version === generation) emit({ rois, readings, error: "", loading: false, now: Date.now() });
+      const [rois, readings] = await Promise.all([
+        readingsOnly ? Promise.resolve(state.rois) : repository.list(controller.signal),
+        repository.readings(controller.signal),
+      ]);
+      if (version === generation) {
+        const nextSignature = readingsOnly ? roisSignature : JSON.stringify(rois);
+        const stableRois = readingsOnly || nextSignature === roisSignature ? state.rois : rois;
+        if (!readingsOnly) roisSignature = nextSignature;
+        if (!readingsOnly) lastRoiRefresh = Date.now();
+        emit({ rois: stableRois, readings, error: "", loading: false, now: Date.now() });
+      }
     } catch (error) {
       if (version === generation) emit({ error: error.name === "AbortError" ? "서버 응답이 지연되고 있습니다. 다시 연결합니다." : error.message, readings: [], loading: false, now: Date.now() });
     } finally { clearTimeout(timeout); if (version === generation) refreshing = false; }
   }
+  const refresh = () => fetchLatest(false);
+  const refreshReadings = () => fetchLatest(true);
   const sync = (event) => { if (event.key === null || [roiStorageKey(projectId), LAYOUT_STORAGE_KEY, PROJECT_STORAGE_KEY].includes(event.key)
     || event.type === "digital-twin-layout-saved" || event.detail?.projectId === projectId) void refresh(); };
   return {
@@ -35,7 +48,10 @@ function createStore(projectId) {
         window.addEventListener("storage", sync);
         window.addEventListener("digital-twin-layout-saved", sync);
         window.addEventListener("digital-twin-roi-change", sync);
-        timer = setInterval(() => { emit({ now: Date.now() }); if (repository.shared && !refreshing) void refresh(); }, 3000);
+        timer = setInterval(() => {
+          if (repository.shared && !refreshing) void (Date.now() - lastRoiRefresh >= 30000 ? refresh() : refreshReadings());
+          else emit({ now: Date.now() });
+        }, 3000);
       }
       return () => {
         listeners.delete(listener);

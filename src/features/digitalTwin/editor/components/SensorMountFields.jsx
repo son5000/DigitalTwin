@@ -65,7 +65,7 @@ export default function SensorMountFields({ equipment, sensor, onChange }) {
     </> : slotMount ? <>
       <label className={styles.field}><span>설치된 서랍</span><select value={`${slotMount.side}:${slotMount.index}`} onChange={(event) => selectSlot(slotOptions.find(({ slot }) => slot.id === event.target.value))}>{slotOptions.map(({ door, slot }) => <option key={slot.id} value={slot.id}>{door.label}</option>)}</select></label>
       {activeSlot ? <>
-        <p className={styles.help}>선택한 서랍의 앞쪽 왼쪽 바닥을 기준으로 줄자로 잰 거리를 입력하세요. 안쪽 깊이는 정면에서 안으로 들어가는 거리입니다.</p>
+        <p className={styles.help}>선택한 서랍의 앞쪽 왼쪽 바닥이 이 공간의 (0, 0, 0)입니다. 그 기준에서 잰 거리를 입력하세요. 안쪽 깊이는 정면에서 안으로 들어가는 거리입니다.</p>
         <p className={styles.help}>서랍 내부 크기 · 가로 {(activeSlot.dimensions.width * 100).toFixed(1)} cm · 높이 {(activeSlot.dimensions.height * 100).toFixed(1)} cm · 깊이 {(activeSlot.dimensions.depth * 100).toFixed(1)} cm</p>
         <div className={styles.rangeGrid}><NumericField displayPrecision={1} label="왼쪽에서 X" unit="cm" min={0} step={.1} value={slotPosition.x * 100} onChange={(value) => updateSlot("x", value)} /><NumericField displayPrecision={1} label="바닥에서 Y" unit="cm" min={0} step={.1} value={slotPosition.y * 100} onChange={(value) => updateSlot("y", value)} /><NumericField displayPrecision={1} label="정면에서 안쪽 Z" unit="cm" min={0} step={.1} value={-slotPosition.z * 100} onChange={(value) => updateSlot("z", value)} /></div>
         {!pose && <p role="alert">저장된 서랍 기준점이 유효하지 않습니다. 설치된 서랍과 실측 위치를 다시 선택하세요.</p>}

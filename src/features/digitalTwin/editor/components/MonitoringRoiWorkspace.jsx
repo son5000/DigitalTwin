@@ -22,7 +22,7 @@ import RoiDashboard from "./RoiDashboard";
 import MonitoringQuickTools from "./MonitoringQuickTools";
 import { imageObservationIssue, resolveImageObservation } from "../model/imageObservation.js";
 import ObservationCreationFields from "./ObservationCreationFields.jsx";
-import { normalizeObservationPoint } from "../model/equipmentDetailModel.js";
+import { getSensorCapabilities, normalizeObservationPoint } from "../model/equipmentDetailModel.js";
 import VirtualCameraViewport from "./VirtualCameraViewport.jsx";
 import { bindObservationMeasurements, thermalObservationIssue } from "../model/observationSource.js";
 import { observationContainsPosition } from "../model/observationGeometry.js";
@@ -82,7 +82,7 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
   const compatibleRois = useMemo(() => monitoring.rois.filter((roi) => roi.equipmentId !== equipmentId || !roi.surface?.model?.version || roi.surface.model.version === model.version), [monitoring.rois, equipmentId, model.version]);
   const projectionSensors = sceneProps.sensors ?? EMPTY_SENSORS;
   const developerTools = !editorMode && new URLSearchParams(window.location.search).get("developer") === "1";
-  const simulation = useViewerSimulation({ allowed: developerTools, equipmentId, modelVersion: model.version, rois: compatibleRois, sensors: projectionSensors });
+  const simulation = useViewerSimulation({ allowed: developerTools, equipment, equipmentId, modelVersion: model.version, rois: compatibleRois, sensors: projectionSensors });
   const liveTelemetry = useEquipmentTelemetry(projectId, equipmentId, compatibleRois, simulation.active);
   const telemetry = simulation.telemetry ?? liveTelemetry;
   const projectionFrames = useSensorProjectionFrames(projectionSensors, simulation.active);
@@ -246,18 +246,20 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
       && item.measurementId === measurement.id && item.metric === "TEMPERATURE")) : readings;
     return derived.length ? [...baseReadings, ...derived] : baseReadings;
   }, [currentDraft, geometryChanged, readings, thermalRoiSample, equipmentId, telemetry.now, layerData.hotspots, model.version]);
-  const cameraThermalReadouts = useMemo(() => projectionSensors.filter((sensor) => sensor.textureProjection?.enabled
-    && sensor.textureProjection.kind === "THERMAL"
-    && (sensor.textureProjection.equipmentId ?? sensor.equipmentIds?.[0]) === equipmentId)
+  const cameraThermalReadouts = useMemo(() => projectionSensors.filter((sensor) => getSensorCapabilities(sensor).includes("THERMAL")
+    && (sensor.textureProjection?.equipmentId ?? sensor.equipmentIds?.[0]) === equipmentId)
     .map((sensor, index) => {
-      const frame = sensorProjectionFrame(sensor, textures, telemetry.now, telemetry.demo);
+      const frame = (simulation.active && simulation.snapshot?.frames.find((item) => item.bindingId === sensor.id
+        && item.kind === "THERMAL" && isFreshMeasurement(item, telemetry.now)))
+        || sensorProjectionFrame(sensor, textures, telemetry.now, telemetry.demo);
       return { id: sensor.id, name: sensor.name?.trim() || `열화상 카메라 ${index + 1}`,
         identifier: sensor.serialNumber || sensor.serverSensorId || sensor.id,
+        projectionEnabled: sensor.textureProjection?.enabled && sensor.textureProjection.kind === "THERMAL",
         connectionStatus: frame ? frame.sample ? "표시 가능" : "수신 중" : sensor.serverSensorId ? "수신 대기" : "연결 대기",
         measuredAt: frame?.measuredAt ?? frame?.loadedAt ?? null,
         summary: thermalFrameSummary(frame?.temperatureGrid), grid: frame?.temperatureGrid ?? null, history: thermalFrameHistory(frame) };
     }),
-  [projectionSensors, textures, telemetry.now, telemetry.demo, equipmentId]);
+  [projectionSensors, textures, telemetry.now, telemetry.demo, equipmentId, simulation.active, simulation.snapshot]);
   const simulationFrameFresh = simulation.active && simulation.snapshot?.grid && isFreshMeasurement({
     measuredAt: simulation.pulse.measuredAt, staleAfterMs: 60000, quality: "GOOD",
   }, telemetry.now);
@@ -523,7 +525,7 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
         if (cameraId) { setActiveVirtualCameraId(cameraId); if (panel === "ROI") { if (onPanelChange) onPanelChange(null); else setLocalPanel(null); } }
         else { setActiveVirtualCameraId(null); selectPanel("ROI"); } },
     }}
-      monitoringOptions={{ equipmentId, equipment, model, mode: editorMode ? undefined : drawing && creation?.textureKind === "THERMAL" ? "THERMAL" : mode, continuousVision: !editorMode, opacity, point: audioOpen ? point : null, highlightRoiId: audioOpen ? audioRoiId : null, hiddenThermalSensorIds: hiddenThermalCameraIds, ...layerData, readings, textures, demo: telemetry.demo, now: telemetry.now, onLayerError: setLayerError }} roiOptions={{ equipmentId, rois: editorMode ? [] : rois, statuses, selectedId: audioOpen ? audioRoiId : currentDraft?.id, drawing:false, radius, pointPicking: picking, focusVersion,
+      monitoringOptions={{ equipmentId, equipment, model, mode: editorMode ? undefined : drawing && creation?.textureKind === "THERMAL" ? "THERMAL" : mode, continuousVision: !editorMode, opacity, point: audioOpen ? point : null, highlightRoiId: audioOpen ? audioRoiId : null, hiddenThermalSensorIds: hiddenThermalCameraIds, ...layerData, readings, textures, demo: telemetry.demo, now: telemetry.now, onLayerError: setLayerError }} roiOptions={{ equipmentId, rois: [], statuses, selectedId: audioOpen ? audioRoiId : currentDraft?.id, drawing:false, radius, pointPicking: picking, focusVersion,
       onPoint: (selection) => { setPointSelection({ ...selection, equipmentId, modelVersion: model.version }); setError(""); },
       onError: setError, onCancel: () => { setDrawingFor(null); setPickingFor(null); },
     }} />

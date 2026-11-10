@@ -8,6 +8,7 @@ import { disposeObject3D } from "./disposeObject3D.js";
 import { createRoiOverlay } from "./roiOverlay.js";
 import { planeOrientation } from "../model/observationGeometry.js";
 import { createSensorHeatmap } from "./sensorHeatmap.js";
+import { heatmapPreviewPosition } from "../model/sensorHeatmap.js";
 import { resolveImageObservation } from "../model/imageObservation.js";
 
 // Own only sensor markers, point markers and links. Never dispose equipment/scans.
@@ -72,7 +73,7 @@ export function createSensorSceneLayer({ root, renderedEquipment, origin, theme 
         const previewEquipmentId = sensor.heatmap.equipmentId ?? sensor.equipmentIds[0];
         const previewHost = sensor.equipmentIds.includes(previewEquipmentId) ? renderedEquipment.get(previewEquipmentId) : null;
         if (previewHost) {
-          const p = sensor.heatmap.position;
+          const p = heatmapPreviewPosition(sensor.heatmap, previewHost.item, sensor);
           const heatmap = createSensorHeatmap(sensor.heatmap, [p.x, p.y, p.z]);
           heatmap.userData.sensorEquipmentId = previewEquipmentId;
           heatmap.userData.samplePreview = true;

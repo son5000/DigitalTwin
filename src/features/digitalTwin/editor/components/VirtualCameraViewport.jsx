@@ -203,28 +203,29 @@ export default function VirtualCameraViewport({ equipment, cameras = [], cameraC
       <section ref={dialogRef} className={styles.dialog} role="dialog" aria-modal="true" aria-label={`${camera.name} 2D 관측 이미지`} data-mode={adding ? "create" : "view"} data-editor={editor}
         onPointerDownCapture={() => { lastInteraction.current = performance.now(); }} onPointerMoveCapture={() => { lastInteraction.current = performance.now(); }}
         onKeyDown={(event) => { lastInteraction.current = performance.now(); if (event.key !== "Escape") return; event.stopPropagation(); if (adding) closeCreation(); else if (selectedPoint) returnToCamera(); else onActiveChange(null); }}>
-        <header>{!editor && <nav className={styles.contextNavigation} aria-label="카메라 이동">
+        <header className={styles.dialogHeader}><div className={styles.headerContext}>{!editor && <nav className={styles.contextNavigation} aria-label="카메라 이동">
             <label><span>카메라</span><select value={camera.id} onChange={(event) => switchCamera(event.target.value)}>
               {cameras.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
             </select></label>
           </nav>}
           {editor && <div className={styles.heading}><strong>{adding ? "새 관측 영역" : camera.name}</strong><span>{adding ? camera.name : `관측 영역 ${savedPoints.length}개`}</span></div>}
-          <div className={styles.headerActions}>
-            {!editor && selectedPoint && !adding && <button type="button" onClick={returnToCamera}>목록으로</button>}
-            {!editor && <div className={styles.displaySwitch} role="group" aria-label="영상 표시">
-              <button type="button" aria-pressed={!thermalEnabled} onClick={() => onThermalChange?.(false)}>비전</button>
-              <button type="button" aria-pressed={thermalEnabled} onClick={() => onThermalChange?.(true)}>열화상</button>
-            </div>}
-            {editor && cameras.length > 1 && <nav className={styles.cameraNavigation} aria-label="가상 카메라 이동">
-            <label className={styles.cameraSelector}><span className={styles.navigationLabel}>가상 카메라 선택</span>
+          {editor && cameras.length > 1 && <nav className={styles.cameraNavigation} aria-label="가상 카메라 이동">
+            <label className={styles.cameraSelector}><span className={styles.navigationLabel}>카메라</span>
               <select value={camera.id} onChange={(event) => switchCamera(event.target.value)}>
                 {cameras.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
               </select>
             </label>
-          </nav>}{canAdd && (adding ? <button type="button" onClick={closeCreation}>영역 추가 취소</button>
+          </nav>}
+          {!editor && selectedPoint && !adding && <button type="button" className={`${styles.headerButton} ${styles.backButton}`} onClick={returnToCamera}>목록으로</button>}
+          </div><div className={styles.headerActions}>
+            {!editor && <div className={styles.displaySwitch} role="group" aria-label="영상 표시">
+              <button type="button" aria-pressed={!thermalEnabled} onClick={() => onThermalChange?.(false)}>비전</button>
+              <button type="button" aria-pressed={thermalEnabled} onClick={() => onThermalChange?.(true)}>열화상</button>
+            </div>}
+            {canAdd && (adding ? <button type="button" className={`${styles.headerButton} ${styles.backButton}`} onClick={closeCreation}>영역 추가 취소</button>
             : <button type="button" className={editor ? styles.addButton : styles.addRegionButton} aria-label="이 카메라에 관측 영역 추가" title="이 카메라에 관측 영역 추가" onClick={() => { setAdding(true); setError(""); }}>{editor ? "+" : "+ 관측 영역 추가"}</button>)}
-            {!editor && selectedPoint && !adding && !roiEditing && <button type="button" onClick={onEditSelectedRoi} aria-label={`${selectedPoint.name} 설정`}>설정</button>}
-            <button type="button" onClick={() => onActiveChange(null)}>닫기</button></div></header>
+            {!editor && selectedPoint && !adding && !roiEditing && <button type="button" className={`${styles.headerButton} ${styles.settingsButton}`} onClick={onEditSelectedRoi} aria-label={`${selectedPoint.name} 설정`}>설정</button>}
+            <button type="button" className={`${styles.headerButton} ${styles.closeButton}`} onClick={() => onActiveChange(null)}>닫기</button></div></header>
         {canAdd && adding && <div className={styles.creationBar}><strong>무엇을 확인할까요?</strong>
           <ObservationMetricChoices compact allowedMetrics={VIRTUAL_CAMERA_ROI_METRICS}
             values={configuration?.measurements.map((item) => item.metric) ?? []} onChange={selectMetric} /></div>}

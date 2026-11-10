@@ -60,15 +60,6 @@ function findSelectableHit(intersections, root) {
   return null;
 }
 
-function findEquipmentRoot(object, root) {
-  let current = object;
-  while (current && current !== root) {
-    if (current.userData.equipmentId) return current;
-    current = current.parent;
-  }
-  return object;
-}
-
 function createFloorRenderGroup(floor, displayOffsetY = 0) {
   const group = new THREE.Group();
   group.name = `FloorRenderGroup:${floor.name}`;
@@ -247,7 +238,7 @@ export default function FloorPlan3DScene({
   equipmentTranslucent = true,
   observationPoints = [], monitoringDevices = [], monitoringBindings = [], monitoringMode = false,
   transformTools, onPlanAdd, onEquipmentAdd, onPlanSelect, onEquipmentSelect,
-  onPlanTransform, onEquipmentTransform, onObservationPointAdd, onCancelPlacement, externalStatus = "",
+  onPlanTransform, onEquipmentTransform, onCancelPlacement, externalStatus = "",
   onSpatialSelect,
   floorDisplayGap = 0, onFloorSelect,
   shadowEnabled = true,
@@ -255,9 +246,9 @@ export default function FloorPlan3DScene({
 }) {
   const containerRef = useRef(null);
   const runtimeRef = useRef(null);
-  const handlersRef = useRef({ onPlanAdd, onEquipmentAdd, onPlanSelect, onEquipmentSelect, onPlanTransform, onEquipmentTransform, onObservationPointAdd, onSpatialSelect, onCancelPlacement, onFloorSelect });
+  const handlersRef = useRef({ onPlanAdd, onEquipmentAdd, onPlanSelect, onEquipmentSelect, onPlanTransform, onEquipmentTransform, onSpatialSelect, onCancelPlacement, onFloorSelect });
   const stateRef = useRef({ editMode, activePlanTemplateId, activeEquipmentTemplateId, currentFloor, selectedEquipmentId, monitoringMode, verticalStructures, floorPlansById });
-  useEffect(() => { handlersRef.current = { onPlanAdd, onEquipmentAdd, onPlanSelect, onEquipmentSelect, onPlanTransform, onEquipmentTransform, onObservationPointAdd, onSpatialSelect, onCancelPlacement, onFloorSelect }; }, [onCancelPlacement, onEquipmentAdd, onEquipmentSelect, onEquipmentTransform, onFloorSelect, onObservationPointAdd, onPlanAdd, onPlanSelect, onPlanTransform, onSpatialSelect]);
+  useEffect(() => { handlersRef.current = { onPlanAdd, onEquipmentAdd, onPlanSelect, onEquipmentSelect, onPlanTransform, onEquipmentTransform, onSpatialSelect, onCancelPlacement, onFloorSelect }; }, [onCancelPlacement, onEquipmentAdd, onEquipmentSelect, onEquipmentTransform, onFloorSelect, onPlanAdd, onPlanSelect, onPlanTransform, onSpatialSelect]);
   useEffect(() => { stateRef.current = { editMode, activePlanTemplateId, activeEquipmentTemplateId, currentFloor, selectedEquipmentId, monitoringMode, verticalStructures, floorPlansById }; }, [activeEquipmentTemplateId, activePlanTemplateId, currentFloor, editMode, floorPlansById, monitoringMode, selectedEquipmentId, verticalStructures]);
 
   useEffect(() => {
@@ -336,14 +327,8 @@ export default function FloorPlan3DScene({
         activeContentRoot,
       );
       if (selectableHit) {
-        const { intersection, domain } = selectableHit;
+        const { domain } = selectableHit;
         if (placementTemplateId) handlersRef.current.onCancelPlacement?.();
-        if (stateRef.current.monitoringMode && stateRef.current.selectedEquipmentId && domain.domain === "EQUIPMENT") {
-          const object = findEquipmentRoot(intersection.object, activeContentRoot);
-          const localPosition = object.worldToLocal(intersection.point.clone());
-          handlersRef.current.onObservationPointAdd?.(domain.id, { x: localPosition.x, y: localPosition.y, z: localPosition.z });
-          return;
-        }
         if (domain.domain === "EQUIPMENT") handlersRef.current.onEquipmentSelect?.(domain.id);
         else if (domain.domain === "SPATIAL") handlersRef.current.onSpatialSelect?.(domain.entity);
         else handlersRef.current.onPlanSelect?.(domain.id);

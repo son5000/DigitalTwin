@@ -1,16 +1,52 @@
-.dock { --sim-bg: var(--portal-panel, #182732); --sim-surface: var(--portal-surface, #243746); --sim-text: var(--portal-text, #eaf2f6); --sim-muted: var(--portal-muted, #a9b8c4); --sim-border: var(--portal-border, #456071); position: absolute; z-index: 32; top: 58px; left: max(80px, calc(env(safe-area-inset-left) + 68px)); width: min(320px, calc(100% - 96px)); color: var(--sim-text); font-size: 12px; line-height: 1.45; }
+.dock { --sim-bg: var(--portal-panel, #182732); --sim-surface: var(--portal-surface, #243746); --sim-text: var(--portal-text, #eaf2f6); --sim-muted: var(--portal-muted, #a9b8c4); --sim-border: var(--portal-border, #456071); position: absolute; z-index: 32; top: 58px; left: max(80px, calc(env(safe-area-inset-left) + 68px)); width: min(368px, calc(100% - 96px)); color: var(--sim-text); font-size: 12px; line-height: 1.45; }
 .dock :is(button, input, select) { font: inherit; color: inherit; }
 .dock :is(button, select, input[type="number"]) { min-height: 36px; border: 1px solid var(--sim-border); border-radius: 6px; background: var(--sim-surface); }
 .dock button { padding: 6px 10px; cursor: pointer; }
 .dock :is(button, input, select):focus-visible { outline: 2px solid var(--portal-blue, #469beb); outline-offset: 2px; }
 .trigger { display: flex; align-items: center; gap: 10px; box-shadow: 0 2px 10px rgb(0 0 0 / 18%); }
 .trigger span { color: var(--sim-muted); font-size: 11px; }
-.panel { display: grid; gap: 12px; margin-top: 7px; max-height: min(72vh, 680px); overflow: auto; overscroll-behavior: contain; padding: 14px; border: 1px solid var(--sim-border); border-radius: 8px; background: var(--sim-bg); box-shadow: 0 8px 28px rgb(0 0 0 / 26%); }
+.panel { display: grid; gap: 12px; max-height: min(78vh, 740px); overflow: auto; overscroll-behavior: contain; padding: 14px; border: 1px solid var(--sim-border); border-radius: 8px; background: var(--sim-bg); box-shadow: 0 8px 28px rgb(0 0 0 / 26%); }
 .panel header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; padding-bottom: 10px; border-bottom: 1px solid var(--sim-border); }
 .panel header div { display: grid; gap: 3px; }
 .panel header strong { font-size: 14px; }
-.panel small, .note, .panel output { color: var(--sim-muted); }
+.panel small, .note { color: var(--sim-muted); }
 .content { display: grid; gap: 12px; }
+.scenario { display: grid; gap: 8px; }
+.scenario > label { display: grid; gap: 5px; }
+.scenario select { width: 100%; padding: 5px 8px; }
+.zoneHeading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.zoneHeading small { color: var(--sim-muted); }
+.zoneList { display: grid; gap: 5px; }
+.zoneGroup { display: grid; gap: 2px; }
+.zone { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 6px 8px; border: 1px solid var(--sim-border); border-radius: 6px; background: color-mix(in srgb, var(--sim-surface) 72%, transparent); }
+.zone[data-active="true"] { border-color: var(--portal-blue, #469beb); background: color-mix(in srgb, var(--portal-blue, #469beb) 14%, var(--sim-bg)); }
+.zone input { flex: none; margin: 0; accent-color: var(--portal-blue, #469beb); }
+.signalDot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--sim-muted); }
+.zone[data-active="true"] .signalDot { background: #57bded; box-shadow: 0 0 0 3px rgb(87 189 237 / 20%); animation: signal-pulse 900ms ease-in-out infinite alternate; }
+.zoneName, .zoneReading { display: grid; min-width: 0; gap: 1px; }
+.zoneName { flex: 1; }
+.zoneName strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zoneName small { overflow: hidden; color: var(--sim-muted); text-overflow: ellipsis; white-space: nowrap; }
+.zoneReading { flex: none; text-align: right; font-variant-numeric: tabular-nums; }
+.zoneReading small { color: var(--sim-muted); }
+.zone[data-level="WARNING"] .zoneReading small { color: #efb467; }
+.zone[data-level="DANGER"] .zoneReading small { color: #f48787; }
+.roiStatuses { display: grid; gap: 3px; margin: 0 0 3px; padding: 0 8px 0 24px; list-style: none; }
+.roiStatuses li { display: flex; justify-content: space-between; gap: 8px; color: var(--sim-muted); font-size: 11px; }
+.roiStatuses li span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.roiStatuses li span:last-child { flex: none; font-variant-numeric: tabular-nums; }
+.roiStatuses li[data-level="WARNING"] span:last-child { color: #efb467; }
+.roiStatuses li[data-level="DANGER"] span:last-child { color: #f48787; }
+.thermalGroup, .thermalList { display: grid; gap: 8px; }
+.thermalCamera { display: grid; grid-template-columns: minmax(0, 1fr) 112px; gap: 4px 10px; align-items: center; padding: 8px; border: 1px solid var(--sim-border); border-radius: 6px; background: color-mix(in srgb, var(--sim-surface) 72%, transparent); }
+.thermalIdentity { display: grid; min-width: 0; gap: 2px; }
+.thermalIdentity :is(strong, small) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thermalIdentity small, .thermalRange { color: var(--sim-muted); }
+.thermalCamera label { display: grid; grid-template-columns: 1fr auto; gap: 3px; white-space: nowrap; }
+.thermalCamera label span { color: var(--sim-muted); }
+.thermalCamera input { grid-column: 1 / -1; width: 100%; box-sizing: border-box; padding: 5px 8px; font-variant-numeric: tabular-nums; }
+.thermalRange { grid-column: 1 / -1; font-variant-numeric: tabular-nums; }
+@keyframes signal-pulse { to { opacity: .45; } }
 .content > label:not(.switch), .fields label { display: grid; gap: 5px; }
 .content select, .content input[type="number"] { width: 100%; box-sizing: border-box; padding: 5px 8px; }
 .fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
@@ -22,6 +58,7 @@
 .note { margin: 0; padding-top: 8px; border-top: 1px solid var(--sim-border); }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .actions .primary { border-color: var(--portal-blue, #469beb); background: color-mix(in srgb, var(--portal-blue, #469beb) 24%, var(--sim-surface)); font-weight: 650; }
-.panel output { font-variant-numeric: tabular-nums; }
-@media (max-width: 760px) { .dock { top: 56px; left: max(72px, calc(env(safe-area-inset-left) + 64px)); width: min(320px, calc(100% - 84px)); } }
+.dock button:disabled { cursor: not-allowed; opacity: .48; }
+@media (max-width: 760px) { .dock { top: 56px; left: max(72px, calc(env(safe-area-inset-left) + 64px)); width: min(368px, calc(100% - 84px)); } }
 @media (pointer: coarse) { .dock :is(button, select, input[type="number"]), .switch { min-height: 44px; } }
+@media (prefers-reduced-motion: reduce) { .zone[data-active="true"] .signalDot { animation: none; } }

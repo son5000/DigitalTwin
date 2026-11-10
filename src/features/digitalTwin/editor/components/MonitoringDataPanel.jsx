@@ -116,7 +116,7 @@ export default function MonitoringDataPanel({ section = "AUDIO", equipment, proj
     {section === "ALARMS" && <p className={styles.connectionStatus} role="status">{STATUS[telemetry.status]}</p>}
     {section === "THERMAL" && <>
       {thermalReadouts.map((item) => <section key={item.id} className={styles.thermalReadout} aria-label={`${item.name} 온도 분포`}>
-        <div className={styles.thermalReadoutHeading}><strong>{item.name}</strong><label className={styles.thermalCameraToggle}><input type="checkbox" checked={!hiddenThermalCameraIds.includes(item.id)} onChange={(event) => onThermalCameraVisibilityChange?.(item.id, event.target.checked)} aria-label={`${item.name} 월드 열화상 표시`} />월드 표시</label></div>
+        <div className={styles.thermalReadoutHeading}><strong>{item.name}</strong><label className={styles.thermalCameraToggle}><input type="checkbox" checked={Boolean(item.projectionEnabled) && !hiddenThermalCameraIds.includes(item.id)} disabled={!item.projectionEnabled} onChange={(event) => onThermalCameraVisibilityChange?.(item.id, event.target.checked)} aria-label={`${item.name} 월드 열화상 표시`} />{item.projectionEnabled ? "월드 표시" : "투영 미설정"}</label></div>
         <ThermalMetrics summary={item.summary} />
         {item.grid && item.summary && <ViewerThermalPreview grid={item.grid} summary={item.summary} />}
         <button type="button" className={styles.thermalDetailButton} onClick={() => setDetailCameraId(item.id)}>상세 보기</button>

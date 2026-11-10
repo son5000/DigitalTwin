@@ -43,7 +43,8 @@ export function bindMonitoringLayers({ renderedEquipment, getOptions, getSensors
       if (options.point?.representation === representation) sphere(options.point.position, 0x4da8ff, .045);
       for (const hotspot of hotspots) {
         try {
-          const position = options.demo ? hotspot.position : resultPositionToModel(hotspot, options.equipment ?? entry.item);
+          const position = options.demo && !hotspot.scanSlot && !hotspot.coordinateFrame
+            ? hotspot.position : resultPositionToModel(hotspot, options.equipment ?? entry.item);
           const sensor = sensors.find((item) => item.equipmentIds?.includes(options.equipmentId)
             && (hotspot.bindingId === item.id || (hotspot.sensorId && hotspot.sensorId === item.serverSensorId)));
           let normal;

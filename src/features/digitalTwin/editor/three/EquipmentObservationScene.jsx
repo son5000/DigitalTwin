@@ -119,8 +119,6 @@ export default function EquipmentObservationScene({
   selectedPartId = null,
   onEquipmentSelect,
   sensors = EMPTY_ITEMS,
-  observationPoints = EMPTY_ITEMS,
-  bindings = EMPTY_ITEMS,
   assetBindings = EMPTY_ITEMS,
   viewerPreset,
   previewReadings = false,
@@ -178,7 +176,9 @@ export default function EquipmentObservationScene({
   const sensorStateRef = useRef(null);
   const readingsRef = useRef(null);
   const sensorCallbacksRef = useRef({ onSensorSelect, onSensorChange });
-  useEffect(() => { sensorStateRef.current = { sensors, observationPoints, bindings, selectedSensorId, selectedPointId, pointEditing, transformTools, previewReadings, editorStage }; }, [sensors, observationPoints, bindings, selectedSensorId, selectedPointId, pointEditing, transformTools, previewReadings, editorStage]);
+  // Observation regions belong to virtual-camera images. Keep them out of the
+  // 3D sensor layer; VirtualCameraViewport receives the saved points separately.
+  useEffect(() => { sensorStateRef.current = { sensors, observationPoints: EMPTY_ITEMS, bindings: EMPTY_ITEMS, selectedSensorId, selectedPointId, pointEditing, transformTools, previewReadings, editorStage }; }, [sensors, selectedSensorId, selectedPointId, pointEditing, transformTools, previewReadings, editorStage]);
   useEffect(() => { sensorCallbacksRef.current = { onSensorSelect, onSensorChange }; }, [onSensorSelect, onSensorChange]);
   const lightingRef = useRef(normalizeScanLighting(viewerPreset?.lighting));
   useEffect(() => { lightingRef.current = normalizeScanLighting(viewerPreset?.lighting); }, [viewerPreset?.lighting]);
@@ -227,8 +227,12 @@ export default function EquipmentObservationScene({
     renderer.setPixelRatio(pixelRatio);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.shadowMap.enabled = true;
+    // The viewer's light is fixed. Camera orbiting does not change its shadow map.
+    const cacheViewerShadows = !defaultOverlayVisible;
+    renderer.shadowMap.autoUpdate = !cacheViewerShadows;
+    if (cacheViewerShadows) renderer.shadowMap.needsUpdate = true;
     renderer.domElement.setAttribute("role", "img");
-    renderer.domElement.setAttribute("aria-label", "설비와 센서 및 관측 영역을 탐색하는 3D 화면. 드래그하여 회전하고 스크롤하여 확대하거나 축소합니다.");
+    renderer.domElement.setAttribute("aria-label", "설비와 센서를 탐색하는 3D 화면. 드래그하여 회전하고 스크롤하여 확대하거나 축소합니다.");
     mount.appendChild(renderer.domElement);
     const camera = new THREE.PerspectiveCamera(60, 1, 0.01, 500);
     const renderedEquipment = new Map();
@@ -244,6 +248,14 @@ export default function EquipmentObservationScene({
     renderer.domElement.addEventListener("wheel", blockInputWhileLoading, { capture: true, passive: false });
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
+    let cameraInteractionActive = false;
+    let lastCameraInteraction = 0;
+    const startCameraInteraction = () => { cameraInteractionActive = true; };
+    const endCameraInteraction = () => { cameraInteractionActive = false; lastCameraInteraction = performance.now(); };
+    const wheelCameraInteraction = () => { lastCameraInteraction = performance.now(); };
+    controls.addEventListener("start", startCameraInteraction);
+    controls.addEventListener("end", endCameraInteraction);
+    renderer.domElement.addEventListener("wheel", wheelCameraInteraction, { passive: true });
     const stopAutomaticFit = () => { if (!isDetailedLoading()) allowDetailedFit = false; };
     controls.addEventListener("start", stopAutomaticFit);
     renderer.domElement.addEventListener("pointerdown", stopAutomaticFit, true);
@@ -1103,8 +1115,34 @@ export default function EquipmentObservationScene({
     resize();
     let sampleStart = performance.now(), sampleFrames = 0;
     let previousFrame = performance.now();
+    let previousShadowSignature = "";
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     let previousInputs = sceneInputsRef.current;
+    function syncViewerShadows() {
+      if (!cacheViewerShadows) return;
+      const parts = [];
+      for (const entry of renderedEquipment.values()) {
+        const enclosure = entry.item.enclosure;
+        parts.push(entry.object.matrixWorld.elements.join(","), entry.proxy.uuid, entry.proxy.visible,
+          entry.actual?.uuid, entry.actual?.visible, JSON.stringify(entry.layerSource ?? null),
+          enclosure?.doors?.map((door) => `${door.open}:${door.angle}`).join(","),
+          enclosure?.rear?.doors?.map((door) => `${door.open}:${door.angle}`).join(","));
+        for (const [id, scan] of entry.actualScans ?? []) {
+          parts.push(id, scan.aligned.uuid, entry.scanAlignmentKeys.get(id));
+        }
+      }
+      const addMarker = (marker) => {
+        marker.updateWorldMatrix(true, false);
+        parts.push(marker.id, marker.visible, marker.matrixWorld.elements.join(","));
+      };
+      for (const marker of sensorMarkers.values()) addMarker(marker);
+      for (const marker of sensorLayer.pointMarkers.values()) addMarker(marker);
+      const signature = parts.join("|");
+      if (signature !== previousShadowSignature) {
+        previousShadowSignature = signature;
+        renderer.shadowMap.needsUpdate = true;
+      }
+    }
     function syncEquipmentInputs() {
       const next = sceneInputsRef.current;
       if (previousInputs === next || dragging) return;
@@ -1166,7 +1204,8 @@ export default function EquipmentObservationScene({
       const thermalVisible = sensorStateRef.current?.sensors?.some((sensor) => sensor.textureProjection?.kind === "THERMAL"
         && sensor.textureProjection.enabled && projectionLayer.isVisible(sensor.id));
       const denseScene = loadedScans > 1 || scanVertices > 500000 || thermalVisible;
-      if (document.hidden || (denseScene && now - previousFrame < 1000 / 30)) {
+      const cameraMoving = cameraInteractionActive || now - lastCameraInteraction < 400 || Boolean(focusRuntime.cameraFocus);
+      if (document.hidden || (denseScene && !cameraMoving && now - previousFrame < 1000 / 30)) {
         frameId = requestAnimationFrame(render);
         return;
       }
@@ -1216,6 +1255,7 @@ export default function EquipmentObservationScene({
       fillLight.intensity = lightingRef.current.fill;
       camera.updateMatrixWorld();
       sensorLayer.updateObservationLabels(camera, renderer, pointOptionsRef.current?.selectedId, hoveredPointId, Boolean(sensorViewRef.current), modelLayersRef.current, monitoringOptionsRef.current?.highlightRoiId);
+      syncViewerShadows();
       renderer.render(scene, camera);
       sampleFrames++;
       const elapsed = performance.now() - sampleStart;
@@ -1271,6 +1311,9 @@ export default function EquipmentObservationScene({
       renderer.domElement.removeEventListener("pointerdown", stopAutomaticFit, true);
       renderer.domElement.removeEventListener("wheel", stopAutomaticFit);
       controls.removeEventListener("start", stopAutomaticFit);
+      controls.removeEventListener("start", startCameraInteraction);
+      controls.removeEventListener("end", endCameraInteraction);
+      renderer.domElement.removeEventListener("wheel", wheelCameraInteraction);
       controls.removeEventListener("end", syncEquipmentRepresentations);
       disposeDualTransformControls(transform);
       sensorLayer.dispose();

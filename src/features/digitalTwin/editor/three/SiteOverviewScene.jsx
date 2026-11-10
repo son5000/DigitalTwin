@@ -630,6 +630,7 @@ export default function SiteOverviewScene({
   viewerPreset,
   modelLayers,
   enableObjectLod = true,
+  pixelRatioLimit = 2,
   snapshotRequest,
   onSnapshot,
   snapshotCaptureRef,
@@ -814,7 +815,7 @@ export default function SiteOverviewScene({
     scene.background = new THREE.Color(sceneTheme.background);
     scene.fog = new THREE.Fog(sceneTheme.fog, 90, 240);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, pixelRatioLimit));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.domElement.setAttribute("aria-label", "공장 부지와 건물을 편집하는 3D 화면");
     renderer.domElement.setAttribute("role", "application");
@@ -1657,7 +1658,7 @@ export default function SiteOverviewScene({
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, [movementClockRef]);
+  }, [movementClockRef, pixelRatioLimit]);
 
   useEffect(() => {
     // Pending selections belong to the current editing surface only.
