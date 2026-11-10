@@ -38,7 +38,8 @@ function generalObservationReadings(point, item, readings, now, preview) {
     ...[["max", "최고 온도"], ["min", "최저 온도"], ["average", "평균 온도"]]
       .map(([statistic, name]) => row(`TEMPERATURE:${statistic}`, name, "°C",
         summary?.[statistic] ?? (statistic === "average" ? thermal?.value : null), "TEMPERATURE", statistic,
-        { measuredAt: thermal?.measuredAt ?? null, sourceNames: thermal?.sourceNames ?? [] }))];
+        { measuredAt: thermal?.measuredAt ?? null, sourceNames: thermal?.sourceNames ?? [],
+          temperatureScale: thermal?.temperatureScale ?? null }))];
 }
 
 export function observationReadings(point, sensors = [], readings = [], now = Date.now(), preview = false) {

@@ -24,7 +24,6 @@ import { imageObservationIssue, resolveImageObservation } from "../model/imageOb
 import ObservationCreationFields from "./ObservationCreationFields.jsx";
 import { normalizeObservationPoint } from "../model/equipmentDetailModel.js";
 import VirtualCameraViewport from "./VirtualCameraViewport.jsx";
-import VirtualCameraOverview from "./VirtualCameraOverview.jsx";
 import { bindObservationMeasurements, thermalObservationIssue } from "../model/observationSource.js";
 import { observationContainsPosition } from "../model/observationGeometry.js";
 import { observationProfileIssue } from "../model/observationProfiles.js";
@@ -137,7 +136,9 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
   const saved = currentDraft ? monitoring.rois.find((roi) => roi.id === currentDraft.id) : null;
   const dirty = editing && currentDraft && JSON.stringify(currentDraft) !== JSON.stringify(saved);
   const geometryChanged = Boolean(currentDraft?.surface?.model?.version && currentDraft.surface.model.version !== model.version);
-  const rois = useMemo(() => currentDraft && !geometryChanged ? [...compatibleRois.filter((roi) => roi.id !== currentDraft.id), currentDraft] : compatibleRois, [compatibleRois, currentDraft, geometryChanged]);
+  const rois = useMemo(() => currentDraft && !geometryChanged && compatibleRois.find((roi) => roi.id === currentDraft.id) !== currentDraft
+    ? [...compatibleRois.filter((roi) => roi.id !== currentDraft.id), currentDraft] : compatibleRois,
+  [compatibleRois, currentDraft, geometryChanged]);
   const audioRois = useMemo(() => compatibleRois.filter((roi) => roi.equipmentId === equipmentId && isGeneralAudioRoi(roi)), [compatibleRois, equipmentId]);
   const displayPoints = useMemo(() => editorMode ? sceneProps.observationPoints : rois.filter(isObservationRoi).map(roiToObservationPoint), [editorMode, sceneProps.observationPoints, rois]);
   const readings = telemetry.status === "DISCONNECTED" ? monitoring.readings : telemetry.readings;
@@ -157,19 +158,55 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
       hotspots: bases.map((base) => ({ ...base, position: [0, (equipment.dimensions?.height ?? 1) * .55, (equipment.dimensions?.depth ?? 1) * .5], db: 65.4, radius: .08 })) };
   }, [telemetry.demo, telemetry.simulated, telemetry.textures, telemetry.hotspots, equipment, equipmentId, model.version, demoFrameTime]);
   const textures = useMemo(() => [...layerData.textures, ...projectionFrames, ...(simulation.snapshot?.frames ?? [])], [layerData.textures, projectionFrames, simulation.snapshot]);
+  const sampledCameraId = currentDraft?.observationPoint?.virtualCameraRegion?.cameraId;
+  const cameraSample = sampledCameraId ? cameraOverview : null;
+  const directSampleTextures = sampledCameraId ? null : textures;
   useEffect(() => {
     if (!currentDraft || geometryChanged || !isGeneralAudioRoi(currentDraft)) return undefined;
     const point = roiToObservationPoint(currentDraft);
+    const cameraId = point.virtualCameraRegion?.cameraId;
+    if (cameraId && cameraSample?.cameraId !== cameraId) return undefined;
     let attempts = 0, timer, active = true;
     const sample = () => {
       if (!active) return;
-      const result = viewerCamera.current?.temperatureForObservation(point);
-      if (result === undefined && attempts++ < 15) { timer = setTimeout(sample, 300); return; }
+      let result;
+      if (cameraId) {
+        const temperature = cameraSample.temperature;
+        const pixels = temperature?.pixels;
+        const rect = point.virtualCameraRegion.rect;
+        if (pixels) {
+          let min = Infinity, max = -Infinity, sum = 0, count = 0;
+          const sourceCodes = new Set();
+          const left = Math.max(0, Math.floor(rect.x * pixels.width));
+          const right = Math.min(pixels.width, Math.ceil((rect.x + rect.width) * pixels.width));
+          const top = Math.max(0, Math.floor(rect.y * pixels.height));
+          const bottom = Math.min(pixels.height, Math.ceil((rect.y + rect.height) * pixels.height));
+          for (let y = top; y < bottom; y++) for (let x = left; x < right; x++) {
+            const u = (x + .5) / pixels.width, v = (y + .5) / pixels.height;
+            if (u < rect.x || u >= rect.x + rect.width || v < rect.y || v >= rect.y + rect.height) continue;
+            const index = y * pixels.width + x, value = pixels.values[index];
+            if (!Number.isFinite(value)) continue;
+            min = Math.min(min, value); max = Math.max(max, value); sum += value; count++;
+            sourceCodes.add(pixels.sourceIndices[index]);
+          }
+          if (count) {
+            const sources = [...sourceCodes].map((code) => pixels.sources[code - 1]).filter(Boolean);
+            const measuredAt = sources.map((source) => source.measuredAt).filter(Boolean)
+              .sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? null;
+            result = { summary: { min, max, average: sum / count, count }, sources,
+              temperatureScale: sources.length === 1 ? sources[0].temperatureScale : null,
+              measuredAt, sample: sources.every((source) => source.sample) };
+          }
+        }
+      } else {
+        result = viewerCamera.current?.temperatureForObservation(point);
+        if (result === undefined && attempts++ < 15) { timer = setTimeout(sample, 300); return; }
+      }
       setThermalRoiSample(result ? { roiId: point.id, revision: point.revision, ...result } : null);
     };
-    timer = setTimeout(sample, 0);
+    timer = setTimeout(sample, cameraId ? 16 : 0);
     return () => { active = false; clearTimeout(timer); };
-  }, [currentDraft, geometryChanged, textures, viewerCamera]);
+  }, [currentDraft, geometryChanged, directSampleTextures, viewerCamera, cameraSample]);
   const dashboardReadings = useMemo(() => {
     if (!currentDraft || geometryChanged || !isGeneralAudioRoi(currentDraft)) return readings;
     const point = roiToObservationPoint(currentDraft);
@@ -179,11 +216,12 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
       && item.revision === (point.revision ?? 0) && item.measurementId === measurement.id
       && item.metric === metric && isFreshMeasurement(item, telemetry.now));
     const derived = [];
-    const sampledTemperature = thermalRoiSample?.roiId === point.id && thermalRoiSample.revision === point.revision;
+    const sampledTemperature = thermalRoiSample?.roiId === point.id && thermalRoiSample.revision === point.revision && thermalRoiSample.summary;
     if (sampledTemperature) {
       const measuredAt = thermalRoiSample.sample ? new Date(telemetry.now).toISOString() : thermalRoiSample.measuredAt;
       derived.push({ equipmentId, roiId: point.id, revision: point.revision, measurementId: measurement.id,
         metric: "TEMPERATURE", temperatureScope: "ROI", temperatureSummary: thermalRoiSample.summary,
+        temperatureScale: thermalRoiSample.temperatureScale,
         value: thermalRoiSample.summary.average, sourceNames: thermalRoiSample.sources.map((source) => source.name),
         measuredAt, staleAfterMs: 60000, quality: "GOOD", dataSource: thermalRoiSample.sample ? "SAMPLE" : "SERVER" });
     }
@@ -259,13 +297,32 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
       && sensorProjectionFrame(sensor, textures, telemetry.now, telemetry.demo)),
   ]));
   const mode = activeVirtualCameraId
-    ? virtualCameraThermal && availability.THERMAL ? "THERMAL" : "MODEL"
+    ? virtualCameraThermal ? "THERMAL" : "MODEL"
     : thermalActive ? "THERMAL" : "MODEL";
   const cameraImageVersion = useMemo(() => JSON.stringify(projectionSensors.filter((sensor) => sensor.textureProjection?.enabled
     && (sensor.textureProjection.equipmentId ?? sensor.equipmentIds?.[0]) === equipmentId).map((sensor) => {
     const frame = sensorProjectionFrame(sensor, textures, telemetry.now, telemetry.demo);
     return [sensor.id, frame?.measuredAt ?? frame?.loadedAt ?? null, frame?.url ?? null];
   })), [projectionSensors, textures, telemetry.now, telemetry.demo, equipmentId]);
+  const [displayedImageVersion, setDisplayedImageVersion] = useState(cameraImageVersion);
+  const imageRefreshRef = useRef({ latest: cameraImageVersion, lastPublished: 0, timer: null });
+  useEffect(() => {
+    const refresh = imageRefreshRef.current;
+    refresh.latest = cameraImageVersion;
+    if (!activeVirtualCameraId) {
+      if (refresh.timer !== null) clearTimeout(refresh.timer);
+      refresh.timer = null;
+      return;
+    }
+    if (cameraImageVersion === displayedImageVersion) return;
+    if (refresh.timer !== null) return;
+    refresh.timer = setTimeout(() => {
+      refresh.timer = null;
+      refresh.lastPublished = Date.now();
+      setDisplayedImageVersion(refresh.latest);
+    }, Math.max(0, 5000 - (Date.now() - refresh.lastPublished)));
+  }, [activeVirtualCameraId, cameraImageVersion, displayedImageVersion]);
+  useEffect(() => () => { if (imageRefreshRef.current.timer !== null) clearTimeout(imageRefreshRef.current.timer); }, []);
   useEffect(() => {
     if (!thermalActive) { thermalFocused.current = false; return; }
     if (thermalFocused.current || thermalFocusIds === "[]") return;
@@ -369,13 +426,19 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
   function changeVirtualCamera(id) {
     if (busy || (editing && dirty && !cancelEditing())) return;
     if (id && panel === "ROI") { if (onPanelChange) onPanelChange(null); else setLocalPanel(null); }
+    const refresh = imageRefreshRef.current;
+    if (refresh.timer !== null) clearTimeout(refresh.timer);
+    refresh.timer = null; refresh.latest = cameraImageVersion; refresh.lastPublished = Date.now();
+    setDisplayedImageVersion(cameraImageVersion);
     setActiveVirtualCameraId(id);
     setDraft(null);
   }
   function selectCameraRoi(id) {
     if (!id) { replaceDraft(null); return; }
     const selected = rois.find((roi) => roi.id === id);
-    if (selected && currentDraft?.id !== id) replaceDraft(structuredClone(selected));
+    if (selected && currentDraft?.id !== id && replaceDraft(selected)) {
+      setThermalRoiSample({ roiId: id, revision: selected.observationPoint?.revision, pending: true });
+    }
   }
   function addCameraRoi(position, changes) {
     if (busy || !equipment) return null;
@@ -412,11 +475,16 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
     } catch (issue) { setError(issue.message); }
     finally { setCaptureBusy(false); }
   }
+  function editCurrentRoi() {
+    if (!currentDraft) return;
+    setDraft(structuredClone(currentDraft)); setEditing(true); setNotice(""); setError("");
+  }
   const roiDetailContent = <>
     {(error || monitoring.error) && currentDraft && <p className={styles.error} role="alert">{error || monitoring.error}</p>}
     {notice && <p role="status" className={styles.hint}>{notice}</p>}
     {currentDraft && !editing && <RoiDashboard roi={currentDraft} sensors={sceneProps.sensors} readings={dashboardReadings} now={telemetry.now} connection={telemetry.status} demo={telemetry.demo} geometryChanged={geometryChanged} equipment={equipment} projectId={projectId} model={model}
-      onEdit={() => { setDraft(structuredClone(currentDraft)); setEditing(true); setNotice(""); setError(""); }} />}
+      compact={Boolean(activeVirtualCameraId && currentDraft.observationPoint?.virtualCameraRegion?.cameraId === activeVirtualCameraId)}
+      onEdit={editCurrentRoi} />}
     {currentDraft && editing && <form onSubmit={persist} className={styles.form} aria-label="관측 영역 설정">
       {geometryChanged && <p role="alert" className={styles.error}>설비 모델이 변경되었습니다. 관측 영역을 다시 지정하세요.</p>}
       <div className={styles.draftHeading}><strong>{saved ? `${currentDraft.name} 설정` : "새 관측 영역 설정"}</strong><button type="button" disabled={busy} onClick={cancelEditing}>취소</button></div>
@@ -462,12 +530,11 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
     {developerTools && <ViewerSimulationPanel simulation={simulation} />}
     {!editorMode && equipment && <VirtualCameraViewport equipment={equipment} cameras={sceneProps.viewerPreset?.virtualCameras?.[equipmentId] ?? []}
       cameraController={viewerCamera} activeId={activeVirtualCameraId} onActiveChange={changeVirtualCamera} points={displayPoints} sensors={projectionSensors} onAdd={addCameraRoi}
-      panelOpen={dataOpen || open || panel === "DETAIL"} selectedRoiId={currentDraft?.id} onRoiSelect={selectCameraRoi} roiDetails={roiDetailContent}
-      overviewDetails={<VirtualCameraOverview camera={(sceneProps.viewerPreset?.virtualCameras?.[equipmentId] ?? []).find((item) => item.id === activeVirtualCameraId)}
-        sample={cameraOverview} hotspots={layerData.hotspots} equipmentId={equipmentId} modelVersion={model.version} now={telemetry.now} />}
+      panelOpen={dataOpen || open || panel === "DETAIL"} selectedRoiId={currentDraft?.id} roiStatuses={statuses} onRoiSelect={selectCameraRoi} onEditSelectedRoi={editCurrentRoi} roiDetails={roiDetailContent}
+      roiLoading={Boolean(currentDraft && isGeneralAudioRoi(currentDraft) && thermalRoiSample?.roiId === currentDraft.id && thermalRoiSample.pending)} roiEditing={editing}
       onViewReady={setCameraOverview}
-      thermalAvailable={Boolean(availability.THERMAL)} thermalEnabled={Boolean(virtualCameraThermal && availability.THERMAL)}
-      onThermalChange={setVirtualCameraThermal} imageVersion={cameraImageVersion} />}
+      thermalAvailable={Boolean(availability.THERMAL)} thermalEnabled={virtualCameraThermal}
+      onThermalChange={setVirtualCameraThermal} imageVersion={displayedImageVersion} />}
     {!editorMode && <ViewerOverlaySlot name="tools"><MonitoringQuickTools panel={panel} thermalActive={thermalActive} alarmCount={activeAlarms.length} disabled={busy} onPanelChange={selectPanel} onThermalToggle={toggleThermal} /></ViewerOverlaySlot>}
     {dataOpen && <ViewerOverlaySlot name="panel"><aside className={`${styles.panel} ${styles.dataPanel} ${sharedPanelLayout ? styles.viewerPanel : ""}`} data-section={panel} aria-label={{ AUDIO: "소리 듣기", THERMAL: "열화상", ALARMS: "경고 이벤트" }[panel]} data-camera-safe-ui="right"><MonitoringDataPanel section={panel} equipment={equipment} key={`${equipmentId}:${panel}`} projectId={projectId} equipmentId={equipmentId} telemetry={telemetry} opacity={opacity} setOpacity={setOpacity} point={point} picking={picking} setPicking={(active) => { setPickingFor(active ? equipmentId : null); setDrawingFor(null); setError(""); }} layerError={layerError || error} model={model} sensorView={Boolean(sceneProps.sensorViewId)} availability={availability} thermalReadouts={thermalReadouts} thermalHistory={thermalHistory} hiddenThermalCameraIds={hiddenThermalCameraIds} onThermalCameraVisibilityChange={(id, visible) => setHiddenThermalCameraIds((current) => visible ? current.filter((value) => value !== id) : [...new Set([...current, id])])} rois={audioRois} readings={readings} sensors={projectionSensors} onSimulationTargetChange={simulation.active ? simulation.setSelectedRoiId : undefined} onRoiSelect={setAudioRoiId} onClose={() => selectPanel(null)} /></aside></ViewerOverlaySlot>}
     {picking && <InteractionGuide message="소리를 들을 모델 표면을 클릭하세요. Esc로 취소합니다." />}

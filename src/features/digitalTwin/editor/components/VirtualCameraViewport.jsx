@@ -11,13 +11,14 @@ import { createImageObservationBinding } from "../model/imageObservation.js";
 import styles from "./VirtualCameraViewport.module.css";
 
 const clamp = (value) => Math.max(0, Math.min(1, value));
+const ROI_STATUS_LABELS = { NORMAL: "정상", WARNING: "요주의", DANGER: "이상", NO_DATA: "수신 대기", IDLE: "조회 전용" };
 function normalizedPoint(event) {
   const bounds = event.currentTarget.getBoundingClientRect();
   return { x: clamp((event.clientX - bounds.left) / bounds.width), y: clamp((event.clientY - bounds.top) / bounds.height) };
 }
 
 export default function VirtualCameraViewport({ equipment, cameras = [], cameraController, activeId, onActiveChange, editor = false, sensors = [], points = [], onAdd,
-  panelOpen = false, selectedRoiId = null, onRoiSelect, roiDetails, overviewDetails, onViewReady,
+  panelOpen = false, selectedRoiId = null, roiStatuses = {}, onRoiSelect, onEditSelectedRoi, roiDetails, roiLoading = false, roiEditing = false, onViewReady,
   thermalAvailable = false, thermalEnabled = false, onThermalChange, imageVersion = "" }) {
   const [image, setImage] = useState(null);
   const [error, setError] = useState("");
@@ -27,6 +28,8 @@ export default function VirtualCameraViewport({ equipment, cameras = [], cameraC
   const [end, setEnd] = useState(null);
   const [expanded, setExpanded] = useState(false);
   const dialogRef = useRef(null);
+  const regionListRef = useRef(null);
+  const lastInteraction = useRef(0);
   const onViewReadyRef = useRef(onViewReady);
   useEffect(() => { onViewReadyRef.current = onViewReady; }, [onViewReady]);
   const camera = cameras.find((item) => item.id === activeId);
@@ -38,9 +41,10 @@ export default function VirtualCameraViewport({ equipment, cameras = [], cameraC
   const cameraId = camera?.id;
   useEffect(() => {
     if (!cameraId) return undefined;
-    const frame = requestAnimationFrame(() => dialogRef.current?.querySelector(adding ? '[aria-label="관측 항목"] button' : "header select, header button:not(:disabled)")?.focus());
+    const frame = requestAnimationFrame(() => dialogRef.current?.querySelector(adding ? '[aria-label="관측 항목"] button'
+      : editor ? "header select, header button:not(:disabled)" : `.${styles.contextNavigation} select`)?.focus());
     return () => cancelAnimationFrame(frame);
-  }, [cameraId, adding]);
+  }, [cameraId, adding, editor]);
   function selectMetric(values) {
     const metric = values[0];
     if (!metric) { setConfiguration(null); return; }
@@ -59,13 +63,23 @@ export default function VirtualCameraViewport({ equipment, cameras = [], cameraC
     if (adding) closeCreation();
     onActiveChange(id);
   }
+  function returnToCamera() {
+    onRoiSelect?.("");
+    requestAnimationFrame(() => (regionListRef.current?.querySelector("button")
+      ?? dialogRef.current?.querySelector(`.${styles.contextNavigation} select`))?.focus());
+  }
   useEffect(() => {
     if (!camera) return undefined;
-    let frame = 0, timer, attempts = 0, previewed = false, cancelled = false;
+    let frame = 0, timer, idle, viewIdle, viewTimer, attempts = 0, previewed = false, cancelled = false;
+    const inputBusy = () => !editor && (performance.now() - lastInteraction.current < 350
+      || navigator.scheduling?.isInputPending?.({ includeContinuous: true }));
     const retry = () => {
       if (cancelled) return;
       if (++attempts < 16) timer = setTimeout(capture, 250);
-      else setError("현재 시점의 이미지를 만들지 못했습니다. 잠시 후 가상 카메라를 다시 선택하세요.");
+      else {
+        setError("현재 시점의 이미지를 만들지 못했습니다. 잠시 후 가상 카메라를 다시 선택하세요.");
+        if (!editor) onViewReadyRef.current?.({ cameraId: camera.id, center: null, temperature: null });
+      }
     };
     const capture = () => {
       const controller = cameraController?.current;
@@ -76,27 +90,45 @@ export default function VirtualCameraViewport({ equipment, cameras = [], cameraC
       }
       frame = requestAnimationFrame(() => {
         if (cancelled) return;
+        if (inputBusy()) { timer = setTimeout(capture, 200); return; }
         try {
-          const snapshot = controller.captureImage({ thermal: thermalEnabled });
+          const snapshot = controller.captureImage({ thermal: thermalEnabled, includeThermalMap: !editor && thermalAvailable });
           if (!snapshot) { retry(); return; }
-          setImage({ camera, source: snapshot, thermal: thermalEnabled });
+          setImage({ camera, source: typeof snapshot === "string" ? snapshot : snapshot.url, thermal: thermalEnabled });
           if (!editor) {
-            const center = controller.pickImagePoint(.5, .5)?.position
-              ?? controller.projectImagePointToPlane(.5, .5)?.position ?? null;
-            onViewReadyRef.current?.({ cameraId: camera.id, center,
-              temperature: controller.temperatureForVirtualCamera(equipment.id) });
+            const publishView = () => {
+              if (cancelled) return;
+              if (inputBusy()) { viewTimer = setTimeout(publishView, 200); return; }
+              try {
+                const center = controller.pickImagePoint(.5, .5)?.position
+                  ?? controller.projectImagePointToPlane(.5, .5)?.position ?? null;
+                onViewReadyRef.current?.({ cameraId: camera.id, center,
+                  temperature: thermalAvailable ? controller.temperatureForVirtualCamera(equipment.id, snapshot.thermalMap) : null });
+              } catch {
+                setError("현재 시점의 온도 데이터를 분석하지 못했습니다.");
+                onViewReadyRef.current?.({ cameraId: camera.id, center: null, temperature: null });
+              }
+            };
+            if (window.requestIdleCallback) viewIdle = window.requestIdleCallback(publishView, { timeout: 1000 });
+            else viewTimer = setTimeout(publishView, 0);
           }
           setError(""); setStart(null); setEnd(null);
-        } catch { setError("현재 시점의 이미지를 만들지 못했습니다."); }
+        } catch {
+          setError("현재 시점의 이미지를 만들지 못했습니다.");
+          if (!editor) onViewReadyRef.current?.({ cameraId: camera.id, center: null, temperature: null });
+        }
       });
     };
     timer = setTimeout(() => {
       setImage((previous) => previous?.camera === camera && previous.thermal === thermalEnabled ? previous : null);
       setError("");
-      capture();
+      if (!editor && window.requestIdleCallback) idle = window.requestIdleCallback(capture, { timeout: 1000 });
+      else capture();
     }, 0);
-    return () => { cancelled = true; clearTimeout(timer); cancelAnimationFrame(frame); };
-  }, [camera, cameraController, equipment.id, thermalEnabled, imageVersion, editor]);
+    return () => { cancelled = true; clearTimeout(timer); clearTimeout(viewTimer); cancelAnimationFrame(frame);
+      if (idle != null) window.cancelIdleCallback(idle);
+      if (viewIdle != null) window.cancelIdleCallback(viewIdle); };
+  }, [camera, cameraController, equipment.id, thermalEnabled, thermalAvailable, imageVersion, editor]);
   async function finish(event) {
     if (!start || !configuration) return;
     const final = normalizedPoint(event);
@@ -169,9 +201,21 @@ export default function VirtualCameraViewport({ equipment, cameras = [], cameraC
     </nav>}
     {camera && <div className={styles.backdrop} data-camera-safe-ui>
       <section ref={dialogRef} className={styles.dialog} role="dialog" aria-modal="true" aria-label={`${camera.name} 2D 관측 이미지`} data-mode={adding ? "create" : "view"} data-editor={editor}
-        onKeyDown={(event) => { if (event.key !== "Escape") return; event.stopPropagation(); if (adding) closeCreation(); else onActiveChange(null); }}>
-        <header><div className={styles.heading}><strong>{adding ? "새 관측 영역" : camera.name}</strong><span>{adding ? camera.name : `관측 영역 ${savedPoints.length}개`}</span></div>
-          <div className={styles.headerActions}>{cameras.length > 1 && <nav className={styles.cameraNavigation} aria-label="가상 카메라 이동">
+        onPointerDownCapture={() => { lastInteraction.current = performance.now(); }} onPointerMoveCapture={() => { lastInteraction.current = performance.now(); }}
+        onKeyDown={(event) => { lastInteraction.current = performance.now(); if (event.key !== "Escape") return; event.stopPropagation(); if (adding) closeCreation(); else if (selectedPoint) returnToCamera(); else onActiveChange(null); }}>
+        <header>{!editor && <nav className={styles.contextNavigation} aria-label="카메라 이동">
+            <label><span>카메라</span><select value={camera.id} onChange={(event) => switchCamera(event.target.value)}>
+              {cameras.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select></label>
+          </nav>}
+          {editor && <div className={styles.heading}><strong>{adding ? "새 관측 영역" : camera.name}</strong><span>{adding ? camera.name : `관측 영역 ${savedPoints.length}개`}</span></div>}
+          <div className={styles.headerActions}>
+            {!editor && selectedPoint && !adding && <button type="button" onClick={returnToCamera}>목록으로</button>}
+            {!editor && <div className={styles.displaySwitch} role="group" aria-label="영상 표시">
+              <button type="button" aria-pressed={!thermalEnabled} onClick={() => onThermalChange?.(false)}>비전</button>
+              <button type="button" aria-pressed={thermalEnabled} onClick={() => onThermalChange?.(true)}>열화상</button>
+            </div>}
+            {editor && cameras.length > 1 && <nav className={styles.cameraNavigation} aria-label="가상 카메라 이동">
             <label className={styles.cameraSelector}><span className={styles.navigationLabel}>가상 카메라 선택</span>
               <select value={camera.id} onChange={(event) => switchCamera(event.target.value)}>
                 {cameras.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
@@ -179,25 +223,30 @@ export default function VirtualCameraViewport({ equipment, cameras = [], cameraC
             </label>
           </nav>}{canAdd && (adding ? <button type="button" onClick={closeCreation}>영역 추가 취소</button>
             : <button type="button" className={editor ? styles.addButton : styles.addRegionButton} aria-label="이 카메라에 관측 영역 추가" title="이 카메라에 관측 영역 추가" onClick={() => { setAdding(true); setError(""); }}>{editor ? "+" : "+ 관측 영역 추가"}</button>)}
+            {!editor && selectedPoint && !adding && !roiEditing && <button type="button" onClick={onEditSelectedRoi} aria-label={`${selectedPoint.name} 설정`}>설정</button>}
             <button type="button" onClick={() => onActiveChange(null)}>닫기</button></div></header>
         {canAdd && adding && <div className={styles.creationBar}><strong>무엇을 확인할까요?</strong>
           <ObservationMetricChoices compact allowedMetrics={VIRTUAL_CAMERA_ROI_METRICS}
             values={configuration?.measurements.map((item) => item.metric) ?? []} onChange={selectMetric} /></div>}
         {editor ? imageView : <div className={styles.viewerBody}>
           <div className={styles.previewColumn}>
-            <div className={styles.previewToolbar}><strong>시점 이미지</strong>
-              {thermalAvailable && <button type="button" className={styles.thermalToggle} aria-pressed={thermalEnabled}
-                onClick={() => onThermalChange?.(!thermalEnabled)}>{thermalEnabled ? "열화상 표시 중" : "열화상 겹쳐 보기"}</button>}
-            </div>
-            {imageView}<section className={styles.regionList} aria-label={`${camera.name} 관측 영역 목록`}>
-            <div className={styles.regionHeading}><strong>관측 영역</strong><span>{savedPoints.length}개</span></div>
-            <select className={styles.regionSelect} aria-label="관측 영역 선택" value={selectedPoint?.id ?? ""} disabled={!savedPoints.length}
-              onChange={(event) => onRoiSelect?.(event.target.value)}>
-              <option value="">{savedPoints.length ? "관측 영역 선택" : "등록된 관측 영역이 없습니다"}</option>
-              {savedPoints.map((point) => <option key={point.id} value={point.id}>{point.name}</option>)}
-            </select>
-          </section></div>
-          <aside className={styles.roiDetails} aria-label={selectedPoint ? "관측 영역 상세" : "가상 카메라 전체 지표"}>{adding ? <p>확인할 항목을 고른 뒤 왼쪽 이미지에서 영역을 드래그하세요.</p> : selectedPoint ? roiDetails : overviewDetails ?? <p>시점 지표를 준비하고 있습니다.</p>}</aside>
+            {imageView}
+            {selectedPoint?.geometryType === "PLANE" && <p className={styles.regionInfo} aria-label="관측 범위 크기">
+              가로 {selectedPoint.planeWidth.toFixed(2)} m · 세로 {selectedPoint.planeHeight.toFixed(2)} m
+            </p>}</div>
+          <aside className={styles.roiDetails} aria-label={selectedPoint ? "관측 영역 상세" : `${camera.name} 관측 영역 목록`} aria-busy={roiLoading} data-editing={roiEditing} data-overview={!adding && !selectedPoint}>
+            <div className={styles.scopeHeading}><strong>{adding ? "새 관측 영역" : selectedPoint?.name ?? camera.name}</strong></div>
+            {!adding && !selectedPoint && (savedPoints.length ? <nav ref={regionListRef} className={styles.regionList} aria-label="관측 영역 목록">
+              <ul>{savedPoints.map((point) => { const status = roiStatuses[point.id] ?? "NO_DATA"; return <li key={point.id}>
+                <button type="button" title={`${point.name} · ${ROI_STATUS_LABELS[status] ?? "수신 대기"}`} onClick={() => onRoiSelect?.(point.id)}>
+                  <span className={styles.regionName}>{point.name}</span><span className={styles.regionStatus} data-status={status}>{ROI_STATUS_LABELS[status] ?? "수신 대기"}</span>
+                </button>
+              </li>; })}</ul>
+            </nav> : <p className={styles.emptyRegions}>등록된 관측 영역이 없습니다.</p>)}
+            {adding ? <p>확인할 항목을 고른 뒤 왼쪽 이미지에서 영역을 드래그하세요.</p> : selectedPoint && roiLoading
+              ? <div className={styles.analysisStatus} role="status" aria-live="polite"><span className={styles.analysisSpinner} aria-hidden="true" /><div><span>관측 데이터를 분석하는 중…</span></div></div>
+              : selectedPoint ? roiDetails : null}
+          </aside>
         </div>}
         {error && <p className={styles.feedback} role="status">{error}</p>}
       </section>

@@ -100,6 +100,9 @@ const fragmentShader = `
   uniform vec2 sourceQuad[4];
   uniform vec4 crop;
   uniform float opacity;
+  uniform bool thermalSampleMode;
+  uniform float thermalSensorIndex;
+  uniform vec2 thermalGridSize;
   varying vec4 projected;
   varying vec3 worldNormal;
   void main() {
@@ -139,9 +142,18 @@ const fragmentShader = `
     }
     uv = crop.xy + uv * crop.zw;
     if (any(greaterThan(uv, vec2(1.0)))) discard;
-    gl_FragColor = texture2D(imageMap, uv);
-    gl_FragColor.a *= opacity;
-    if (gl_FragColor.a < 0.001) discard;
+    vec4 thermalPixel = texture2D(imageMap, uv);
+    thermalPixel.a *= opacity;
+    if (thermalPixel.a < 0.001) discard;
+    if (thermalSampleMode) {
+      float x = min(floor(uv.x * thermalGridSize.x), thermalGridSize.x - 1.0);
+      float y = min(floor((1.0 - uv.y) * thermalGridSize.y), thermalGridSize.y - 1.0);
+      float index = y * thermalGridSize.x + x;
+      gl_FragColor = vec4(mod(index, 256.0), mod(floor(index / 256.0), 256.0),
+        floor(index / 65536.0), thermalSensorIndex) / 255.0;
+      return;
+    }
+    gl_FragColor = thermalPixel;
     #include <colorspace_fragment>
   }`;
 
@@ -194,8 +206,9 @@ export function bindSensorProjectionLayer({ renderer, renderedEquipment, markers
     }
   }
   return {
-    update() {
+    update({ forceThermal = false } = {}) {
       const options = getOptions() ?? {}, sensors = getSensors() ?? [];
+      const projectionMode = forceThermal ? "THERMAL" : options.mode;
       const active = sensors.filter((sensor) => sensor.textureProjection?.enabled);
       const errors = [];
       for (const [id, state] of states) if (!active.some((sensor) => sensor.id === id)) { clearState(state); states.delete(id); }
@@ -219,7 +232,7 @@ export function bindSensorProjectionLayer({ renderer, renderedEquipment, markers
         const input = [sensor, entry.item, entry.object, entry.object.matrixWorld.elements.join(","),
           ...roots.flatMap(([kind, root]) => [kind, root, root.visible, root.children.length]), marker?.matrixWorld.elements.join(","),
           ...occluderRoots.flatMap(([kind, root]) => [kind, root, root.visible, root.children.length]),
-          entry.layerSource, options.mode, options.continuousVision, options.opacity, options.demo,
+          entry.layerSource, projectionMode, options.continuousVision, options.opacity, options.demo,
           p.kind === "THERMAL" && options.hiddenThermalSensorIds?.includes(sensor.id),
           frameKey, frame?.temperatureGrid, state.ready, state.texture, Math.floor((options.now ?? Date.now()) / 1000)];
         if (state.input?.length === input.length && input.every((value, index) => value === state.input[index])) continue;
@@ -257,6 +270,7 @@ export function bindSensorProjectionLayer({ renderer, renderedEquipment, markers
                 faceNormal: { value: new THREE.Vector3() }, restrictFace: { value: false }, pointCloud: { value: Boolean(object.isPoints || sampledGeometry) },
                 sampledPoints: { value: Boolean(sampledGeometry) }, pointSize: { value: sampledGeometry ? 3 : 2 },
                 imageTransform: { value: new THREE.Matrix3() }, crop: { value: new THREE.Vector4() }, opacity: { value: 1 },
+                thermalSampleMode: { value: false }, thermalSensorIndex: { value: 0 }, thermalGridSize: { value: new THREE.Vector2(1, 1) },
                 perspectiveEnabled: { value: false }, sourceQuad: { value: Array.from({ length: 4 }, () => new THREE.Vector2()) },
               };
               // Three.js otherwise draws each transparent thermal scan overlay twice.
@@ -264,7 +278,9 @@ export function bindSensorProjectionLayer({ renderer, renderedEquipment, markers
                 side: THREE.DoubleSide, forceSinglePass: !surfaceMapped, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
               const overlay = sampledGeometry ? new THREE.Points(sampledGeometry, material)
                 : object.isPoints ? new THREE.Points(object.geometry, material) : new THREE.Mesh(object.geometry, material);
-              overlay.userData.monitoringOverlay = true; overlay.raycast = () => {}; overlay.renderOrder = surfaceMapped ? 3 : 4; overlay.visible = false;
+              overlay.userData.monitoringOverlay = true; overlay.userData.thermalProjection = !surfaceMapped;
+              if (!surfaceMapped) overlay.userData.thermalSensorId = sensor.id;
+              overlay.raycast = () => {}; overlay.renderOrder = surfaceMapped ? 3 : 4; overlay.visible = false;
               const pickOverlay = sampledGeometry ? new THREE.Mesh(object.geometry, material) : null;
               if (pickOverlay) { pickOverlay.userData.monitoringOverlay = true; pickOverlay.visible = false; object.add(pickOverlay); }
               object.add(overlay); state.targets.push({ overlay, pickOverlay, sampleSource: sampledGeometry ? sampleSource : null, object, kind });
@@ -291,7 +307,7 @@ export function bindSensorProjectionLayer({ renderer, renderedEquipment, markers
             new THREE.TextureLoader().load(url, accept, undefined, () => { if (!disposed && generation === state.generation) state.error = "영상을 불러오지 못했습니다. 이미지 주소와 접근 권한을 확인하세요."; });
           }
         }
-        const enabled = (surfaceMapped && options.continuousVision) || !options.mode || options.mode === p.kind;
+        const enabled = (surfaceMapped && options.continuousVision) || !projectionMode || projectionMode === p.kind;
         const show = Boolean(enabled && !(p.kind === "THERMAL" && options.hiddenThermalSensorIds?.includes(sensor.id))
           && frame && state.ready && ((frame.sample && state.displayedFrame?.sample) || isFreshMeasurement(state.displayedFrame, options.now)));
         if (enabled && state.error) errors.push(`${sensor.name}: ${state.error}`);
@@ -345,11 +361,12 @@ export function bindSensorProjectionLayer({ renderer, renderedEquipment, markers
           u.perspectiveEnabled.value = p.perspective.enabled;
           p.perspective.source.forEach((point, index) => u.sourceQuad.value[index].set(...point));
           u.crop.value.set(p.cropX, p.cropY, Math.min(p.cropWidth, 1 - p.cropX), Math.min(p.cropHeight, 1 - p.cropY));
+          u.thermalGridSize.value.set(frame?.temperatureGrid?.width ?? 1, frame?.temperatureGrid?.height ?? 1);
           u.opacity.value = p.opacity * (surfaceMapped && options.continuousVision ? 1 : options.opacity ?? 1) * (entry.layerSource?.[kind]?.opacity ?? (kind === "PROXY" ? entry.item.enclosure?.opacity ?? entry.item.appearance?.opacity ?? 1 : 1));
         }
       }
       const error = [...new Set(errors)].join(" · ");
-      if (error !== lastError) { lastError = error; onError(error); }
+      if (!forceThermal && error !== lastError) { lastError = error; onError(error); }
     },
     isReady() {
       return (getSensors() ?? []).every((sensor) => {
@@ -442,65 +459,62 @@ export function bindSensorProjectionLayer({ renderer, renderedEquipment, markers
         if (!summary) continue;
         min = Math.min(min, summary.min); max = Math.max(max, summary.max);
         sum += summary.average * summary.count; count += summary.count;
-        sources.push({ sensorId: sensor.id, name: sensor.name });
+        const frameSummary = temperatureSummary(frame.temperatureGrid);
+        sources.push({ sensorId: sensor.id, name: sensor.name, count: summary.count,
+          temperatureScale: frameSummary && { min: frameSummary.min, max: frameSummary.max, palette: p.palette } });
         const time = frame.measuredAt ?? frame.loadedAt;
         if (Number.isFinite(Date.parse(time)) && (!measuredAt || Date.parse(time) > Date.parse(measuredAt))) measuredAt = time;
       }
-      return count ? { summary: { min, max, average: sum / count, count }, sources, measuredAt,
+      const temperatureScale = sources.length === 1 ? sources[0].temperatureScale : null;
+      return count ? { summary: { min, max, average: sum / count, count }, sources, temperatureScale, measuredAt,
         sample: sources.every(({ sensorId }) => states.get(sensorId)?.displayedFrame?.sample) } : pending ? undefined : null;
     },
-    sampleCameraTemperature(equipmentId, viewCamera) {
-      if (!renderedEquipment.get(equipmentId) || !viewCamera) return null;
-      const camera = viewCamera.clone();
-      camera.aspect = 640 / 400;
-      camera.updateProjectionMatrix();
-      camera.updateMatrixWorld(true);
-      const raycaster = new THREE.Raycaster();
-      const sources = [];
-      let min = Infinity, max = -Infinity, sum = 0, count = 0, measuredAt = null;
-      // Sample temperature pixels that project into the saved view. Use target
-      // bounds here to keep dense scan meshes off the UI thread.
-      for (const sensor of getSensors() ?? []) {
-        const state = states.get(sensor.id), frame = state?.displayedFrame, grid = frame?.temperatureGrid;
-        const current = sensorProjectionFrame(sensor, getOptions()?.textures, getOptions()?.now, getOptions()?.demo);
-        if (!state?.ready || !grid || frame !== current
-          || (sensor.textureProjection?.equipmentId ?? sensor.equipmentIds?.[0]) !== equipmentId) continue;
-        const boxes = state.targets.filter(({ object }) => visible(object))
-          .map(({ object }) => new THREE.Box3().setFromObject(object)).filter((box) => !box.isEmpty());
-        if (!boxes.length) continue;
-        const transform = sensorImageTransform(sensor);
-        const stride = Math.max(1, Math.ceil(Math.sqrt(grid.width * grid.height / 8192)));
-        let sourceCount = 0, sourceMin = Infinity, sourceMax = -Infinity, sourceSum = 0;
-        for (let y = 0; y < grid.height; y += stride) for (let x = 0; x < grid.width; x += stride) {
-          const value = grid.values[y * grid.width + x];
-          if (!Number.isFinite(value)) continue;
-          const uv = projectPoint(transform.sourceUvToTargetUv, [(x + .5) / grid.width, 1 - (y + .5) / grid.height]);
-          if (!uv || uv[0] < 0 || uv[0] > 1 || uv[1] < 0 || uv[1] > 1) continue;
-          raycaster.setFromCamera(new THREE.Vector2(uv[0] * 2 - 1, uv[1] * 2 - 1), state.camera);
-          let worldPoint = null, distance = Infinity;
-          for (const box of boxes) {
-            const hit = raycaster.ray.intersectBox(box, new THREE.Vector3());
-            if (hit && hit.distanceToSquared(raycaster.ray.origin) < distance) {
-              worldPoint = hit; distance = hit.distanceToSquared(raycaster.ray.origin);
-            }
-          }
-          if (!worldPoint) continue;
-          const screen = worldPoint.project(camera);
-          if (screen.x < -1 || screen.x > 1 || screen.y < -1 || screen.y > 1 || screen.z < -1 || screen.z > 1) continue;
-          sourceCount++;
-          sourceMin = Math.min(sourceMin, value);
-          sourceMax = Math.max(sourceMax, value);
-          sourceSum += value;
-        }
-        if (!sourceCount) continue;
-        min = Math.min(min, sourceMin); max = Math.max(max, sourceMax);
-        sum += sourceSum; count += sourceCount;
-        sources.push({ sensorId: sensor.id, name: sensor.name });
+    sampleCameraTemperature(equipmentId, thermalMap) {
+      const { width, height, data, sensorIds } = thermalMap ?? {};
+      if (!renderedEquipment.get(equipmentId) || !Number.isInteger(width) || !Number.isInteger(height)
+        || data?.length !== width * height * 4 || !Array.isArray(sensorIds)) return null;
+      const sensors = new Map((getSensors() ?? []).map((sensor) => [sensor.id, sensor]));
+      const sources = sensorIds.map((id) => {
+        const sensor = sensors.get(id), state = states.get(id), frame = state?.displayedFrame;
+        const projection = normalizeSensorProjection(sensor?.textureProjection);
+        const current = sensor && sensorProjectionFrame(sensor, getOptions()?.textures, getOptions()?.now, getOptions()?.demo);
+        const grid = frame?.temperatureGrid, summary = temperatureSummary(grid);
+        if (!sensor || !state?.ready || !summary || frame !== current || projection.kind !== "THERMAL"
+          || (projection.equipmentId ?? sensor.equipmentIds?.[0]) !== equipmentId) return null;
         const time = frame.measuredAt ?? frame.loadedAt;
-        if (Number.isFinite(Date.parse(time)) && (!measuredAt || Date.parse(time) > Date.parse(measuredAt))) measuredAt = time;
+        return { sensorId: id, name: sensor.name, grid, count: 0,
+          temperatureScale: { min: summary.min, max: summary.max, palette: projection.palette },
+          measuredAt: Number.isFinite(Date.parse(time)) ? time : null, sample: Boolean(frame.sample) };
+      });
+      const values = new Float32Array(width * height);
+      values.fill(NaN);
+      const sourceIndices = new Uint8Array(values.length);
+      let min = Infinity, max = -Infinity, sum = 0, count = 0;
+      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+        const outputIndex = y * width + x;
+        const encoded = ((height - 1 - y) * width + x) * 4;
+        const sourceIndex = data[encoded + 3];
+        const source = sources[sourceIndex - 1];
+        if (!source) continue;
+        const pixelIndex = data[encoded] + data[encoded + 1] * 256 + data[encoded + 2] * 65536;
+        const value = source.grid.values[pixelIndex];
+        if (!Number.isFinite(value)) continue;
+        values[outputIndex] = value;
+        sourceIndices[outputIndex] = sourceIndex;
+        source.count++;
+        min = Math.min(min, value); max = Math.max(max, value); sum += value; count++;
       }
-      return count ? { summary: { min, max, average: sum / count, count }, sources, measuredAt,
-        scope: "VISIBLE_FRAME_SAMPLES" } : null;
+      if (!count) return null;
+      const publicSources = sources.map((source) => source && ({ sensorId: source.sensorId, name: source.name,
+        count: source.count, temperatureScale: source.temperatureScale, measuredAt: source.measuredAt, sample: source.sample }));
+      const activeSources = publicSources.filter((source) => source?.count);
+      const measuredAt = activeSources.map((source) => source.measuredAt).filter(Boolean)
+        .sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? null;
+      return { summary: { min, max, average: sum / count, count }, sources: activeSources,
+        temperatureScale: activeSources.length === 1 ? activeSources[0].temperatureScale : null,
+        measuredAt, sample: activeSources.every((source) => source.sample),
+        pixels: { width, height, values, sourceIndices, sources: publicSources },
+        scope: "VISIBLE_CAMERA_FRAME_PIXELS" };
     },
     dispose() { disposed = true; states.forEach(clearState); states.clear(); },
   };

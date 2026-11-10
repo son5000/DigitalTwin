@@ -973,7 +973,7 @@ export default function EquipmentObservationScene({
         return true;
       },
       temperatureForObservation: (point) => projectionLayer.sampleObservationTemperature(point),
-      temperatureForVirtualCamera: (equipmentId) => projectionLayer.sampleCameraTemperature(equipmentId, camera),
+      temperatureForVirtualCamera: (equipmentId, thermalMap) => projectionLayer.sampleCameraTemperature(equipmentId, thermalMap),
       placeSensorFromView: (sensorId) => {
         const entry = renderedEquipment.get(focusEquipment?.id);
         if (!entry || isDetailedLoading() || !sensorCallbacksRef.current.onSensorChange) return false;
@@ -986,14 +986,22 @@ export default function EquipmentObservationScene({
       pickCoordinateOrigin: coordinateLayer.pick,
       coordinateFront: (yaw) => { stopFit(); coordinateLayer.front(yaw); },
       ready: () => Boolean(viewObject()), capture: () => captureViewerCamera(camera, controls),
-      captureImage: ({ thermal = false } = {}) => {
+      captureImage: ({ thermal = false, includeThermalMap = false } = {}) => {
         if (isDetailedLoading()) return null;
+        if (includeThermalMap && !thermal) {
+          projectionLayer.update({ forceThermal: true });
+          try {
+            if (!projectionLayer.isReady()) return null;
+            return captureWorldSnapshot({ renderer, scene, roots: [equipmentRoot, floor], camera,
+              selectionColors: [SCENE_THEMES[theme].selection, "#ffc14d"], includeThermalMap, thermalImage: false });
+          } finally { projectionLayer.update(); }
+        }
         if (thermal) {
           projectionLayer.update();
           if (!projectionLayer.isReady()) return null;
         }
         return captureWorldSnapshot({ renderer, scene, roots: [equipmentRoot, floor], camera,
-          selectionColors: [SCENE_THEMES[theme].selection, "#ffc14d"] });
+          selectionColors: [SCENE_THEMES[theme].selection, "#ffc14d"], includeThermalMap });
       },
       pickImagePoint: (u, v, textureKind = null) => {
         const entry = renderedEquipment.get(focusEquipment?.id);

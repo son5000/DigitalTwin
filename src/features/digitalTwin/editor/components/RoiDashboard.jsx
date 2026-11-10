@@ -15,7 +15,11 @@ function formatValue(row) {
   return `${Number(row.value.toFixed(2))}${row.unit ? ` ${row.unit}` : ""}`;
 }
 
-export default function RoiDashboard({ roi, sensors = [], readings, now, connection, demo, geometryChanged, onEdit, equipment, projectId, model }) {
+function SettingsDisclosure({ compact, label, children }) {
+  return compact ? <details className={styles.cameraSettings}><summary>{label}</summary>{children}</details> : children;
+}
+
+export default function RoiDashboard({ roi, sensors = [], readings, now, connection, demo, geometryChanged, onEdit, equipment, projectId, model, compact = false }) {
   const point = isObservationRoi(roi) ? roiToObservationPoint(roi) : null;
   const validReadings = geometryChanged ? [] : readings;
   const legacy = point ? null : getRoiReading(roi, validReadings.find((item) => item.roiId === roi.id), now);
@@ -28,15 +32,15 @@ export default function RoiDashboard({ roi, sensors = [], readings, now, connect
   const measurement = point?.measurements?.[0], profile = measurement?.analysisConfig ?? {};
   const pair = ["vision.switchState", "vision.valveState"].includes(measurement?.metric)
     ? statePair(profile.pairId ?? (measurement.metric === "vision.valveState" ? "OPEN_CLOSED" : "POWER")) : null;
-  return <section className={styles.dashboard} aria-label={`${roi.name} 대시보드`}>
-    <div className={styles.dashboardHeading}>
+  return <section className={styles.dashboard} data-compact={compact} aria-label={`${roi.name} 대시보드`}>
+    {!compact && <div className={styles.dashboardHeading}>
       <div><h2>{roi.name}</h2><span data-status={state.level}>{state.label}</span></div>
       <button type="button" onClick={onEdit} aria-label={`${roi.name} 설정`}>설정</button>
-    </div>
-    <div className={styles.dashboardSummary}>
+    </div>}
+    {!compact && <div className={styles.dashboardSummary}>
       <span>{receivedCount && connection === "DISCONNECTED" ? "관측 데이터 표시 중" : demo ? CONNECTION_LABELS.DEMO : CONNECTION_LABELS[connection] ?? "데이터 연결 대기"}</span>
       <strong>수신 {receivedCount} / {rows.length}</strong>
-    </div>
+    </div>}
     {geometryChanged && <p className={styles.error} role="alert">모델이 변경되어 측정값을 표시할 수 없습니다. 설정에서 관측 영역을 확인하세요.</p>}
     {measurement?.metric !== "GENERAL" && <dl className={styles.metricCards}>
       {rows.map((row) => <div key={row.id} data-status={row.state.level}>
@@ -48,25 +52,25 @@ export default function RoiDashboard({ roi, sensors = [], readings, now, connect
         </dd>
       </div>)}
     </dl>}
-    {measurement?.metric === "GENERAL" && equipment && <GeneralObservationDashboard key={roi.id} roi={roi} point={point} rows={rows} equipment={equipment} projectId={projectId} model={model} demo={demo} />}
-    {measurement?.metric === "vision.gaugeValue" && <dl className={styles.geometrySummary}>
+    {measurement?.metric === "GENERAL" && equipment && <GeneralObservationDashboard key={roi.id} roi={roi} point={point} rows={rows} equipment={equipment} projectId={projectId} model={model} demo={demo} compact={compact} />}
+    {measurement?.metric === "vision.gaugeValue" && <SettingsDisclosure compact={compact} label="게이지 판독 기준"><dl className={styles.geometrySummary}>
       <div><dt>바늘 시작</dt><dd>{Number.isFinite(profile.scale?.startAngleDeg) ? `${profile.scale.startAngleDeg}° · ${profile.scale.startValue}${measurement.unit ? ` ${measurement.unit}` : ""}` : "미설정"}</dd></div>
       <div><dt>바늘 끝</dt><dd>{Number.isFinite(profile.scale?.endAngleDeg) ? `${profile.scale.endAngleDeg}° · ${profile.scale.endValue}${measurement.unit ? ` ${measurement.unit}` : ""}` : "미설정"}</dd></div>
       {(measurement.rules ?? []).map((rule, index) => <div key={index}><dt>{rule.severity === "DANGER" ? "이상" : "주의"} 기준</dt><dd>{rule.threshold} {measurement.unit} · {gaugeAngleForValue(profile.scale, rule.threshold)?.toFixed(1) ?? "—"}°</dd></div>)}
-    </dl>}
-    {pair && <dl className={styles.geometrySummary}>
+    </dl></SettingsDisclosure>}
+    {pair && <SettingsDisclosure compact={compact} label="상태 판정 기준"><dl className={styles.geometrySummary}>
       <div><dt>기준 사진의 상태</dt><dd>{profile.referenceState ? stateLabel(profile.referenceState) : "미설정"}</dd></div>
       <div><dt>비교할 상태</dt><dd>{stateLabel(pair.slice(1).find((code) => code !== profile.referenceState))}</dd></div>
       <div><dt>기준 사진</dt><dd>{profile.referenceFrame?.name ?? "미설정"}</dd></div>
-    </dl>}
-    {measurement?.metric === "vision.ledState" && <dl className={styles.geometrySummary}>
+    </dl></SettingsDisclosure>}
+    {measurement?.metric === "vision.ledState" && <SettingsDisclosure compact={compact} label="LED 색상별 상태"><dl className={styles.geometrySummary}>
       {(profile.colors ?? []).map((entry) => <div key={entry.colorKey}><dt>{LED_COLORS.find((color) => color.id === entry.colorKey)?.label ?? entry.colorKey}</dt><dd>{stateLabel(entry.stateCode)} · {{ NORMAL: "정상", WARNING: "주의", DANGER: "이상" }[entry.level] ?? "정상"}</dd></div>)}
       {!profile.colors?.length && <div><dt>색상별 상태</dt><dd>미설정</dd></div>}
-    </dl>}
+    </dl></SettingsDisclosure>}
     {!rows.length && <p className={styles.hint}>표시할 측정 항목이 없습니다. 설정에서 항목을 지정하세요.</p>}
     {measurement?.metric !== "GENERAL" && rows.length > 0 && receivedCount < rows.length && <p className={styles.hint}>수신 대기 항목은 유효한 최신 측정값이 없습니다.</p>}
     {legacy?.measuredAt && <small className={styles.hint}>최근 측정 {new Date(legacy.measuredAt).toLocaleString("ko-KR")}</small>}
-    {point && <dl className={styles.geometrySummary}>
+    {point && !compact && <dl className={styles.geometrySummary}>
       <div><dt>관측 범위</dt><dd>{point.geometryType === "PLANE" ? "평면" : "입체"}</dd></div>
       <div><dt>{point.geometryType === "PLANE" ? "가로 × 세로" : "반경"}</dt><dd>{point.geometryType === "PLANE" ? `${point.planeWidth.toFixed(2)} × ${point.planeHeight.toFixed(2)} m` : `${point.radius.toFixed(2)} m`}</dd></div>
     </dl>}

@@ -93,6 +93,9 @@
 .readings dt { color: var(--roi-muted); }
 .readings dd { margin: 4px 0 0; font-size: 17px; font-weight: 600; }
 .dashboard { display: grid; gap: 12px; padding-top: 12px; }
+.dashboard[data-compact="true"] { gap: 8px; padding-top: 0; }
+.dashboard[data-compact="true"] .metricCards > div, .dashboard[data-compact="true"] .geometrySummary, .dashboard[data-compact="true"] .cameraSettings { border: 0; }
+@media (max-height: 760px) { .dashboard[data-compact="true"] { gap: 5px; } .dashboard[data-compact="true"] .cameraSettings { padding: 4px 0; } }
 .dashboardHeading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .dashboardHeading > div { min-width: 0; }
 .dashboardHeading h2 { margin: 0 0 4px; font-size: 15px; overflow-wrap: anywhere; }
@@ -109,6 +112,10 @@
 .geometrySummary { display: grid; gap: 6px; margin: 0; padding-top: 10px; border-top: 1px solid var(--roi-border); }
 .geometrySummary > div { display: flex; justify-content: space-between; gap: 8px; }
 .geometrySummary dd { margin: 0; text-align: right; }
+.cameraSettings { padding: 7px 0; border-top: 1px solid var(--roi-border); }
+.cameraSettings summary { color: var(--roi-muted); font-size: 11px; font-weight: 600; cursor: pointer; }
+.cameraSettings summary:focus-visible { outline: 2px solid var(--portal-blue, #469beb); outline-offset: 2px; }
+.cameraSettings .geometrySummary { margin-top: 8px; }
 .panel > .form { margin-top: 12px; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .error { border-left: 3px solid #d64747; padding-left: 8px; overflow-wrap: anywhere; }

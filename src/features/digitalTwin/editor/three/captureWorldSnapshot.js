@@ -40,6 +40,10 @@ export function createSnapshotScene({ scene, roots, selectionColors = [] }) {
     const renderSource = Object.create(source);
     renderSource.userData = {};
     const copy = source.isLOD ? new THREE.Group() : renderSource.clone(false);
+    if (source.userData.thermalProjection) {
+      copy.userData.thermalProjection = true;
+      copy.userData.thermalSensorId = source.userData.thermalSensorId;
+    }
     copy.position.copy(source.position);
     copy.quaternion.copy(source.quaternion);
     copy.scale.copy(source.scale);
@@ -120,14 +124,17 @@ function createSnapshotCameraFromView(sourceCamera, aspect = WIDTH / HEIGHT) {
   return camera;
 }
 
-export function captureWorldSnapshot({ renderer, camera: sourceCamera, ...options }) {
+export function captureWorldSnapshot({ renderer, camera: sourceCamera, includeThermalMap = false, thermalImage = true, ...options }) {
   const snapshot = createSnapshotScene(options);
   const target = new THREE.WebGLRenderTarget(WIDTH, HEIGHT, { samples: 4 });
   target.texture.colorSpace = THREE.SRGBColorSpace;
+  const dataTarget = includeThermalMap ? new THREE.WebGLRenderTarget(WIDTH, HEIGHT) : null;
+  if (dataTarget) dataTarget.texture.colorSpace = THREE.NoColorSpace;
   const previous = {
     target: renderer.getRenderTarget(), face: renderer.getActiveCubeFace(), mip: renderer.getActiveMipmapLevel(),
     viewport: renderer.getViewport(new THREE.Vector4()), scissor: renderer.getScissor(new THREE.Vector4()),
     scissorTest: renderer.getScissorTest(), xr: renderer.xr.enabled, autoClear: renderer.autoClear,
+    clearColor: renderer.getClearColor(new THREE.Color()), clearAlpha: renderer.getClearAlpha(),
   };
   try {
     const camera = sourceCamera
@@ -135,9 +142,51 @@ export function captureWorldSnapshot({ renderer, camera: sourceCamera, ...option
       : createSnapshotCamera(snapshot.content);
     renderer.xr.enabled = false;
     renderer.autoClear = true;
-    renderer.setRenderTarget(target);
     renderer.setViewport(0, 0, WIDTH, HEIGHT);
     renderer.setScissorTest(false);
+    let thermalMap = null;
+    const overlays = [];
+    if (includeThermalMap) {
+      snapshot.scene.traverse((object) => { if (object.userData.thermalProjection) overlays.push(object); });
+      if (overlays.length) {
+        const sensorIds = [...new Set(overlays.map((object) => object.userData.thermalSensorId).filter(Boolean))].slice(0, 255);
+        const sensorCodes = new Map(sensorIds.map((id, index) => [id, index + 1]));
+        const originalBackground = snapshot.scene.background;
+        const materials = new Map();
+        snapshot.scene.traverse((object) => {
+          for (const material of (Array.isArray(object.material) ? object.material : [object.material]).filter(Boolean)) {
+            if (!materials.has(material)) materials.set(material, { colorWrite: material.colorWrite, blending: material.blending,
+              sampleMode: material.uniforms?.thermalSampleMode?.value, sensorIndex: material.uniforms?.thermalSensorIndex?.value });
+            const code = object.userData.thermalProjection && sensorCodes.get(object.userData.thermalSensorId);
+            if (code && material.uniforms?.thermalSampleMode) {
+              material.uniforms.thermalSampleMode.value = true;
+              material.uniforms.thermalSensorIndex.value = code;
+              material.blending = THREE.NoBlending;
+            } else material.colorWrite = false;
+          }
+        });
+        try {
+          snapshot.scene.background = null;
+          renderer.setClearColor(0x000000, 0);
+          renderer.setRenderTarget(dataTarget);
+          renderer.render(snapshot.scene, camera);
+          const data = new Uint8Array(WIDTH * HEIGHT * 4);
+          renderer.readRenderTargetPixels(dataTarget, 0, 0, WIDTH, HEIGHT, data);
+          thermalMap = { width: WIDTH, height: HEIGHT, data, sensorIds };
+        } finally {
+          snapshot.scene.background = originalBackground;
+          renderer.setClearColor(previous.clearColor, previous.clearAlpha);
+          for (const [material, saved] of materials) {
+            material.colorWrite = saved.colorWrite;
+            material.blending = saved.blending;
+            if (material.uniforms?.thermalSampleMode) material.uniforms.thermalSampleMode.value = saved.sampleMode;
+            if (material.uniforms?.thermalSensorIndex) material.uniforms.thermalSensorIndex.value = saved.sensorIndex;
+          }
+        }
+      }
+    }
+    if (!thermalImage) overlays.forEach((object) => { object.visible = false; });
+    renderer.setRenderTarget(target);
     renderer.render(snapshot.scene, camera);
     const pixels = new Uint8Array(WIDTH * HEIGHT * 4);
     renderer.readRenderTargetPixels(target, 0, 0, WIDTH, HEIGHT, pixels);
@@ -150,7 +199,8 @@ export function captureWorldSnapshot({ renderer, camera: sourceCamera, ...option
       image.data.set(pixels.subarray((HEIGHT - y - 1) * WIDTH * 4, (HEIGHT - y) * WIDTH * 4), y * WIDTH * 4);
     }
     context.putImageData(image, 0, 0);
-    return canvas.toDataURL("image/png");
+    const url = canvas.toDataURL("image/png");
+    return includeThermalMap ? { url, thermalMap } : url;
   } finally {
     renderer.setRenderTarget(previous.target, previous.face, previous.mip);
     renderer.setViewport(previous.viewport);
@@ -158,7 +208,9 @@ export function captureWorldSnapshot({ renderer, camera: sourceCamera, ...option
     renderer.setScissorTest(previous.scissorTest);
     renderer.xr.enabled = previous.xr;
     renderer.autoClear = previous.autoClear;
+    renderer.setClearColor(previous.clearColor, previous.clearAlpha);
     target.dispose();
+    dataTarget?.dispose();
     snapshot.dispose();
   }
 }
