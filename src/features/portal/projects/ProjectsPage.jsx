@@ -5,6 +5,8 @@ import { navigateTo } from "@/features/customAssets/core/customAssetNavigation";
 import { createProject, getProjectDetails, openProject, readProjects } from "./projectRepository";
 import styles from "./ProjectsPage.module.css";
 import { downloadProjectBundle, exportProjectBundle, importProjectBundle } from "./projectBundle";
+import { projectApiBase } from "./projectConfigurationApi";
+import { listProjectConfigurations } from "./projectListApi";
 
 const PROJECT_VIEW_STORAGE_KEY = "digital-twin-projects-view-v1";
 
@@ -15,6 +17,7 @@ function readProjectView() {
 
 export default function ProjectsPage() {
   const [result, setResult] = useState({ projects: [], loading: true, error: "" });
+  const [serverResult, setServerResult] = useState({ items: [], nextCursor: null, loading: Boolean(projectApiBase), error: "" });
   const [bundleState, setBundleState] = useState({ busy: false, message: "", error: false });
   const [viewMode, setViewMode] = useState(readProjectView);
   useEffect(() => {
@@ -27,6 +30,23 @@ export default function ProjectsPage() {
     window.addEventListener("focus", refresh);
     return () => { window.removeEventListener("storage", refresh); window.removeEventListener("focus", refresh); };
   }, []);
+  useEffect(() => {
+    if (!projectApiBase) return;
+    const controller = new AbortController();
+    listProjectConfigurations({ signal: controller.signal })
+      .then((page) => { if (!controller.signal.aborted) setServerResult({ items: page.items, nextCursor: page.nextCursor, loading: false, error: "" }); })
+      .catch((error) => { if (!controller.signal.aborted) setServerResult((value) => ({ ...value, loading: false, error: error.message })); });
+    return () => controller.abort();
+  }, []);
+
+  async function loadMoreProjects() {
+    if (!serverResult.nextCursor || serverResult.loading) return;
+    setServerResult((value) => ({ ...value, loading: true, error: "" }));
+    try {
+      const page = await listProjectConfigurations({ cursor: serverResult.nextCursor });
+      setServerResult((value) => ({ items: [...value.items, ...page.items.filter((item) => !value.items.some((existing) => existing.projectId === item.projectId))], nextCursor: page.nextCursor, loading: false, error: "" }));
+    } catch (error) { setServerResult((value) => ({ ...value, loading: false, error: error.message })); }
+  }
 
   function enterProject(id) {
     try {
@@ -61,6 +81,10 @@ export default function ProjectsPage() {
     catch { /* Keep the selected view for this session when storage is unavailable. */ }
   }
 
+  const localIds = new Set(result.projects.map((project) => project.id));
+  const serverOnlyProjects = serverResult.items.filter((project) => !localIds.has(project.projectId));
+  const scopeNames = { SITE: "전체 공간·부지", BUILDING: "건물 중심 관측", SINGLE_EQUIPMENT: "단일 설비 관측", MULTI_EQUIPMENT: "다중 설비 관측", CUSTOM: "사용자 정의" };
+
   return <div className={styles.page}>
     <header className={styles.header}><Brand /><a href="/" onClick={(event) => { event.preventDefault(); navigateTo("/"); }}>홈으로</a></header>
     <main className={styles.main}>
@@ -80,24 +104,42 @@ export default function ProjectsPage() {
         </div>
         {bundleState.message && <p className={styles.bundleMessage} data-error={bundleState.error} role={bundleState.error ? "alert" : "status"}>{bundleState.message}</p>}
       </section>
-      {result.loading ? <p role="status">저장된 프로젝트를 확인하는 중입니다.</p> : result.error ? <p className={styles.notice} role="alert">{result.error}</p> : <>
+      {result.loading ? <p role="status">저장된 프로젝트를 확인하는 중입니다.</p> : <>
+        {result.error && <p className={styles.notice} role="alert">{result.error}</p>}
+        {serverResult.error && <p className={styles.notice} role="alert">서버 프로젝트 목록을 불러오지 못했습니다. {serverResult.error}</p>}
+        {serverResult.loading && <p role="status">서버 프로젝트 목록을 확인하는 중입니다.</p>}
         <div className={styles.listToolbar}>
-          <span>저장된 프로젝트 <strong>{result.projects.length}</strong></span>
+          <span>저장된 프로젝트 <strong>{result.projects.length + serverOnlyProjects.length}</strong></span>
           <div className={styles.viewToggle} role="group" aria-label="프로젝트 보기 방식">
             <button type="button" aria-pressed={viewMode === "grid"} onClick={() => changeViewMode("grid")}><GridViewIcon size={17} /><span>카드 보기</span></button>
             <button type="button" aria-pressed={viewMode === "list"} onClick={() => changeViewMode("list")}><ListViewIcon size={17} /><span>리스트 보기</span></button>
           </div>
         </div>
-        {!result.projects.length && <div className={styles.empty}><h2>아직 저장된 프로젝트나 뷰어가 없습니다</h2><p>새 월드를 만들고 관측할 부지, 건축물 또는 설비를 선택하세요.</p></div>}
+        {!result.projects.length && !serverOnlyProjects.length && !serverResult.loading && <div className={styles.empty}><h2>아직 저장된 프로젝트나 뷰어가 없습니다</h2><p>새 월드를 만들고 관측할 부지, 건축물 또는 설비를 선택하세요.</p></div>}
         <div className={styles.grid} data-view={viewMode}>
+          {serverOnlyProjects.map((project) => {
+            const scope = scopeNames[project.scopeType] ?? scopeNames.SITE;
+            const image = project.scopeType.includes("EQUIPMENT") ? "sensors" : project.scopeType === "BUILDING" ? "building" : "site";
+            const modified = new Date(project.updatedAt);
+            return <article key={project.projectId} className={styles.card} aria-label={project.name}>
+              <img className={styles.thumbnail} src={project.thumbnailUrl || `/portal/workflow-${image}.svg`} alt={`${scope} 미리보기`} width="800" height="480" />
+              <div className={styles.cardBody}><div className={styles.cardInfo}><span className={styles.status} data-draft={project.status === "DRAFT"}>{project.status === "DRAFT" ? "작업 중" : "저장 완료"}</span><h2>{project.name}</h2><p>{scope}</p><small>최근 수정 · {Number.isNaN(modified.getTime()) ? "수정일 정보 없음" : modified.toLocaleString("ko-KR", { dateStyle: "medium", timeStyle: "short" })}</small></div>
+                <div className={styles.actions}>{project.publishedRevision ? <button className={styles.primary} onClick={() => navigateTo(`/viewer?project=${encodeURIComponent(project.projectId)}`)}>뷰어 열기</button> : <span>공개된 뷰어가 없습니다</span>}</div>
+              </div>
+            </article>;
+          })}
           {result.projects.map((project) => {
             const details = getProjectDetails(project);
+            const serverProject = serverResult.items.find((item) => item.projectId === project.id);
+            const canOpenViewer = project.storageMode === "LOCAL" || !projectApiBase
+              ? project.layout.observationWorkflow?.configured !== false
+              : serverProject ? Boolean(serverProject.publishedRevision) : project.layout.observationWorkflow?.configured !== false;
             return <article key={project.id} className={styles.card} aria-label={details.name}>
               <img className={styles.thumbnail} src={details.thumbnail} alt={`${details.scope} 미리보기`} width="800" height="480" />
               <div className={styles.cardBody}><div className={styles.cardInfo}><span className={styles.status} data-draft={details.isDraft}>{details.status}</span><h2>{details.name}</h2><p>{details.scope}</p><small>최근 수정 · {details.modified}</small></div>
                 <div className={styles.actions}>
                   {details.isDraft ? <button className={styles.primary} onClick={() => enterProject(project.id)}>이어서 편집</button> : null}
-                  {project.layout.observationWorkflow?.configured !== false ? <button className={details.isDraft ? undefined : styles.primary} onClick={() => navigateTo(`/viewer?project=${encodeURIComponent(project.id)}`)}>뷰어 열기</button> : null}
+                  {canOpenViewer ? <button className={details.isDraft ? undefined : styles.primary} onClick={() => navigateTo(`/viewer?project=${encodeURIComponent(project.id)}`)}>뷰어 열기</button> : null}
                   <button className={styles.developer} onClick={() => navigateTo(`/viewer?project=${encodeURIComponent(project.id)}&developer=1`)} aria-label={`${details.name} 개발자 뷰어 열기`} title="테스트 데이터를 주입할 수 있는 뷰어">개발자 뷰어</button>
                   {!details.isDraft ? <button onClick={() => enterProject(project.id)}>편집하기</button> : null}
                   <button disabled={bundleState.busy} onClick={() => exportBundle(project)}>ZIP 내보내기</button>
@@ -107,6 +149,7 @@ export default function ProjectsPage() {
           })}
           <button className={`${styles.card} ${styles.newCard}`} onClick={() => enterProject()}><span aria-hidden="true">＋</span><strong>새 월드 만들기</strong><small>관측 범위 선택부터 시작하세요</small></button>
         </div>
+        {serverResult.nextCursor && <button type="button" disabled={serverResult.loading} onClick={loadMoreProjects}>{serverResult.loading ? "불러오는 중…" : "프로젝트 더 보기"}</button>}
       </>}
     </main>
   </div>;

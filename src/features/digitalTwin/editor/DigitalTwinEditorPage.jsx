@@ -9,6 +9,8 @@ import { CUSTOM_BUILDING_CREATE_ID, CUSTOM_EQUIPMENT_CREATE_ID } from "@/feature
 import { loadLayout, saveLayout, serializeLayout } from "@/features/digitalTwin/editor/api/layoutRepository";
 import { monitoringApiBase } from "@/features/digitalTwin/editor/api/monitoringClient";
 import { readProjects } from "@/features/portal/projects/projectRepository";
+import { projectApiBase, saveProjectConfiguration } from "@/features/portal/projects/projectConfigurationApi";
+import { uploadProjectAssets } from "@/features/portal/projects/projectAssetApi";
 import BuildingDetailNavigator from "@/features/digitalTwin/editor/components/BuildingDetailNavigator";
 import EditorToolbar from "@/features/digitalTwin/editor/components/EditorToolbar";
 import EnvironmentSettingsPanel from "@/features/digitalTwin/editor/components/EnvironmentSettingsPanel";
@@ -877,14 +879,16 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     setStepTransitionPrompt(null);
     enterStep(stepId);
   }, [editor.allMonitoringEquipment.length, editor.observationWorkflow.activeStepIds, editor.observationWorkflow.scopeType, enterStep, userBuildings.length, wizardStepId]);
-  const saveAndReturnToProjects = useCallback((projectStatus = "DRAFT") => {
+  const saveAndReturnToProjects = useCallback(async (projectStatus = "DRAFT") => {
+    if (isSaving) return;
     if (pendingAssetUploads > 0) {
       setSaveStatus("3D 파일 저장이 끝난 후 다시 저장해 주세요.");
       return;
     }
+    let payload = null;
     try {
       if (editor.observationWorkflow.configured || editor.projectName.trim()) {
-        saveLayout({ ...editor.layoutDocument, projectStatus });
+        payload = saveLayout({ ...editor.layoutDocument, projectStatus });
       }
     } catch {
       setSaveStatus("저장하지 못했습니다");
@@ -896,10 +900,33 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
       });
       return;
     }
+    if (payload && projectApiBase) {
+      setIsSaving(true);
+      setSaveStatus("프로젝트 구성을 서버에 저장하는 중입니다…");
+      try {
+        const projectId = readProjects().activeId;
+        setSaveStatus("프로젝트 파일을 서버에 저장하는 중입니다…");
+        const assetUploadId = await uploadProjectAssets(projectId, payload);
+        setSaveStatus("프로젝트 구성을 서버에 저장하는 중입니다…");
+        const result = await saveProjectConfiguration(projectId, payload, undefined, assetUploadId);
+        setSaveStatus(`서버 저장 완료 · 버전 ${result.revision}`);
+      } catch (error) {
+        setSaveStatus(`서버 저장 실패 · ${error.message}`);
+        setStepTransitionPrompt({
+          caption: "서버 저장 안내", title: "서버에 저장하지 못했습니다",
+          projectStatus,
+          message: `${error.message} 로컬 저장은 완료되었으며 현재 편집 화면을 유지합니다.`,
+          actions: [{ id: STEP_TRANSITION_ACTION_IDS.CANCEL, label: "계속 편집" }, { id: STEP_TRANSITION_ACTION_IDS.SAVE_AND_EXIT, label: "다시 저장" }],
+        });
+        return;
+      } finally {
+        setIsSaving(false);
+      }
+    }
     setHasUnsavedChanges(false);
     setStepTransitionPrompt(null);
     navigateToAppRoute("/projects");
-  }, [editor.layoutDocument, editor.observationWorkflow.configured, editor.projectName, pendingAssetUploads]);
+  }, [editor.layoutDocument, editor.observationWorkflow.configured, editor.projectName, isSaving, pendingAssetUploads]);
   const requestReturnToProjects = useCallback(() => {
     setStepTransitionPrompt({
       caption: "프로젝트 목록", title: "프로젝트 목록으로 돌아가시겠습니까?",

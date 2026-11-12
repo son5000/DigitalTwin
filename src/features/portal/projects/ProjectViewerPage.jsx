@@ -35,6 +35,9 @@ import { VIEW_MODES } from "@/features/digitalTwin/editor/constants/equipmentSha
 import { SITE_INTERACTION_MODES } from "@/features/digitalTwin/editor/constants/siteEnvironmentTemplates";
 import { MOVEMENT_PLAYBACK_STATES } from "@/features/digitalTwin/editor/model/movementPath";
 import { getProjectDetails, PROJECT_STORAGE_KEY, readProjects } from "./projectRepository";
+import { projectApiBase } from "./projectConfigurationApi";
+import { loadViewerProjectConfiguration } from "./projectViewerApi";
+import { loadViewerProjectAssets } from "./projectAssetApi";
 import styles from "./ProjectsPage.module.css";
 import viewerStyles from "./ProjectViewerPage.module.css";
 
@@ -42,26 +45,41 @@ const EMPTY_ITEMS = [];
 const VIEWER_MOVEMENT_PLAYBACK = { status: MOVEMENT_PLAYBACK_STATES.PLAYING, currentTime: 0, revision: 0 };
 const VIEWER_MOVEMENT_PAUSED = { status: MOVEMENT_PLAYBACK_STATES.PAUSED, currentTime: 0, revision: 0 };
 const METRIC_LABELS = { TEMPERATURE: "온도", PRESSURE: "압력", VIBRATION: "진동", NOISE: "소음", POWER: "전력", FLOW: "유량", VIDEO: "영상" };
+const dedicatedProjectApi = Boolean(import.meta.env?.VITE_PROJECT_API_BASE);
+
+async function loadViewerProject(projectId, signal) {
+  let result;
+  try {
+    result = await loadViewerProjectConfiguration(projectId, signal);
+  } catch (error) {
+    if (!dedicatedProjectApi && monitoringApiBase && error.status === 404) {
+      return loadMonitoringProject(projectId, signal);
+    }
+    throw error;
+  }
+  await loadViewerProjectAssets(projectId, result.revision, result.layout, signal);
+  return { id: result.projectId, layout: result.layout, revision: result.revision, storageMode: "SERVER" };
+}
 
 export default function ProjectViewerPage({ projectId, requestedEquipmentId = null, operationsSection = null, operationsRecord = null }) {
   const [result, setResult] = useState(() => {
     try {
       const project = readProjects().projects.find((item) => item.id === projectId);
-      if (monitoringApiBase && project?.storageMode !== "LOCAL") return { loading: true };
+      if (projectApiBase && project?.storageMode !== "LOCAL") return { loading: true };
       return project ? { project } : { error: "프로젝트를 찾을 수 없습니다." };
-    } catch (error) { return { error: error.message }; }
+    } catch (error) { return projectApiBase ? { loading: true } : { error: error.message }; }
   });
   const localImport = result.project?.storageMode === "LOCAL";
   useEffect(() => {
-    if (!monitoringApiBase || localImport) return;
+    if (!projectApiBase || localImport) return;
     const controller = new AbortController();
-    loadMonitoringProject(projectId, AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]))
+    loadViewerProject(projectId, controller.signal)
       .then((project) => { if (!controller.signal.aborted) setResult({ project }); })
       .catch((error) => { if (!controller.signal.aborted) setResult({ error: error.message }); });
     return () => controller.abort();
   }, [projectId, localImport]);
   useEffect(() => {
-    if (monitoringApiBase && !localImport) return;
+    if (projectApiBase && !localImport) return;
     let timer;
     function refresh(event) {
       if (![LAYOUT_STORAGE_KEY, PROJECT_STORAGE_KEY].includes(event.key)) return;

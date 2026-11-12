@@ -68,6 +68,48 @@ export async function exportProjectBundle(project, { onProgress = () => {}, stor
     externalReferences: [...references], requires: ["동일 버전의 뷰어 빌드와 기본 제공 리소스", "실시간 데이터 사용 시 센서 서버 연결"] }, onProgress);
 }
 
+export function collectProjectAssetIds(layout) {
+  const equipmentIds = new Set(), textureIds = new Set(), customIds = new Set();
+  visit(layout, (node) => {
+    if (node.sourceType === "UPLOAD" && node.assetId) equipmentIds.add(node.assetId);
+    if (node.textureAssetId) textureIds.add(node.textureAssetId);
+    if (node.customAssetId) customIds.add(node.customAssetId);
+    Object.values(node).forEach((value) => {
+      const id = typeof value === "string" && getCustomAssetIdFromTemplate(value);
+      if (id) customIds.add(id);
+    });
+  });
+  return { equipmentIds, textureIds, customIds };
+}
+
+// Use the same archive format for server-side asset storage without copying
+// the project's configuration or requiring the ROI service during Save.
+export async function createProjectAssetArchive(projectId, layout) {
+  const { equipmentIds, textureIds, customIds } = collectProjectAssetIds(layout);
+  visit(layout, (node) => {
+    if (node.objectUrl && !node.assetId) throw new Error("임시 업로드 파일이 있습니다. 파일을 등록한 뒤 다시 저장하세요.");
+  });
+  const assets = { equipment: [], textures: [], custom: [] };
+  for (const id of customIds) {
+    const asset = await customAssetRepository.get(id);
+    if (!asset) throw new Error(`커스텀 모델을 찾을 수 없습니다: ${id}`);
+    assets.custom.push(asset);
+    visit(asset, (node) => { if (node.textureAssetId) textureIds.add(node.textureAssetId); });
+  }
+  for (const id of equipmentIds) {
+    const asset = await equipmentAssetRepository.get(id);
+    if (!asset?.files?.length || asset.files.some((file) => !(file.blob instanceof Blob))) throw new Error(`등록된 설비 원본 파일을 찾을 수 없습니다: ${id}`);
+    assets.equipment.push(asset);
+  }
+  for (const id of textureIds) {
+    const asset = await textureAssetRepository.get(id);
+    if (!(asset?.blob instanceof Blob)) throw new Error(`등록된 텍스처를 찾을 수 없습니다: ${id}`);
+    assets.textures.push(asset);
+  }
+  if (Object.values(assets).every((items) => items.length === 0)) return null;
+  return encodeProjectZip({ format: "digital-twin-assets", version: 2, projectId, assets });
+}
+
 // The backend owns durable storage. It must validate the ZIP and return the
 // same project ID plus a new revision before the editor reports success.
 export async function sendProjectBundle(project, blob, signal) {
