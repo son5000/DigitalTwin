@@ -1,8 +1,7 @@
-const configuredApiBase = import.meta.env?.VITE_PROJECT_API_BASE
-  || import.meta.env?.VITE_MONITORING_API_BASE
-  || "";
-
-export const projectApiBase = configuredApiBase.trim().replace(/\/+$/, "");
+const monitoringBase = (import.meta.env?.VITE_MONITORING_API_BASE || "").trim().replace(/\/+$/, "");
+const configuredProjectBase = (import.meta.env?.VITE_PROJECT_API_BASE || "").trim().replace(/\/+$/, "");
+export const projectApiBase = configuredProjectBase
+  || (monitoringBase.endsWith("/api/fe/v1") ? `${monitoringBase.slice(0, -"/api/fe/v1".length)}/api/v1` : "");
 
 export function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -19,49 +18,15 @@ function requestSignal(signal, timeout = 30000) {
   return signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
 }
 
-function configurationPath(projectId) {
-  return `/projects/${encodeURIComponent(projectId)}/configuration`;
-}
-
-export function createProjectConfigurationPayload(projectId, layout, assetUploadId = null) {
-  assertProjectId(projectId);
-  if (!isRecord(layout) || !Array.isArray(layout.hierarchy?.nodes)) {
+export function createProjectConfigurationPayload(layout, baseRevision = 0) {
+  if (!isRecord(layout) || layout.version !== 18 || !Array.isArray(layout.hierarchy?.nodes)) {
     throw new Error("저장할 프로젝트 구성을 확인해 주세요.");
   }
-  const currentObservationConfig = isRecord(layout.observationConfig) ? layout.observationConfig : {};
-  const observationConfig = {
-    ...currentObservationConfig,
-    equipmentAssetBindings: currentObservationConfig.equipmentAssetBindings ?? layout.equipmentAssetBindings ?? [],
-    sensorBindings: currentObservationConfig.sensorBindings ?? layout.sensorBindings ?? [],
-    observationPoints: currentObservationConfig.observationPoints ?? layout.observationPoints ?? [],
-    serverBindings: currentObservationConfig.serverBindings ?? layout.serverBindings ?? [],
-  };
-  const name = layout.name ?? "";
-  const projectStatus = layout.projectStatus ?? "DRAFT";
-  const observationWorkflow = layout.observationWorkflow ?? {};
-  const viewerPreset = layout.viewerPreset ?? {};
-  const representativeImage = layout.representativeImage ?? null;
-  const worldDocument = { ...layout };
-  ["name", "projectStatus", "observationWorkflow", "viewerPreset", "representativeImage",
-    "equipmentAssetBindings", "sensorBindings", "observationPoints", "serverBindings", "observationConfig"]
-    .forEach((key) => delete worldDocument[key]);
-  return {
-    schemaVersion: 1,
-    requestId: crypto.randomUUID(),
-    ...(assetUploadId ? { assetUploadId } : {}),
-    projectId,
-    savedAt: layout.savedAt ?? new Date().toISOString(),
-    project: {
-      name,
-      status: projectStatus,
-      scopeType: observationWorkflow.scopeType ?? "SITE",
-      observationWorkflow,
-      representativeImage,
-    },
-    worldDocument,
-    viewerPreset,
-    observationConfig,
-  };
+  if (!Number.isInteger(baseRevision) || baseRevision < 0) throw new Error("기준 프로젝트 버전을 확인해 주세요.");
+  if (new Blob([JSON.stringify(layout)]).size > 1024 * 1024) {
+    throw new Error("서버의 구성 크기 제한은 1MiB입니다. 큰 이미지나 스캔은 별도 자산 등록이 필요합니다.");
+  }
+  return { baseRevision, layout, assetManifest: [], clientRequestId: crypto.randomUUID() };
 }
 
 export async function projectRequest(path, options = {}) {
@@ -70,30 +35,59 @@ export async function projectRequest(path, options = {}) {
     credentials: "same-origin",
     ...options,
     signal: requestSignal(options.signal),
-    headers: { "Content-Type": "application/json", ...options.headers },
+    headers: { ...(options.body ? { "Content-Type": "application/json" } : {}), ...options.headers },
   });
+  const body = response.status === 204 ? null : await response.json().catch(() => null);
   if (!response.ok) {
-    const message = response.status === 401 || response.status === 403
+    const message = body?.error?.message || (response.status === 401 || response.status === 403
       ? "프로젝트 접근 권한을 확인해 주세요."
       : response.status === 409 || response.status === 412
-        ? "서버의 프로젝트가 변경되었습니다. 최신 구성을 불러온 뒤 다시 저장해 주세요."
-        : `프로젝트 서버 요청에 실패했습니다 (${response.status}).`;
+        ? "서버의 프로젝트 버전 또는 게시 상태가 변경되었습니다."
+        : `프로젝트 서버 요청에 실패했습니다 (${response.status}).`);
     const error = new Error(message);
     error.status = response.status;
+    error.code = body?.error?.code;
     throw error;
   }
-  return response.status === 204 ? null : response.json();
+  if (response.status === 204) return null;
+  if (!isRecord(body) || !isRecord(body.data)) throw new Error("서버의 프로젝트 응답 형식을 확인해 주세요.");
+  return body.data;
 }
 
-export async function saveProjectConfiguration(projectId, layout, signal, assetUploadId = null) {
-  const payload = createProjectConfigurationPayload(projectId, layout, assetUploadId);
-  const result = await projectRequest(configurationPath(projectId), {
-    method: "PUT",
-    body: JSON.stringify(payload),
-    signal,
+export async function createBackendProject(externalProjectId, layout, signal) {
+  assertProjectId(externalProjectId);
+  const result = await projectRequest("/projects", {
+    method: "POST", signal,
+    body: JSON.stringify({ name: layout.name?.trim() || "새 프로젝트", scope: layout.observationWorkflow?.scopeType || "SITE",
+      externalProjectId, clientRequestId: crypto.randomUUID() }),
   });
-  if (result?.projectId !== projectId || !Number.isInteger(result.revision) || result.revision < 1) {
+  if (typeof result?.project?.id !== "string" || !result.project.id
+    || result.project.externalProjectId != null && result.project.externalProjectId !== externalProjectId) {
+    throw new Error("서버의 프로젝트 생성 결과를 확인할 수 없습니다.");
+  }
+  return result.project;
+}
+
+export async function saveProjectConfiguration(projectId, layout, signal, baseRevision = 0) {
+  assertProjectId(projectId);
+  const result = await projectRequest(`/projects/${encodeURIComponent(projectId)}/draft`, {
+    method: "PUT", signal, body: JSON.stringify(createProjectConfigurationPayload(layout, baseRevision)),
+  });
+  if (result?.projectId !== projectId || !Number.isInteger(result.revision) || result.revision <= baseRevision) {
     throw new Error("서버의 프로젝트 저장 결과를 확인할 수 없습니다.");
   }
+  return result;
+}
+
+export async function publishProjectConfiguration(projectId, revision, signal) {
+  assertProjectId(projectId);
+  if (!Number.isInteger(revision) || revision < 1) throw new Error("게시할 프로젝트 버전을 확인해 주세요.");
+  const path = `/projects/${encodeURIComponent(projectId)}`;
+  const validation = await projectRequest(`${path}/validate`, { method: "POST", signal, body: JSON.stringify({ revision }) });
+  if (validation?.valid !== true) throw new Error(`서버 게시 검증에 실패했습니다. ${validation?.issues?.[0]?.message || "구성과 자산을 확인해 주세요."}`);
+  const result = await projectRequest(`${path}/publish`, {
+    method: "POST", signal, body: JSON.stringify({ revision, clientRequestId: crypto.randomUUID() }),
+  });
+  if (result?.projectId !== projectId || result.publishedRevision !== revision) throw new Error("서버의 게시 결과를 확인할 수 없습니다.");
   return result;
 }

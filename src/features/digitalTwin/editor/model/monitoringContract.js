@@ -10,7 +10,11 @@ export const MONITORING_MODES = { MODEL: "모델", VISION: "비전", THERMAL: "�
 
 export function mediaUrl(value, demo = false) {
   if (typeof value !== "string") return "";
-  if (value.startsWith("/") && !value.startsWith("//")) return value;
+  if (value.startsWith("/") && !value.startsWith("//")) {
+    const backend = import.meta.env?.VITE_MONITORING_API_BASE?.trim();
+    return value.startsWith("/api/") && /^https?:\/\//i.test(backend)
+      ? new URL(value, backend).href : value;
+  }
   if (/^https?:\/\//i.test(value)) return value;
   if (demo && /^data:image\/svg\+xml[,;]/.test(value)) return value;
   return "";

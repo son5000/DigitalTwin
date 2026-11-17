@@ -16,13 +16,28 @@ export const EQUIPMENT_SETUP_STEPS = Object.freeze([
   { id: "REVIEW", number: 6, label: "최종 확인", description: "고객 뷰어의 시작 화면과 설비 설정을 확인하고 저장하세요." },
 ]);
 
-const SCAN_SETUP_STEP = Object.freeze({ id: "SCAN", number: "2.5", label: "스캔 파일·정합", description: "문별 스캔을 연결하고 실제 크기, 방향, 위치와 기준좌표를 맞추세요." });
+const SCAN_SETUP_STEP = Object.freeze({ id: "SCAN", number: "2.5", label: "스캔 파일·정합", description: "전체 또는 문별 스캔을 연결하고 실제 크기, 방향, 위치와 기준좌표를 맞추세요." });
+const OPTIONAL_SETUP_STEPS = new Set(["SENSOR", "VIRTUAL_CAMERA", "POINT"]);
+
+export function canSkipEquipmentSetupStep(stepId, { equipment, sensors = [], points = [], viewerPreset } = {}) {
+  if (!OPTIONAL_SETUP_STEPS.has(stepId)) return false;
+  if (stepId === "SENSOR") return sensors.length === 0;
+  if (stepId === "VIRTUAL_CAMERA") return !viewerPreset?.virtualCameras?.[equipment?.id]?.length;
+  return points.length === 0;
+}
 
 export function getEquipmentModelMode(equipment, assets = []) {
   const choice = equipment?.metadata?.modelComposition;
   if (["SCAN", "SHAPE", "BOTH"].includes(choice)) return choice;
   const binding = assets.filter((item) => item.equipmentId === equipment?.id && ["OBJ", "PLY"].includes(item.assetType)).at(-1);
   return !binding || binding.displayMode === "PROXY" ? "SHAPE" : binding.includeProxy || binding.displayMode === "COMPARE" ? "BOTH" : "SCAN";
+}
+
+export function hasEquipmentModelPreview(equipment, assets = []) {
+  if (!equipment || equipment.metadata?.initialModelPending) return false;
+  return getEquipmentModelMode(equipment, assets) === "SCAN"
+    ? equipmentScanBindings(equipment, assets).length > 0
+    : equipment.metadata?.exteriorSelected !== false;
 }
 
 export function getEquipmentSetupSteps(equipment, assets = []) {
@@ -54,12 +69,30 @@ export function updateEquipmentSetup(equipment, stepId, status, assets = []) {
   };
 }
 
-export function getEquipmentSetupSaveSummary(equipment = [], assets = []) {
+export function invalidateEquipmentModelSetup(equipment, { scan = false } = {}) {
+  const current = equipment?.metadata?.detailSetup ?? {};
+  return {
+    ...current,
+    steps: { ...current.steps, ASSET: "PENDING", ...(scan ? { SCAN: "PENDING" } : {}), REVIEW: "PENDING" },
+  };
+}
+
+export function getEquipmentSetupSaveSummary(equipment = [], assets = [], context = null) {
   return equipment.reduce((summary, item) => {
     const setup = getEquipmentSetup(item, assets);
-    const pending = getEquipmentSetupSteps(item, assets).length - setup.completed - setup.skipped;
+    const steps = getEquipmentSetupSteps(item, assets);
+    const validation = context ? {
+      equipment: item,
+      assets: assets.filter((asset) => asset.equipmentId === item.id),
+      sensors: (context.sensors ?? []).filter((sensor) => sensor.equipmentIds?.includes(item.id)),
+      points: (context.points ?? []).filter((point) => point.equipmentId === item.id),
+      viewerPreset: context.viewerPreset,
+    } : null;
+    const pending = steps.filter(({ id }) => setup.steps[id] === "PENDING"
+      || setup.steps[id] === "SKIPPED" && !canSkipEquipmentSetupStep(id, validation ?? undefined)
+      || setup.steps[id] === "DONE" && validation && getSetupStepValidation(id, validation)).length;
     return {
-      equipmentCount: summary.equipmentCount + (pending + setup.skipped > 0 ? 1 : 0),
+      equipmentCount: summary.equipmentCount + (pending > 0 ? 1 : 0),
       pendingCount: summary.pendingCount + pending,
       skippedCount: summary.skippedCount + setup.skipped,
     };
@@ -84,7 +117,7 @@ export function getSensorReadingState(point, value) {
 export const SETUP_REQUIREMENTS = Object.freeze({
   BASIC: "필수: 설비명. 모델 파일·사진·제조사 정보는 선택 사항입니다.",
   ASSET: "필수: 표시할 모델, 유효한 크기, 기준좌표 적용. 스캔 사용 시 모델 정합 완료도 확인하세요.",
-  SCAN: "각 문의 스캔 파일을 연결하고 크기·방향·위치·기준좌표를 확인하세요.",
+  SCAN: "전체 또는 문별 스캔 파일을 연결하고 크기·방향·위치·기준좌표를 확인하세요.",
   SENSOR: "필수: 센서 이름·시리얼, 센서 조회, 유효한 설치 위치, 위치·화각 보정 확인. 텍스처는 사용할 때 설정하세요.",
   VIRTUAL_CAMERA: "관측에 사용할 시점을 저장하세요. 가상 카메라 없이 진행하려면 건너뛰기를 선택하세요.",
   POINT: "필수: 영역 이름과 관측 항목. 가상 카메라 이미지에서 영역을 지정하면 2D 좌표와 설비 표면 좌표가 함께 저장됩니다.",
@@ -98,7 +131,10 @@ export function getSetupStepValidation(step, context) {
   if (step === "REVIEW") {
     const setup = getEquipmentSetup(equipment, assets);
     for (const { id } of getEquipmentSetupSteps(equipment, assets).slice(0, -1)) {
-      if (setup.steps[id] === "SKIPPED") continue;
+      if (setup.steps[id] === "SKIPPED") {
+        if (canSkipEquipmentSetupStep(id, context)) continue;
+        return issue("step-start", OPTIONAL_SETUP_STEPS.has(id) ? "등록된 항목이 있어 이 단계를 완료해야 합니다." : "뷰어를 완성하려면 이 필수 단계를 설정해 주세요.", { step: id });
+      }
       const invalid = getSetupStepValidation(id, context);
       if (invalid) return invalid;
       if (setup.steps[id] !== "DONE") return issue("step-start", "이 단계의 설정을 확인하고 ‘완료 후 다음’을 눌러주세요.", { step: id });
@@ -106,18 +142,21 @@ export function getSetupStepValidation(step, context) {
     return null;
   }
   if (step === "BASIC" && !equipment?.name?.trim()) return issue("equipment-name", "설비명을 입력하세요.");
+  if (step === "ASSET" && equipment?.metadata?.initialModelPending) return issue("model-size", "스캔, 외관 도형 또는 두 방식을 함께 사용할지 선택하세요.");
   const modelMode = getEquipmentModelMode(equipment, assets);
   if (step === "ASSET" && modelMode !== "SCAN") {
     const enclosure = getEnclosure(equipment);
-    if (!equipment?.shapeTemplateId && !enclosure.enabled) return issue("model-size", "표시할 외관 도형을 선택하거나 이 단계를 건너뛰세요.");
+    if (!equipment?.shapeTemplateId && !enclosure.enabled) return issue("exterior-catalog", "표시할 외관 도형을 선택하세요.");
+    if (equipment?.metadata?.exteriorSelected === false) return issue("exterior-catalog", "외관에 사용할 도형을 선택하세요.");
     if (enclosure.enabled && [enclosure.width, enclosure.height, enclosure.depth, enclosure.thickness].some((value) => !finite(value) || Number(value) <= 0)) return issue("model-size", "외관의 가로·높이·깊이와 판 두께를 0보다 크게 입력하세요.");
   }
   if ((step === "ASSET" && modelMode !== "BOTH") || step === "SCAN") {
     const scans = assets.filter((asset) => asset.equipmentId === equipment?.id && ["OBJ", "PLY"].includes(asset.assetType));
     const assigned = scans.filter((asset) => asset.scanSlot);
-    const doors = modelMode === "BOTH" ? getEnclosureDoorEntries(equipment) : [];
-    if (modelMode === "BOTH" && doors.length && !assigned.length)
-      return issue("model-files", "각 문의 내부 스캔을 연결하세요.");
+    const wholeScan = scans.some((asset) => !asset.scanSlot);
+    const doors = modelMode === "BOTH" && getEnclosure(equipment).enabled ? getEnclosureDoorEntries(equipment) : [];
+    if (modelMode === "BOTH" && doors.length && !assigned.length && !wholeScan)
+      return issue("model-files", "설비 전체 또는 각 문의 내부 스캔을 연결하세요.");
     if (modelMode !== "SHAPE" && assigned.length) {
       if (getEnclosure(equipment).bodyLayout !== "BACK_TO_BACK" && assigned.some((asset) => asset.scanSlot.side === "FRONT")
         && assigned.some((asset) => asset.scanSlot.side === "REAR")) return issue("model-files", "앞뒤 문에 각각 스캔을 연결했다면 캐비넷 구조를 ‘앞뒤 두 공간’으로 설정하세요.");

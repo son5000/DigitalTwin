@@ -1,27 +1,27 @@
 import { assertProjectId, isRecord, projectRequest } from "./projectConfigurationApi.js";
 
-export async function loadViewerProjectConfiguration(projectId, signal) {
-  assertProjectId(projectId);
-  const result = await projectRequest(`/projects/${encodeURIComponent(projectId)}/viewer`, { signal });
-  if (result?.projectId !== projectId || result.schemaVersion !== 1
-    || !Number.isInteger(result.revision) || result.revision < 1
-    || !isRecord(result.project) || !isRecord(result.worldDocument)
-    || !Array.isArray(result.worldDocument.hierarchy?.nodes)
-    || !isRecord(result.viewerPreset) || !isRecord(result.observationConfig)) {
+export function parseProjectConfiguration(result, projectId) {
+  const project = result?.project;
+  if (!isRecord(project) || project.id !== projectId
+    || !Number.isInteger(project.revision) || project.revision < 1
+    || !isRecord(project.layout) || project.layout.version !== 18
+    || !Array.isArray(project.layout.hierarchy?.nodes)) {
     throw new Error("서버의 뷰어 구성 형식을 확인해 주세요.");
   }
-  const layout = {
-    ...result.worldDocument,
-    name: result.project.name ?? "",
-    projectStatus: result.project.status ?? "READY",
-    observationWorkflow: result.project.observationWorkflow ?? {},
-    representativeImage: result.project.representativeImage ?? null,
-    viewerPreset: result.viewerPreset,
-    observationConfig: result.observationConfig,
-    equipmentAssetBindings: result.observationConfig.equipmentAssetBindings ?? [],
-    sensorBindings: result.observationConfig.sensorBindings ?? [],
-    observationPoints: result.observationConfig.observationPoints ?? [],
-    serverBindings: result.observationConfig.serverBindings ?? [],
-  };
-  return { ...result, layout };
+  const layout = project.layout;
+  const observationConfig = layout.observationConfig ?? {};
+  return { projectId: project.id, externalProjectId: project.externalProjectId ?? project.id,
+    revision: project.revision, assetManifest: project.assetManifest ?? [],
+    layout: { ...layout,
+      equipmentAssetBindings: layout.equipmentAssetBindings ?? observationConfig.equipmentAssetBindings ?? [],
+      sensorBindings: layout.sensorBindings ?? observationConfig.sensorBindings ?? [],
+      observationPoints: layout.observationPoints ?? observationConfig.observationPoints ?? [],
+      serverBindings: layout.serverBindings ?? observationConfig.serverBindings ?? [],
+    } };
+}
+
+export async function loadViewerProjectConfiguration(projectId, signal) {
+  assertProjectId(projectId);
+  const result = await projectRequest(`/projects/${encodeURIComponent(projectId)}?mode=viewer`, { signal });
+  return parseProjectConfiguration(result, projectId);
 }

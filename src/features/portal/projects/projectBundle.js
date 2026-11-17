@@ -8,6 +8,7 @@ import { calibrationPayload } from "../../digitalTwin/editor/model/monitoringCon
 import { PROJECT_STORAGE_KEY, readProjects } from "./projectRepository";
 import { decodeProjectFile, encodeProjectZip, safeBundleName } from "./projectBundleFiles.js";
 import { monitoringApiBase } from "../../digitalTwin/editor/api/monitoringClient.js";
+import { projectApiBase } from "./projectConfigurationApi.js";
 
 function visit(value, callback) {
   if (!value || typeof value !== "object" || value instanceof Blob) return;
@@ -113,6 +114,7 @@ export async function createProjectAssetArchive(projectId, layout) {
 // The backend owns durable storage. It must validate the ZIP and return the
 // same project ID plus a new revision before the editor reports success.
 export async function sendProjectBundle(project, blob, signal) {
+  if (projectApiBase) throw new Error("현재 백엔드는 프로젝트 ZIP 전송 경로를 제공하지 않습니다. ZIP은 내려받아 보관해 주세요.");
   if (!monitoringApiBase) throw new Error("프로젝트 서버 주소가 설정되지 않았습니다.");
   const response = await fetch(`${monitoringApiBase}/projects/${encodeURIComponent(project.id)}/bundle`, {
     method: "PUT", credentials: "same-origin", headers: { "Content-Type": "application/zip" }, body: blob,

@@ -7,7 +7,7 @@ const pathKey = (path) => String(path ?? "").replace(/\\/g, "/").toLowerCase();
 const matches = (file, path) => pathKey(file.path || file.name) === pathKey(path) || pathKey(file.name) === pathKey(path).split("/").pop();
 const isImage = (file) => ["JPG", "JPEG", "PNG", "WEBP"].includes(fileExtension(file.name));
 
-export default function EquipmentAssetFilesPanel({ binding, onUpdateAsset, onUpload, uploading, uploadNotice }) {
+export default function EquipmentAssetFilesPanel({ binding, onUpdateAsset, onUpload, uploading, uploadNotice, showUpload = true }) {
   const [loaded, setLoaded] = useState(null);
   const [references, setReferences] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -100,7 +100,7 @@ export default function EquipmentAssetFilesPanel({ binding, onUpdateAsset, onUpl
       {references.filter((ref) => !record.files.some((file) => matches(file, ref))).map((ref) => <p className={styles.help} role="alert" key={ref}>참조 이미지 누락: {ref}</p>)}
       <label className={styles.uploadButton}>재질·텍스처 추가<input type="file" multiple disabled={disabled} accept=".mtl,.jpg,.jpeg,.png,.webp" onChange={append} /></label>
     </>}
-    <label className={styles.uploadButton}>모델 파일 묶음 등록·교체<input type="file" multiple disabled={disabled} accept=".obj,.ply,.mtl,.jpg,.jpeg,.png,.webp" onChange={onUpload} /></label>
+    {showUpload && <label className={styles.uploadButton}>모델 파일 묶음 등록·교체<input type="file" multiple disabled={disabled} accept=".obj,.ply,.mtl,.jpg,.jpeg,.png,.webp" onChange={onUpload} /></label>}
     <p className={styles.help}>모델의 색상과 무늬를 표시하려면 OBJ, MTL, 이미지 파일을 함께 등록하세요.</p>
     {disabled && <p role="status">파일 저장 중…</p>}
     {(message || uploadNotice) && <p className={styles.help} role="status">{message || uploadNotice}</p>}

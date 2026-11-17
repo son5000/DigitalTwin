@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import {
   ChevronDownIcon,
@@ -45,13 +45,13 @@ function formatDimensions(definition) {
     : definition.placement ?? definition.description ?? "";
 }
 
-function CatalogItem({ definition, active, onSelect }) {
+function CatalogItem({ definition, active, onSelect, selectionMode = false }) {
   return (
     <button
       type="button"
       className={`${objectStyles.item} ${active ? objectStyles.itemActive : ""}`}
       aria-pressed={active}
-      title={`${definition.nameKo} · ${definition.description ?? definition.name} · 배치`}
+      title={`${definition.nameKo} · ${definition.description ?? definition.name} · ${selectionMode ? "외관으로 선택" : "배치"}`}
       onClick={() => onSelect(definition.id)}
     >
       <span className={objectStyles.preview} aria-hidden="true">
@@ -65,7 +65,7 @@ function CatalogItem({ definition, active, onSelect }) {
   );
 }
 
-function CatalogCategory({ category, definitions, domain, activeTemplateId, open, onToggle, onSelect }) {
+function CatalogCategory({ category, definitions, domain, activeTemplateId, open, onToggle, onSelect, selectionMode }) {
   const families = [...new Map(definitions.map((definition) => [definition.objectType, {
     id: definition.objectType,
     label: definition.objectTypeLabel,
@@ -92,6 +92,7 @@ function CatalogCategory({ category, definitions, domain, activeTemplateId, open
                     definition={definition}
                     active={definition.id === activeTemplateId}
                     onSelect={onSelect}
+                    selectionMode={selectionMode}
                   />
                 ))}
               </div>
@@ -106,6 +107,7 @@ function CatalogCategory({ category, definitions, domain, activeTemplateId, open
                     definition={definition}
                     active={definition.id === activeTemplateId}
                     onSelect={onSelect}
+                    selectionMode={selectionMode}
                   />
                 ))}
               </div>
@@ -121,6 +123,8 @@ export default function FloorWorkspaceCatalog({
   mode,
   onModeChange,
   equipmentOnly = false,
+  selectionMode = false,
+  featuredEquipmentTemplates = [],
   showFloorControls = true,
   allowedStructureTemplateIds = [],
   activeStructureTemplateId,
@@ -146,16 +150,21 @@ export default function FloorWorkspaceCatalog({
   const customEquipmentAction = equipmentOnly
     ? templates.find((template) => template.id === CUSTOM_EQUIPMENT_CREATE_ID)
     : null;
+  const featuredTemplates = isEquipment ? featuredEquipmentTemplates.map(({ id, nameKo, catalogDetail }) => {
+    const template = templates.find((item) => item.id === id);
+    return template ? { ...template, nameKo: nameKo ?? template.nameKo, catalogDetail: catalogDetail ?? template.catalogDetail } : null;
+  }).filter(Boolean) : [];
+  const featuredIds = new Set(featuredEquipmentTemplates.map((item) => item.id));
   const categoryTemplates = equipmentOnly
-    ? templates.filter((template) => template.id !== CUSTOM_EQUIPMENT_CREATE_ID)
+    ? templates.filter((template) => template.id !== CUSTOM_EQUIPMENT_CREATE_ID && !featuredIds.has(template.id))
     : templates;
-  const categories = useMemo(() => (isEquipment
+  const categories = (isEquipment
     ? UNIFIED_EQUIPMENT_CATEGORIES
     : WORLD_STRUCTURE_GROUPS
   ).map((category) => ({
     ...category,
     definitions: categoryTemplates.filter((template) => (isEquipment ? template.category : template.group) === category.id),
-  })).filter((category) => category.definitions.length), [categoryTemplates, isEquipment]);
+  })).filter((category) => category.definitions.length);
   const activeTemplateId = isEquipment ? activeEquipmentTemplateId : activeStructureTemplateId;
   const recentTemplates = recentTemplateIds.map((id) => (
     isEquipment ? UNIFIED_EQUIPMENT_TEMPLATE_MAP[id] : WORLD_STRUCTURE_TEMPLATE_MAP[id]
@@ -177,7 +186,7 @@ export default function FloorWorkspaceCatalog({
   }
 
   return (
-    <section className={`${objectStyles.library} ${styles.catalog}`} aria-label="배치할 오브젝트">
+    <section className={`${objectStyles.library} ${styles.catalog}`} aria-label={selectionMode ? "외관 도형 목록" : "배치할 오브젝트"}>
       {!equipmentOnly ? (
         <div className={styles.majorTabs} role="group" aria-label="오브젝트 대분류">
           <button type="button" aria-pressed={!isEquipment} className={!isEquipment ? styles.majorTabActive : ""} onClick={() => onModeChange(CATALOG_MODES.PLAN)}><StructureIcon size={22} />구조</button>
@@ -185,7 +194,8 @@ export default function FloorWorkspaceCatalog({
         </div>
       ) : null}
 
-      <ObjectLibrarySearch value={query} resultCount={templates.length} onChange={setQuery} />
+      <ObjectLibrarySearch value={query} resultCount={selectionMode ? templates.length - Number(Boolean(customEquipmentAction)) : templates.length} onChange={setQuery}
+        {...(selectionMode ? { label: "외관 도형 검색", placeholder: "캐비닛, 펌프, 모터…" } : {})} />
 
       {showFloorControls && !isEquipment && floorNavigator ? (
         <details className={styles.floorConfiguration}>
@@ -218,13 +228,17 @@ export default function FloorWorkspaceCatalog({
         </fieldset>
       ) : null}
 
-      {customEquipmentAction ? (
+      {featuredTemplates.length ? <div className={objectStyles.itemList}>
+        {featuredTemplates.map((template) => <CatalogItem key={template.id} definition={template} active={template.id === activeTemplateId} onSelect={selectTemplate} selectionMode={selectionMode} />)}
+      </div> : null}
+
+      {customEquipmentAction && !selectionMode ? (
         <div className={objectStyles.itemList}>
           <CatalogItem definition={customEquipmentAction} active={false} onSelect={selectTemplate} />
         </div>
       ) : null}
 
-      {activeTemplateId ? (
+      {activeTemplateId && !selectionMode ? (
         <div className={`${objectStyles.activeObject} ${styles.activeTemplate}`}>
           <span className={`${objectStyles.preview} ${objectStyles.previewCompact}`} aria-hidden="true">
             {isEquipment
@@ -236,7 +250,7 @@ export default function FloorWorkspaceCatalog({
         </div>
       ) : null}
 
-      {recentTemplates.length ? (
+      {recentTemplates.length && !selectionMode ? (
         <section className={styles.recent} aria-label="최근 사용 오브젝트">
           <header><strong>최근 사용</strong></header>
           <div>{recentTemplates.map((template) => (
@@ -261,6 +275,7 @@ export default function FloorWorkspaceCatalog({
               open={Boolean(normalizedQuery) || openCategoryIds.includes(scopedId)}
               onToggle={() => toggleCategory(category.id)}
               onSelect={selectTemplate}
+              selectionMode={selectionMode}
             />
           );
         })}

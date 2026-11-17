@@ -3,17 +3,24 @@ import { validTemperatureGrid } from "../model/sensorProjection.js";
 import { MAX_THERMAL_CSV_BYTES, parseTemperatureCsv } from "../model/thermalFrame.js";
 import { textureAssetRepository } from "./textureAssetRepository.js";
 
-export const monitoringApiBase = (import.meta.env?.VITE_MONITORING_API_BASE || "").replace(/\/$/, "");
+export const monitoringApiBase = (import.meta.env?.VITE_MONITORING_API_BASE || "").trim().replace(/\/+$/, "");
+const backendFeMode = monitoringApiBase.endsWith("/api/fe/v1");
+function requireLegacyMonitoring(feature) {
+  if (backendFeMode) throw new Error(`${feature} API는 현재 백엔드의 FE 경로에 없습니다. 별도 연동이 필요합니다.`);
+}
 export async function monitoringRequest(path, options = {}) {
   if (!monitoringApiBase) throw new Error("관측 서버가 연결되지 않았습니다.");
   const response = await fetch(`${monitoringApiBase}${path}`, {
     credentials: "same-origin", ...options,
     signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(10000)]) : AbortSignal.timeout(10000),
-    headers: { "Content-Type": "application/json", ...options.headers },
+    headers: { ...(options.body ? { "Content-Type": "application/json" } : {}), ...options.headers },
   });
-  if (!response.ok) throw new Error(response.status === 409 || response.status === 412 ? "다른 사용자가 변경했습니다. 최신 구성을 조회한 뒤 다시 저장하세요."
-    : response.status === 401 || response.status === 403 ? "로그인 또는 접근 권한을 확인하세요."
-      : response.status === 404 ? "해당 센서 또는 관측 데이터를 찾을 수 없습니다." : `서버 요청에 실패했습니다 (${response.status}).`);
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(body?.error?.message || (response.status === 409 || response.status === 412 ? "다른 사용자가 변경했습니다. 최신 구성을 조회한 뒤 다시 저장하세요."
+      : response.status === 401 || response.status === 403 ? "로그인 또는 접근 권한을 확인하세요."
+        : response.status === 404 ? "해당 센서 또는 관측 데이터를 찾을 수 없습니다." : `서버 요청에 실패했습니다 (${response.status}).`));
+  }
   return response.status === 204 ? null : response.json();
 }
 export async function lookupSensor(serialNumber, equipmentId, signal) {
@@ -23,6 +30,7 @@ export async function lookupSensor(serialNumber, equipmentId, signal) {
   return result.sensor;
 }
 export async function saveSensorCalibration(payload, revision = 0, signal) {
+  requireLegacyMonitoring("센서 보정 저장");
   validateCalibration(payload);
   if (payload.dataSource === "DEMO") throw new Error("예시 센서는 실제 서버에 등록할 수 없습니다.");
   const result = await monitoringRequest(`/projects/${encodeURIComponent(payload.projectId)}/sensors/${encodeURIComponent(payload.sensorId)}/calibration`, {
@@ -32,7 +40,7 @@ export async function saveSensorCalibration(payload, revision = 0, signal) {
   return result;
 }
 export async function getSensorFrame(sensorId, signal, kind) {
-  const result = await monitoringRequest(`/sensors/${encodeURIComponent(sensorId)}/frame${kind ? `?kind=${encodeURIComponent(kind)}` : ""}`, { signal });
+  const result = await monitoringRequest(`/sensors/${encodeURIComponent(sensorId)}/frame${kind ? `?kind=${encodeURIComponent(kind)}` : ""}`, { signal, cache: "no-store" });
   if (result?.sensorId !== sensorId || !Number.isFinite(Date.parse(result.measuredAt))) throw new Error("센서 영상 응답 형식을 확인하세요.");
   if (result.temperatureCsv != null || result.temperatureCsvUrl != null) {
     let csv = result.temperatureCsv;
@@ -49,18 +57,21 @@ export async function getSensorFrame(sensorId, signal, kind) {
   }
   if (result?.sensorId !== sensorId || (!mediaUrl(result.url) && !validTemperatureGrid(result.temperatureGrid)) || !Number.isFinite(Date.parse(result.measuredAt))) throw new Error("센서 영상 응답 형식을 확인하세요.");
   if (kind && (result.kind ?? (result.temperatureGrid ? "THERMAL" : "VISION")) !== kind) throw new Error("선택한 종류의 센서 영상을 기다리고 있습니다.");
-  return { ...result, sample: false, dataSource: "SERVER", ...(result.temperatureGrid ? { resolution: { width: result.temperatureGrid.width, height: result.temperatureGrid.height } } : {}) };
+  return { ...result, url: mediaUrl(result.url) || null, sample: false, dataSource: "SERVER", ...(result.temperatureGrid ? { resolution: { width: result.temperatureGrid.width, height: result.temperatureGrid.height } } : {}) };
 }
 export const equipmentPath = (projectId, equipmentId) => `/projects/${encodeURIComponent(projectId)}/equipment/${encodeURIComponent(equipmentId)}`;
 export async function loadEquipmentTelemetry(projectId, equipmentId, signal) {
+  requireLegacyMonitoring("설비별 실시간 관제");
   return validateTelemetry(await monitoringRequest(`${equipmentPath(projectId, equipmentId)}/monitoring`, { signal }), equipmentId);
 }
 export async function requestPointAudio(projectId, equipmentId, selection, signal) {
+  requireLegacyMonitoring("위치별 음원");
   const result = await monitoringRequest(`${equipmentPath(projectId, equipmentId)}/audio`, { method: "POST", body: JSON.stringify({ selection }), signal });
   if (result?.equipmentId !== equipmentId || !mediaUrl(result.url)) throw new Error("위치별 음원 응답 형식을 확인하세요.");
   return result;
 }
 export async function uploadRoiReferenceImage(projectId, equipmentId, roiId, measurementId, frame) {
+  requireLegacyMonitoring("ROI 기준 사진 업로드");
   const asset = await textureAssetRepository.get(frame.textureAssetId);
   if (!asset?.blob) throw new Error("기준 사진 원본을 찾을 수 없습니다. 현재 영상을 다시 저장하세요.");
   const form = new FormData();
@@ -77,5 +88,6 @@ export async function uploadRoiReferenceImage(projectId, equipmentId, roiId, mea
   return { ...frame, serverAssetId: result.assetId };
 }
 export async function acknowledgeAlarm(projectId, equipmentId, alarmId) {
+  requireLegacyMonitoring("설비별 경고 확인");
   return monitoringRequest(`${equipmentPath(projectId, equipmentId)}/alarms/${encodeURIComponent(alarmId)}/acknowledge`, { method: "POST" });
 }

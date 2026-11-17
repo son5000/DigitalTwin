@@ -1,12 +1,15 @@
 import EquipmentEnclosureFields from "./EquipmentEnclosureFields";
+import FloorWorkspaceCatalog from "./FloorWorkspaceCatalog";
 import { useState } from "react";
 import EquipmentEnvironmentFields from "./EquipmentEnvironmentFields";
 import NumericField from "./NumericField";
 import EquipmentCoordinateFrameFields from "./EquipmentCoordinateFrameFields";
-import { getEquipmentModelMode } from "../model/equipmentSetup.js";
+import { getEquipmentModelMode, invalidateEquipmentModelSetup } from "../model/equipmentSetup.js";
 import { DEFAULT_SCAN_LIGHTING, normalizeScanLighting } from "../model/viewerPreset";
 import { getEnclosure, getEnclosureDoorEntries, getEnclosureScanSlot } from "../model/equipmentEnclosure.js";
 import { scanBindingForDoor } from "../model/equipmentScanBindings.js";
+import { UNIFIED_EQUIPMENT_TEMPLATE_MAP } from "../constants/unifiedEquipmentCatalog.js";
+import { createTemplateInstanceDefaults } from "../utils/templateParameters.js";
 import styles from "./MonitoringSettingsPanel.module.css";
 
 export default function EquipmentModelSetupPanel({ phase = "ASSET", equipment, binding, bindings = [], onUpdateEquipment, onUpdateAsset, onRemoveAsset, onUploadAssetFiles, viewerPreset, onViewerPresetChange, onEquipmentRepresentationChange, cameraController }) {
@@ -15,12 +18,15 @@ export default function EquipmentModelSetupPanel({ phase = "ASSET", equipment, b
   const [uploadingSlot, setUploadingSlot] = useState("");
   const scans = bindings.filter((item) => ["OBJ", "PLY"].includes(item.assetType));
   const mode = getEquipmentModelMode(equipment, scans);
+  const wholeScan = scans.filter((item) => !item.scanSlot).at(-1);
   const showScanSettings = phase === "SCAN" || mode === "SCAN";
   const activeBinding = scans.find((item) => item.id === selectedBindingId) ?? binding;
   const alignment = activeBinding?.alignmentTransform;
   const activeSlot = activeBinding?.scanSlot ? getEnclosureScanSlot(equipment, activeBinding.scanSlot.index, activeBinding.scanSlot.side) : null;
   const defaultDimensions = activeSlot?.dimensions ?? equipment.dimensions;
   const cabinet = getEnclosure(equipment);
+  const selectedExteriorId = equipment.metadata?.exteriorSelected === false ? null : cabinet.enabled && UNIFIED_EQUIPMENT_TEMPLATE_MAP[equipment.shapeTemplateId]?.floorCategory !== "CABINET"
+    ? "CABINET_SINGLE" : !cabinet.enabled && equipment.shapeTemplateId === "CABINET_SINGLE" ? null : equipment.shapeTemplateId;
   const doors = cabinet.enabled && (mode === "BOTH" || scans.some((item) => item.scanSlot)) ? getEnclosureDoorEntries(equipment) : [];
   const activeDoorLabel = activeBinding?.scanSlot
     ? doors.find((door) => door.side === activeBinding.scanSlot.side && door.index === activeBinding.scanSlot.index)?.label
@@ -48,16 +54,31 @@ export default function EquipmentModelSetupPanel({ phase = "ASSET", equipment, b
   return <>
 
     <section className={styles.modelSetupGroup} aria-labelledby="model-shape-settings-title">
-    <h3 id="model-shape-settings-title">{showScanSettings ? "스캔 파일·정합" : "외관 도형"}</h3>
+    <h3 id="model-shape-settings-title">{equipment.metadata?.initialModelPending ? "모델 구성" : showScanSettings ? "스캔 파일·정합" : "외관 도형"}</h3>
     {phase === "ASSET" && <EquipmentEnclosureFields equipment={equipment} bindings={scans} onUpdateEquipment={onUpdateEquipment} onUpdateAsset={onUpdateAsset} onEquipmentRepresentationChange={onEquipmentRepresentationChange} />}
+    {phase === "ASSET" && !equipment.metadata?.initialModelPending && mode !== "SCAN" && <section className={styles.modelCatalog} data-setup-field="exterior-catalog" aria-labelledby="exterior-catalog-title">
+      <h4 id="exterior-catalog-title">외관 도형 선택 · {selectedExteriorId === "CABINET_SINGLE" ? "캐비닛" : selectedExteriorId ? UNIFIED_EQUIPMENT_TEMPLATE_MAP[selectedExteriorId]?.nameKo ?? "선택 필요" : "선택 필요"}</h4>
+      <FloorWorkspaceCatalog mode="EQUIPMENT" equipmentOnly selectionMode showFloorControls={false}
+        featuredEquipmentTemplates={[{ id: "CABINET_SINGLE", nameKo: "캐비닛 · 문 설정", catalogDetail: "벽과 문을 구성할 수 있는 외관" }]}
+        activeEquipmentTemplateId={selectedExteriorId}
+        onSelectEquipmentTemplate={(templateId) => {
+          const template = UNIFIED_EQUIPMENT_TEMPLATE_MAP[templateId];
+          if (!template) return;
+          const defaults = createTemplateInstanceDefaults(template);
+          onUpdateEquipment({ ...defaults, shapeTemplateId: template.id, sourceTemplateId: template.id,
+            metadata: { exteriorSelected: true, detailSetup: invalidateEquipmentModelSetup(equipment, { scan: mode === "BOTH" }) },
+            enclosure: defaults.enclosure
+              ? { ...(cabinet.enabled ? equipment.enclosure : {}), ...defaults.enclosure }
+              : { ...equipment.enclosure, enabled: false } });
+        }} />
+    </section>}
     {showScanSettings && <>
     <p className={styles.help}>파일 연결 → 방향·크기 → 설치 위치 → 기준좌표 순서로 확인하세요.</p>
-    <fieldset className={styles.settingsGroup} data-setup-field="model-files"><legend>{doors.length ? "문별 내부 스캔" : "설비 스캔 파일"}</legend>
-      <p className={styles.help}>{doors.length ? "문마다 내부 스캔을 연결합니다. 기준좌표 (0, 0, 0)는 각 공간을 정면에서 바라볼 때 왼쪽 바닥의 가장 앞쪽입니다." : "설비 전체를 보여줄 OBJ 또는 PLY 스캔 파일을 등록하세요."}</p>
-      {scans.filter((item) => !item.scanSlot).slice(-1).map((item) => <button type="button" key={item.id} aria-pressed={activeBinding?.id === item.id} onClick={() => setSelectedBindingId(item.id)}>설비 전체 · {item.name}{doors.length ? " (문별 스캔을 연결하면 대체)" : ""}</button>)}
-      <div className={styles.scanSlotList}>{(doors.length ? doors : [{ side: null, index: null, id: "WHOLE", label: "설비 전체" }]).map((door) => {
+    <fieldset className={styles.settingsGroup} data-setup-field="model-files"><legend>설비 스캔 파일</legend>
+      <p className={styles.help}>{doors.length ? "설비 전체 스캔을 사용하거나 각 문에 내부 스캔을 연결하세요. 문별 연결을 시작하면 모든 문에 파일이 필요합니다." : "설비 전체를 보여줄 OBJ 또는 PLY 스캔 파일을 등록하세요."}</p>
+      <div className={styles.scanSlotList}>{[{ side: null, index: null, id: "WHOLE", label: "설비 전체" }, ...doors].map((door) => {
         const slot = door.side ? getEnclosureScanSlot(equipment, door.index, door.side) : null;
-        const item = door.side ? scanBindingForDoor(scans, equipment.id, door.side, door.index) : scans.filter((entry) => !entry.scanSlot).at(-1);
+        const item = door.side ? scanBindingForDoor(scans, equipment.id, door.side, door.index) : wholeScan;
         const key = door.side ? `${door.side}:${door.index}` : "WHOLE";
         const selected = Boolean(item && activeBinding?.id === item.id);
         return <div className={styles.scanSlotItem} key={door.id} data-selected={selected || undefined} data-setup-field={`scan-slot-${key}`} role="group" aria-label={`${door.label} 스캔`}>
@@ -109,10 +130,10 @@ export default function EquipmentModelSetupPanel({ phase = "ASSET", equipment, b
         {notice && <p role="status">{notice}</p>}
     </fieldset>}
     </>}
-    {(showScanSettings || mode === "SHAPE") && <EquipmentCoordinateFrameFields key={`${equipment.id}:${equipment.metadata?.coordinateFrame?.version ?? 0}`} equipment={equipment} binding={binding} cameraController={cameraController} onUpdateEquipment={onUpdateEquipment} />}
+    {!equipment.metadata?.initialModelPending && (showScanSettings || mode === "SHAPE") && <EquipmentCoordinateFrameFields key={`${equipment.id}:${equipment.metadata?.coordinateFrame?.version ?? 0}`} equipment={equipment} binding={binding} cameraController={cameraController} onUpdateEquipment={onUpdateEquipment} />}
     </section>
 
-    {phase === "ASSET" && <details className={`${styles.modelSetupGroup} ${styles.optionalModelSettings}`}>
+    {phase === "ASSET" && !equipment.metadata?.initialModelPending && <details className={`${styles.modelSetupGroup} ${styles.optionalModelSettings}`}>
     <summary>관제 화면 표시·배경 설정</summary>
     <fieldset className={styles.settingsGroup}><legend>모델 표시·조명</legend>
       <p className={styles.help}>관제 화면의 기본 표시와 설비별 표시를 선택하세요.</p>

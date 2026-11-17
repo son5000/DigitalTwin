@@ -4,6 +4,7 @@ import { getTreeAncestors, toggleTreeNode } from "./worldTreeModel";
 import styles from "./WorldTreePanel.module.css";
 
 const PROJECT_TREE_KEY = "viewer:project";
+const LIVE_STATUS_LABELS = { NORMAL: "정상", WARNING: "주의", DANGER: "위험", NO_DATA: "데이터 없음" };
 
 function Snapshot({ tree, snapshot, representativeImage }) {
   const [failed, setFailed] = useState(false);
@@ -15,7 +16,7 @@ function Snapshot({ tree, snapshot, representativeImage }) {
   </div>;
 }
 
-export default function WorldTreePanel({ tree, projectName, snapshot, representativeImage, selectedKey, selectionVersion, onSelect }) {
+export default function WorldTreePanel({ tree, projectName, snapshot, representativeImage, selectedKey, selectionVersion, liveStatuses = {}, onSelect }) {
   const [expansion, setExpansion] = useState(() => ({ selectedKey, selectionVersion, keys: new Set([PROJECT_TREE_KEY, ...tree.roots.map((node) => node.key), ...getTreeAncestors(tree, selectedKey)]) }));
   const containerRef = useRef(null);
   let expanded = expansion.keys;
@@ -28,12 +29,14 @@ export default function WorldTreePanel({ tree, projectName, snapshot, representa
   }, [selectedKey, selectionVersion]);
   function renderNode(node) {
     const open = expanded.has(node.key);
+    const liveStatus = ["EQUIPMENT", "SITE_OBJECT"].includes(node.type) ? liveStatuses[node.id] : null;
     return <li key={node.key}>
       <div className={`${styles.row} ${selectedKey === node.key ? styles.selected : ""}`}>
         {node.children.length ? <button type="button" className={styles.toggle} aria-label={`${node.label} ${open ? "접기" : "펼치기"}`} aria-expanded={open}
           onClick={() => setExpansion({ selectedKey, selectionVersion, keys: toggleTreeNode(expanded, node.key) })}><ChevronRightIcon size={13} /></button> : <span className={styles.spacer} />}
         <button type="button" className={styles.label} aria-current={selectedKey === node.key ? "true" : undefined} title={node.label}
           disabled={node.synthetic && !node.selectable} onClick={() => onSelect(node)}>{node.label}</button>
+        {liveStatus && <span className={styles.liveBadge} data-status={liveStatus}>{LIVE_STATUS_LABELS[liveStatus]}</span>}
       </div>
       {open && node.children.length > 0 && <ul>{node.children.map(renderNode)}</ul>}
     </li>;

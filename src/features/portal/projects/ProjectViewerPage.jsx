@@ -25,8 +25,8 @@ import EquipmentObservationScene from "@/features/digitalTwin/editor/three/Equip
 import { withClosedEnclosureDoors } from "@/features/digitalTwin/editor/model/equipmentEnclosure";
 import { getFloorTerrainEnvironment } from "@/features/digitalTwin/editor/terrain/floorTerrain";
 import useRoiMonitoring from "@/features/digitalTwin/editor/store/useRoiMonitoring";
+import { isFreshMeasurement } from "@/features/digitalTwin/editor/model/monitoringContract";
 import { viewerLink } from "@/features/digitalTwin/editor/model/roiMonitoring";
-import { loadMonitoringProject, monitoringApiBase } from "@/features/digitalTwin/editor/api/roiRepository";
 import { normalizeHierarchy } from "@/features/digitalTwin/editor/model/digitalTwinHierarchy";
 import { resolveSiteEnvironmentFromLayout } from "@/features/digitalTwin/editor/constants/siteEnvironmentSettings";
 import { DEFAULT_GRID_SETTINGS } from "@/features/digitalTwin/editor/constants/gridSettings";
@@ -38,6 +38,7 @@ import { getProjectDetails, PROJECT_STORAGE_KEY, readProjects } from "./projectR
 import { projectApiBase } from "./projectConfigurationApi";
 import { loadViewerProjectConfiguration } from "./projectViewerApi";
 import { loadViewerProjectAssets } from "./projectAssetApi";
+import useViewerLiveStatus from "./useViewerLiveStatus";
 import styles from "./ProjectsPage.module.css";
 import viewerStyles from "./ProjectViewerPage.module.css";
 
@@ -45,31 +46,23 @@ const EMPTY_ITEMS = [];
 const VIEWER_MOVEMENT_PLAYBACK = { status: MOVEMENT_PLAYBACK_STATES.PLAYING, currentTime: 0, revision: 0 };
 const VIEWER_MOVEMENT_PAUSED = { status: MOVEMENT_PLAYBACK_STATES.PAUSED, currentTime: 0, revision: 0 };
 const METRIC_LABELS = { TEMPERATURE: "온도", PRESSURE: "압력", VIBRATION: "진동", NOISE: "소음", POWER: "전력", FLOW: "유량", VIDEO: "영상" };
-const dedicatedProjectApi = Boolean(import.meta.env?.VITE_PROJECT_API_BASE);
-
+const LIVE_STATUS_LABELS = { NORMAL: "정상", WARNING: "주의", DANGER: "위험", NO_DATA: "데이터 없음" };
 async function loadViewerProject(projectId, signal) {
-  let result;
-  try {
-    result = await loadViewerProjectConfiguration(projectId, signal);
-  } catch (error) {
-    if (!dedicatedProjectApi && monitoringApiBase && error.status === 404) {
-      return loadMonitoringProject(projectId, signal);
-    }
-    throw error;
-  }
-  await loadViewerProjectAssets(projectId, result.revision, result.layout, signal);
-  return { id: result.projectId, layout: result.layout, revision: result.revision, storageMode: "SERVER" };
+  const result = await loadViewerProjectConfiguration(projectId, signal);
+  await loadViewerProjectAssets(projectId, result.revision, result.layout, signal, result.assetManifest);
+  return { id: result.projectId, externalProjectId: result.externalProjectId,
+    layout: result.layout, revision: result.revision, storageMode: "SERVER" };
 }
 
 export default function ProjectViewerPage({ projectId, requestedEquipmentId = null, operationsSection = null, operationsRecord = null }) {
   const [result, setResult] = useState(() => {
     try {
       const project = readProjects().projects.find((item) => item.id === projectId);
-      if (projectApiBase && project?.storageMode !== "LOCAL") return { loading: true };
+      if (projectApiBase && (!project || project.storageMode === "SERVER")) return { loading: true };
       return project ? { project } : { error: "프로젝트를 찾을 수 없습니다." };
     } catch (error) { return projectApiBase ? { loading: true } : { error: error.message }; }
   });
-  const localImport = result.project?.storageMode === "LOCAL";
+  const localImport = Boolean(result.project && result.project.storageMode !== "SERVER");
   useEffect(() => {
     if (!projectApiBase || localImport) return;
     const controller = new AbortController();
@@ -104,6 +97,8 @@ function SavedWorldViewer({ project, requestedEquipmentId, operationsSection, op
   const tree = useMemo(() => createWorldTree(layout, getRuntimeCustomAsset), [layout]);
   const linkedNode = requestedEquipmentId ? [...tree.nodes.values()].find((node) => node.id === requestedEquipmentId && getViewerEquipmentContext(tree, node)) : null;
   const monitoring = useRoiMonitoring(project.id);
+  const live = useViewerLiveStatus(project.externalProjectId ?? project.id, project.revision,
+    project.storageMode === "SERVER", tree, layout);
   const [roiTarget, setRoiTarget] = useState(null);
   const [linkNotice, setLinkNotice] = useState("");
   const [copiedLink, setCopiedLink] = useState("");
@@ -229,6 +224,28 @@ function SavedWorldViewer({ project, requestedEquipmentId, operationsSection, op
   const selectedItem = equipmentContext || showEquipment ? activeEquipment : selectedSpace;
   const sensors = equipmentContext || showEquipment ? model.sensors.filter((item) => item.equipmentIds?.includes(activeEquipment?.id)) : model.sensors;
   const points = equipmentContext || showEquipment ? model.points.filter((item) => item.equipmentId === activeEquipment?.id) : model.points;
+  const liveConnected = live.status === "CONNECTED";
+  const liveEquipmentStatuses = useMemo(() => {
+    const knownIds = new Set([...tree.nodes.values()].filter((node) => ["EQUIPMENT", "SITE_OBJECT"].includes(node.type)
+      && getViewerEquipmentContext(tree, node)).map((node) => node.id));
+    return Object.fromEntries((liveConnected ? live.snapshot?.equipment ?? [] : [])
+      .filter((item) => knownIds.has(item.equipmentId))
+      .map((item) => [item.equipmentId, isFreshMeasurement(item, live.now) ? item.status : "NO_DATA"]));
+  }, [tree, liveConnected, live.snapshot, live.now]);
+  const liveSummary = Object.values(liveEquipmentStatuses).reduce((count, status) => ({ ...count, [status]: (count[status] ?? 0) + 1 }), {});
+  const focusedLiveEquipmentId = equipmentContext || equipmentDetail || tree.scope === "SINGLE_EQUIPMENT" ? activeEquipment?.id : null;
+  const focusedLiveStatus = focusedLiveEquipmentId ? liveEquipmentStatuses[focusedLiveEquipmentId] ?? "NO_DATA" : null;
+  const liveHeadline = !liveConnected ? { CONNECTING: "실시간 연결 중", RECONNECTING: "실시간 재연결 중", UNMAPPED: "설비·함체 매핑 필요", ERROR: "실시간 연결 오류" }[live.status] ?? "관측 서버 미연결"
+    : focusedLiveStatus ? `설비 상태 · ${LIVE_STATUS_LABELS[focusedLiveStatus]}`
+      : Object.keys(liveEquipmentStatuses).length ? `위험 ${liveSummary.DANGER ?? 0} · 주의 ${liveSummary.WARNING ?? 0} · 정상 ${liveSummary.NORMAL ?? 0} · 미확인 ${liveSummary.NO_DATA ?? 0}` : "실시간 데이터 수신 대기";
+  const liveMetrics = points.flatMap((point) => (point.measurements?.length ? point.measurements : [point]).filter((measurement) => measurement.visible !== false).map((measurement) => {
+    const reading = liveConnected ? live.snapshot?.measurements.find((item) => item.pointId === point.id && item.measurementId === measurement.id
+      && item.equipmentId === point.equipmentId && isFreshMeasurement(item, live.now)) : null;
+    return { key: `${point.id}:${measurement.id}`, name: point.measurements?.length > 1 ? `${point.name || "관측 영역"} · ${measurement.name || METRIC_LABELS[measurement.metric] || measurement.metric}`
+      : point.name || measurement.name || METRIC_LABELS[measurement.metric] || measurement.metric,
+    value: reading?.value === null || reading?.value === undefined ? "—" : typeof reading.value === "boolean" ? reading.value ? "켜짐" : "꺼짐" : String(reading.value),
+    unit: reading?.unit || measurement.unit || "", measuredAt: reading?.measuredAt ?? null };
+  }));
   const notifications = useMemo(() => {
     const entries = Array.isArray(layout.notifications) ? layout.notifications : Array.isArray(layout.events) ? layout.events : EMPTY_ITEMS;
     return entries.filter(Boolean).map((item, index) => ({
@@ -358,12 +375,13 @@ function SavedWorldViewer({ project, requestedEquipmentId, operationsSection, op
         <div className={portalStyles.workspace}>
           <button type="button" className={portalStyles.collapseButton} onClick={toggleSidebar} aria-label={sidebarVisible ? "메뉴 접기" : "메뉴 펼치기"} aria-expanded={sidebarVisible}><ChevronRightIcon size={16} /></button>
           <span>워크스페이스</span><strong>{details.name}</strong><small>{sidebarTree.config.label}</small>
+          <small className={viewerStyles.liveConnection} data-status={live.status}>{liveHeadline}</small>
         </div>
         {(isolatedEquipmentView || (!equipmentScope && equipmentContext)) && <nav className={viewerStyles.parentNavigation} aria-label="설비 관측 탐색">
           <button type="button" data-parent={isolatedEquipmentView} onClick={isolatedEquipmentView ? showParentSpace : () => { setEquipmentDetail(true); setSidebarCollapsed(true); setRightPanel(null); }}><ChevronRightIcon size={14} />{isolatedEquipmentView ? tree.scope === "MULTI_EQUIPMENT" ? "전체 설비 보기" : "상위 공간 보기" : "설비 상세 보기"}</button>
         </nav>}
         {(showEquipment || equipmentDetail) && !detailEquipment.length && <p className={viewerStyles.empty} role="status">등록된 설비가 없습니다. 프로젝트 목록에서 편집하기로 설비를 추가하세요.</p>}
-        <WorldTreePanel tree={sidebarTree} projectName={getProjectDetails(project).name} snapshot={snapshot?.request === snapshotRequest ? snapshot : null} representativeImage={representativeImage} selectedKey={sidebarSelectedKey} selectionVersion={treeSelection.version} onSelect={selectTreeNode} />
+        <WorldTreePanel tree={sidebarTree} projectName={getProjectDetails(project).name} snapshot={snapshot?.request === snapshotRequest ? snapshot : null} representativeImage={representativeImage} selectedKey={sidebarSelectedKey} selectionVersion={treeSelection.version} liveStatuses={liveEquipmentStatuses} onSelect={selectTreeNode} />
 
         <div className={portalStyles.sidebarFooter}><button type="button" onClick={goHome}>프로젝트 목록으로</button></div>
       </aside>
@@ -437,29 +455,30 @@ function SavedWorldViewer({ project, requestedEquipmentId, operationsSection, op
             </> : <p className={viewerStyles.empty}>층 또는 층 라벨을 선택하세요.</p>}
           </section>
         </> : <>
-        <div className={viewerStyles.dataStatus}><i /><div><strong>실시간 데이터 수신 대기</strong><p>측정 데이터가 연결되면 상태와 추이를 확인할 수 있습니다.</p></div></div>
+        <div className={viewerStyles.dataStatus} data-status={liveConnected ? focusedLiveStatus ?? (liveSummary.DANGER ? "DANGER" : liveSummary.WARNING ? "WARNING" : liveSummary.NORMAL ? "NORMAL" : "NO_DATA") : live.status}><i /><div><strong>{liveHeadline}</strong><p>{liveConnected
+          ? `마지막 조회 ${new Date(live.snapshot.generatedAt).toLocaleTimeString("ko-KR")}`
+          : live.error || "실시간 관측 데이터가 연결되면 상태를 표시합니다."}</p></div></div>
         <section className={portalStyles.detailSection}>
           <header><span>{equipmentContext || showEquipment ? "선택 설비 요약" : "프로젝트 요약"}</span><small>저장된 구성</small></header>
           <div className={portalStyles.metricGrid}><div><span>등록 센서</span><strong>{sensors.length}<em>개</em></strong></div><div><span>관측 영역</span><strong>{points.length}<em>개</em></strong></div></div>
         </section>
         <section className={portalStyles.detailSection}>
-          <header><span>실시간 KPI</span><small>수신 대기</small></header>
-          <div className={portalStyles.metricGrid}>{points.map((point) => <div key={point.id}><span>{point.name || METRIC_LABELS[point.metric] || point.metric}</span><strong>—</strong><small>{METRIC_LABELS[point.metric] || point.metric} · 수신 대기</small></div>)}</div>
-          {!points.length && <p className={viewerStyles.empty}>등록된 관측 항목이 없습니다.</p>}
-        </section>
-        <section className={portalStyles.detailSection}>
-          <header><span>측정 추이</span><small>수신 대기</small></header>
-          <div className={viewerStyles.trendEmpty}>아직 수신된 측정 데이터가 없습니다.</div>
+          <header><span>실시간 KPI</span><small>{liveConnected && !live.snapshot.measurements.length ? "관측 항목 연결 대기" : liveConnected ? "최신 측정값" : "수신 대기"}</small></header>
+          <div className={portalStyles.metricGrid}>{liveMetrics.map((metric) => <div key={metric.key}><span>{metric.name}</span><strong>{metric.value}{metric.value !== "—" && metric.unit ? <em> {metric.unit}</em> : null}</strong><small>{metric.measuredAt ? `${new Date(metric.measuredAt).toLocaleTimeString("ko-KR")} 측정` : "측정값 수신 대기"}</small></div>)}</div>
+          {!liveMetrics.length && <p className={viewerStyles.empty}>등록된 관측 항목이 없습니다.</p>}
         </section>
         <section className={portalStyles.detailSection}>
           <header><span>등록 센서</span><b>{sensors.length}개</b></header>
-          <ul className={viewerStyles.sensorList}>{sensors.map((sensor) => <li key={sensor.id}>
+          <ul className={viewerStyles.sensorList}>{sensors.map((sensor) => {
+            const sensorState = liveConnected ? live.snapshot.sensors.find((item) => item.bindingId === sensor.id
+              && (!focusedLiveEquipmentId || item.equipmentId === focusedLiveEquipmentId) && isFreshMeasurement(item, live.now)) : null;
+            return <li key={sensor.id}>
             <button type="button" aria-pressed={selectedSensorId === sensor.id} onClick={() => {
               const host = model.equipment.find((item) => sensor.equipmentIds?.includes(item.id));
               if (host) { selectEquipment(host.id); }
               setSelectedSensorId(sensor.id);
-            }}><span>{sensor.name || "센서"}<small>{sensorCapabilityLabel(sensor)}</small></span><em>수신 대기</em></button>
-          </li>)}</ul>
+            }}><span>{sensor.name || "센서"}<small>{sensorCapabilityLabel(sensor)}</small></span><em>{sensorState ? { ONLINE: "연결됨", OFFLINE: "연결 끊김", UNREGISTERED: "미등록", FAULT: "센서 오류", UNKNOWN: "상태 미확인" }[sensorState.connectionStatus] : "수신 대기"}</em></button>
+          </li>})}</ul>
           {!sensors.length && <p className={viewerStyles.empty}>등록된 센서가 없습니다.</p>}
         </section>
         </>}

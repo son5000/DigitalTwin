@@ -2,7 +2,7 @@ import { cloneElement, useEffect, useState } from "react";
 
 
 
-import { getEquipmentSetup, getEquipmentSetupSteps, updateEquipmentSetup } from "../model/equipmentSetup";
+import { getEquipmentModelMode, getEquipmentSetup, getEquipmentSetupSteps, updateEquipmentSetup } from "../model/equipmentSetup";
 import SensorFramePreview from "./SensorFramePreview";
 import { bindObservationMeasurements } from "../model/observationSource.js";
 import VirtualCameraViewport from "./VirtualCameraViewport.jsx";
@@ -23,6 +23,7 @@ export default function EquipmentDetailWorkspace({
   const [activeVirtualCameraId, setActiveVirtualCameraId] = useState(null);
   const setupSteps = getEquipmentSetupSteps(equipment, assetBindings);
   const setup = getEquipmentSetup(equipment, assetBindings);
+  const modelMode = getEquipmentModelMode(equipment, assetBindings);
   const sensorStep = setup.currentStep === "SENSOR";
   const [placingRoi, setPlacingRoi] = useState(false);
   const viewKey = equipment?.id;
@@ -47,12 +48,12 @@ export default function EquipmentDetailWorkspace({
     workspaceViewControllerRef.current = controller;
     return () => { if (workspaceViewControllerRef.current === controller) workspaceViewControllerRef.current = null; };
   }, [workspaceViewControllerRef, viewKey, onAddEquipment]);
-  if (!equipment) return <section className={`${styles.workspace} ${styles.emptyWorkspace}`} aria-label="설비 상세 시작 화면">{equipmentPicker}</section>;
+  if (!equipment) return <section className={`${styles.workspace} ${styles.emptyWorkspace}`} aria-label="설비 상세 시작 화면">{equipmentPicker ?? <p role="status">설비 기본 정보를 준비하는 중입니다…</p>}</section>;
 
   return (
     <section className={`${styles.workspace} ${singleEquipment ? styles.singleEquipment : ""}`} aria-label="설비 상세 작업 화면">
       <nav className={styles.setupProgress} data-camera-safe-ui aria-label="설비 설정 진행 순서">
-        <div>{setupSteps.map(({ id, label, number }, index) => <button type="button" key={id} aria-current={setup.currentStep === id ? "step" : undefined} onClick={() => onSetupStepChange?.(updateEquipmentSetup(equipment, id, undefined, assetBindings))}><span>{number ?? index + 1}. {label}</span><small>{setup.steps[id] === "DONE" ? "완료" : setup.steps[id] === "SKIPPED" ? "건너뜀" : setup.currentStep === id ? "진행 중" : "미완료"}</small></button>)}</div>
+        <div>{setupSteps.map(({ id, label }, index) => <button type="button" key={id} disabled={singleEquipment && equipment.metadata?.initialModelPending && id !== "BASIC" && setup.steps.BASIC !== "DONE"} aria-current={setup.currentStep === id ? "step" : undefined} onClick={() => onSetupStepChange?.(updateEquipmentSetup(equipment, id, undefined, assetBindings))}><span>{index + 1}. {label}</span><small>{setup.steps[id] === "DONE" ? "완료" : setup.steps[id] === "SKIPPED" ? "건너뜀" : setup.currentStep === id ? "진행 중" : "미완료"}</small></button>)}</div>
       </nav>
       {listOpen && <aside className={styles.equipmentList} data-camera-safe-ui="left" aria-label="월드 전체 설비 목록">
         <header><strong>전체 설비 {equipmentList.length}개</strong><button type="button" aria-label="설비 목록 닫기" onClick={onCloseList}>닫기</button></header>
@@ -68,6 +69,11 @@ export default function EquipmentDetailWorkspace({
         })}{!filteredEquipment.length && <p>검색 결과가 없습니다.</p>}</div>
       </aside>}
       <div className={styles.viewer} aria-label="실제 설비 3D 뷰어">
+        {!worldView && <p className={`${styles.modelPending} ${setup.currentStep === "BASIC" ? styles.modelPendingSingleLine : ""}`} role="status">{setup.currentStep === "BASIC"
+          ? "오른쪽에서 설비 기본 정보를 입력해 주세요."
+          : equipment.metadata?.initialModelPending ? "2단계에서 관측 방식을 선택해 주세요."
+            : modelMode === "SCAN" ? "2단계에서 스캔 파일을 등록해 주세요."
+              : "2단계에서 외관 도형을 선택해 주세요."}</p>}
         {initialViewFraming && <div className={styles.initialViewToolbar} data-camera-safe-ui role="group" aria-label="최초 관제 화면 지정">
           <span>뷰어에서 보일 시작 화면을 맞추세요</span>
           <button type="button" className={styles.initialViewConfirm} onClick={onConfirmInitialView}>이 화면으로 확정</button>

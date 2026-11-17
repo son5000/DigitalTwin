@@ -80,5 +80,6 @@ export default function useEquipmentTelemetry(projectId, equipmentId, rois, susp
     const time = new Date().toISOString();
     setState((current) => ({ ...current, key, alarms: [{ id: `demo:manual:${time}`, severity: "WARNING", occurredAt: time, name: "경고 수신 예시", message: "화면 경고 표시를 확인하는 테스트 이벤트입니다.", dataSource: "DEMO" }, ...(current.key === key ? current.alarms : [])].slice(0, 100) }));
   }
-  return { ...(state.key === key ? state : { ...EMPTY, status: "CONNECTING", error: "" }), demo, setDemo, now, acknowledge, simulateAlarm };
+  return { ...(suspended ? { ...EMPTY, status: "DISCONNECTED", error: "" }
+    : state.key === key ? state : { ...EMPTY, status: "CONNECTING", error: "" }), demo, setDemo, now, acknowledge, simulateAlarm };
 }

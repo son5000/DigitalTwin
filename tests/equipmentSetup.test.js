@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { EQUIPMENT_SETUP_STEPS, getEquipmentSetup, getEquipmentSetupSteps, updateEquipmentSetup, getSetupStepValidation, getSensorReadingState, getSetupStepIssue, getEquipmentSetupSaveSummary } from "../src/features/digitalTwin/editor/model/equipmentSetup.js";
+import { EQUIPMENT_SETUP_STEPS, canSkipEquipmentSetupStep, getEquipmentSetup, getEquipmentSetupSteps, updateEquipmentSetup, invalidateEquipmentModelSetup, hasEquipmentModelPreview, getSetupStepValidation, getSensorReadingState, getSetupStepIssue, getEquipmentSetupSaveSummary } from "../src/features/digitalTwin/editor/model/equipmentSetup.js";
 import { createViewerPreset, resolveEquipmentRepresentation } from "../src/features/digitalTwin/editor/model/viewerPreset.js";
 
 test("설비별 단계는 저장 후 복원하며 완료와 건너뜀을 구분한다", () => {
@@ -35,6 +35,49 @@ test("스캔과 외관을 함께 쓰면 2.5단계에서 스캔을 따로 확인�
   assert.equal(getEquipmentSetup(equipment, assets).steps.SCAN, "DONE");
 });
 
+test("단일 설비 임시 도형은 외관을 명시적으로 선택해야 완료된다", () => {
+  const equipment = { id: "A", name: "설비", shapeTemplateId: "CABINET_SINGLE", metadata: { modelComposition: "SHAPE", exteriorSelected: false } };
+  assert.equal(hasEquipmentModelPreview(equipment), false);
+  assert.match(getSetupStepIssue("ASSET", { equipment }), /외관에 사용할 도형/);
+  equipment.metadata.exteriorSelected = true;
+  assert.equal(hasEquipmentModelPreview(equipment), true);
+  assert.doesNotMatch(getSetupStepIssue("ASSET", { equipment }), /외관에 사용할 도형/);
+  equipment.metadata.modelComposition = "SCAN";
+  equipment.metadata.exteriorSelected = false;
+  assert.equal(hasEquipmentModelPreview(equipment), false);
+  assert.equal(hasEquipmentModelPreview(equipment, [{ equipmentId: "A", assetType: "OBJ" }]), true);
+  assert.doesNotMatch(getSetupStepIssue("ASSET", { equipment }), /외관에 사용할 도형/);
+});
+
+test("모델 변경은 완료 상태를 다시 확인하고 저장 요약은 실제 입력을 검증한다", () => {
+  const complete = Object.fromEntries(EQUIPMENT_SETUP_STEPS.map(({ id }) => [id, "DONE"]));
+  const equipment = { id: "A", name: "", metadata: { detailSetup: { currentStep: "ASSET", steps: complete } } };
+  const invalidated = invalidateEquipmentModelSetup(equipment, { scan: true });
+  assert.equal(invalidated.currentStep, "ASSET");
+  assert.equal(invalidated.steps.BASIC, "DONE");
+  assert.equal(invalidated.steps.ASSET, "PENDING");
+  assert.equal(invalidated.steps.SCAN, "PENDING");
+  assert.equal(invalidated.steps.REVIEW, "PENDING");
+  assert.equal(getEquipmentSetupSaveSummary([equipment]).pendingCount, 0);
+  assert.ok(getEquipmentSetupSaveSummary([equipment], [], { sensors: [], points: [], viewerPreset: {} }).pendingCount > 0);
+});
+
+test("정적 뷰어는 센서·가상 카메라·관측 영역 없이 완료할 수 있지만 모델은 필수다", () => {
+  const steps = { BASIC: "DONE", ASSET: "DONE", SENSOR: "SKIPPED", VIRTUAL_CAMERA: "SKIPPED", POINT: "SKIPPED", REVIEW: "DONE" };
+  const equipment = { id: "A", name: "펌프", shapeTemplateId: "PUMP", metadata: { coordinateFrame: { id: "frame" }, detailSetup: { steps } } };
+  assert.equal(canSkipEquipmentSetupStep("SENSOR"), true);
+  assert.equal(canSkipEquipmentSetupStep("ASSET"), false);
+  assert.equal(getSetupStepValidation("REVIEW", { equipment, viewerPreset: {} }), null);
+  assert.deepEqual(getEquipmentSetupSaveSummary([equipment], [], { sensors: [], points: [], viewerPreset: {} }), { equipmentCount: 0, pendingCount: 0, skippedCount: 3 });
+  const sensor = { id: "S", equipmentIds: ["A"] };
+  assert.equal(canSkipEquipmentSetupStep("SENSOR", { sensors: [sensor] }), false);
+  assert.match(getSetupStepValidation("REVIEW", { equipment, sensors: [sensor] }).message, /등록된 항목/);
+  assert.ok(getEquipmentSetupSaveSummary([equipment], [], { sensors: [sensor], points: [], viewerPreset: {} }).pendingCount > 0);
+  equipment.metadata.detailSetup.steps.ASSET = "SKIPPED";
+  assert.match(getSetupStepValidation("REVIEW", { equipment }).message, /필수 단계/);
+  assert.equal(getEquipmentSetupSaveSummary([equipment]).pendingCount, 1);
+});
+
 test("거리별 모델 옵션은 전역 모드 및 선택 여부와 독립적이며 자산 누락 시 복구한다", () => {
   const preset = createViewerPreset({ equipmentRepresentation: { globalMode: "REALISTIC", autoDetailDistance: 10, overrides: { A: "DISTANCE" } } });
   const input = { preset, equipmentId: "A", hasDetailedModel: true, selected: true };
@@ -58,7 +101,7 @@ test("텍스처 미연결이나 역전된 임계치는 완료 처리 전에 안�
   assert.equal(getSetupStepIssue("POINT", values), "");
   assert.match(getSetupStepIssue("POINT", { ...values, sensors: [] }), /텍스처/);
   assert.match(getSetupStepIssue("POINT", { ...values, points: [{ ...point, normalRange: { max: 100 } }] }), /임계치/);
-  assert.match(getSetupStepIssue("ASSET", {}), /건너뛰세요/);
+  assert.match(getSetupStepIssue("ASSET", {}), /외관 도형을 선택하세요/);
 });
 
 test("저장 확인은 선택 설비 외의 미완료·건너뜀 단계도 집계한다", () => {
@@ -68,7 +111,7 @@ test("저장 확인은 선택 설비 외의 미완료·건너뜀 단계도 집�
     { id: "other-floor" },
     { id: "outdoor", metadata: { detailSetup: { steps: { ...complete, ASSET: "SKIPPED" } } } },
   ];
-  assert.deepEqual(getEquipmentSetupSaveSummary(equipment), { equipmentCount: 2, pendingCount: 6, skippedCount: 1 });
+  assert.deepEqual(getEquipmentSetupSaveSummary(equipment), { equipmentCount: 2, pendingCount: 7, skippedCount: 1 });
   assert.deepEqual(getEquipmentSetupSaveSummary([equipment[0]]), { equipmentCount: 0, pendingCount: 0, skippedCount: 0 });
   assert.deepEqual(getEquipmentSetupSaveSummary([]), { equipmentCount: 0, pendingCount: 0, skippedCount: 0 });
 });

@@ -13,7 +13,7 @@ import { UNIFIED_EQUIPMENT_TEMPLATE_MAP } from "@/features/digitalTwin/editor/co
 import { CloseIcon } from "@/components/icons";
 
 import NumericField from "./NumericField";
-import { SETUP_REQUIREMENTS, getEquipmentModelMode, getEquipmentSetup, getEquipmentSetupSteps, updateEquipmentSetup, getSetupStepValidation } from "../model/equipmentSetup";
+import { SETUP_REQUIREMENTS, canSkipEquipmentSetupStep, getEquipmentModelMode, getEquipmentSetup, getEquipmentSetupSteps, updateEquipmentSetup, getSetupStepValidation } from "../model/equipmentSetup";
 import styles from "./MonitoringSettingsPanel.module.css";
 import SensorConnectionFields from "./SensorConnectionFields";
 import EquipmentAssetFilesPanel from "./EquipmentAssetFilesPanel";
@@ -25,7 +25,7 @@ const STATUS_TEXT = { DONE: "완료", SKIPPED: "건너뜀", PENDING: "미완료"
 
 
 export default function MonitoringSettingsPanel({
-  equipment, selectedEquipmentId, assetBindings, sensorBindings, observationPoints,
+  equipment, selectedEquipmentId, singleEquipment = false, assetBindings, sensorBindings, observationPoints,
   selectedAsset: assetSelection, selectedPoint: pointSelection, selectedSensor: sensorSelection,
   onUpdateAsset, onRemoveAsset,
   onSelectPoint, onUpdatePoint, onRemovePoint,
@@ -112,6 +112,7 @@ export default function MonitoringSettingsPanel({
   const modelMode = getEquipmentModelMode(selectedEquipment, scopedAssets);
   const setup = getEquipmentSetup(selectedEquipment, scopedAssets);
   const tab = setup.currentStep;
+  const canSkipStep = canSkipEquipmentSetupStep(tab, { equipment: selectedEquipment, sensors: scopedSensors, points: scopedPoints, viewerPreset });
   const stepIndex = activeSteps.findIndex((step) => step.id === tab);
   const step = activeSteps[stepIndex];
   function setStep(id, status) {
@@ -167,24 +168,24 @@ export default function MonitoringSettingsPanel({
 
   return <section ref={panelRef} className={styles.panel} onChangeCapture={() => setStepError(null)}>
     <header>
-      <div className={styles.panelHeading}><span>{step.number ?? stepIndex + 1} / 6 단계 · 완료 {setup.completed}/{activeSteps.length} · 건너뜀 {setup.skipped}</span><h2>{selectedEquipment.name}</h2></div>
+      <div className={styles.panelHeading}><span>{stepIndex + 1} / {activeSteps.length} 단계 · 완료 {setup.completed}/{activeSteps.length} · 건너뜀 {setup.skipped}</span><h2>{selectedEquipment.name || "새 관측 설비"}</h2></div>
       {onClose && <button type="button" className={styles.panelClose} aria-label="설비 상세 닫기" onClick={onClose}><CloseIcon size={18} /></button>}
       <progress aria-label="설비 설정 완료 단계" value={setup.completed} max={activeSteps.length} />
     </header>
     <label className={styles.stepPicker}>
       <span>설정 단계</span>
       <select value={tab} onChange={(event) => setStep(event.target.value)}>
-        {activeSteps.map(({ id, label, number }, index) => <option key={id} value={id}>{number ?? index + 1}. {label} · {STATUS_TEXT[setup.steps[id]]}</option>)}
+        {activeSteps.map(({ id, label }, index) => <option key={id} value={id} disabled={singleEquipment && selectedEquipment.metadata?.initialModelPending && id !== "BASIC" && setup.steps.BASIC !== "DONE"}>{index + 1}. {label} · {STATUS_TEXT[setup.steps[id]]}</option>)}
       </select>
     </label>
     <div className={styles.stepBody} key={tab}>
-    <p className={styles.stepDescription} data-setup-field="step-start">{tab === "ASSET" ? modelMode === "SCAN" ? "스캔 파일의 실제 크기와 설치 위치를 맞추고 관제 표시를 설정하세요." : modelMode === "BOTH" ? "외관의 구조·문과 관제 표시를 설정하세요. 스캔은 다음 단계에서 연결합니다." : "외관 도형의 구조·문과 기준좌표, 관제 표시를 설정하세요." : step.description}</p>
-    <p className={styles.requirements}>{tab === "ASSET" && modelMode === "BOTH" ? "외관 구조, 문 크기와 표시 방식을 먼저 설정하세요. 스캔 파일은 다음 2.5단계에서 연결합니다." : tab === "ASSET" && modelMode === "SCAN" ? "스캔 파일을 등록하고 실제 크기·방향·위치와 기준좌표를 확인하세요." : tab === "ASSET" ? "외관의 실제 크기와 기준좌표를 확인하세요." : SETUP_REQUIREMENTS[tab]}</p>
+    <p className={styles.stepDescription} data-setup-field="step-start">{tab === "BASIC" && singleEquipment ? "관측할 설비의 기본 정보를 먼저 입력하세요. 모델 구성과 파일은 다음 단계에서 정합니다." : tab === "ASSET" && selectedEquipment.metadata?.initialModelPending ? "스캔, 외관 도형 또는 두 방식을 함께 사용할지 먼저 선택하세요." : tab === "ASSET" ? modelMode === "SCAN" ? "스캔 파일의 실제 크기와 설치 위치를 맞추고 관제 표시를 설정하세요." : modelMode === "BOTH" ? "외관 도형을 선택하고 관제 표시를 설정하세요. 스캔은 다음 단계에서 연결합니다." : "외관 도형을 선택하고 크기와 기준좌표를 확인하세요." : step.description}</p>
+    <p className={styles.requirements}>{tab === "BASIC" && singleEquipment ? "필수: 설비명. 대표 사진·제조사 등은 선택 사항이며 모델은 다음 단계에서 등록합니다." : tab === "ASSET" && selectedEquipment.metadata?.initialModelPending ? "필수: 관측 방식을 선택하세요." : tab === "ASSET" && modelMode === "BOTH" ? "외관 도형과 문을 설정하세요. 스캔 파일은 다음 단계에서 연결합니다." : tab === "ASSET" && modelMode === "SCAN" ? "스캔 파일을 등록하고 실제 크기·방향·위치와 기준좌표를 확인하세요." : tab === "ASSET" ? "외관의 실제 크기와 기준좌표를 확인하세요." : SETUP_REQUIREMENTS[tab]}</p>
 
     {tab === "BASIC" ? <div className={styles.content}>
-      <div data-setup-field="model-files"><EquipmentAssetFilesPanel key={[modelAsset?.id, modelAsset?.assetId, modelAsset?.relatedSourceKey, modelAsset?.textureSourceKey].join(":")} binding={modelAsset} onUpdateAsset={onUpdateAsset} onUpload={uploadFile} uploading={uploading} uploadNotice={uploadNotice} /></div>
+      {!singleEquipment && <div data-setup-field="model-files"><EquipmentAssetFilesPanel key={[modelAsset?.id, modelAsset?.assetId, modelAsset?.relatedSourceKey, modelAsset?.textureSourceKey].join(":")} binding={modelAsset} onUpdateAsset={onUpdateAsset} onUpload={uploadFile} uploading={uploading} uploadNotice={uploadNotice} /></div>}
       <fieldset className={styles.settingsGroup}><legend>설비 기본 정보</legend>
-      {[["name", "설비명"], ["model", "모델명"], ["manufacturer", "제조사"], ["serialNumber", "일련번호"], ["assetTag", "자산 번호"]].map(([key, label]) => <label className={styles.field} key={key} data-setup-field={key === "name" ? "equipment-name" : undefined}><span>{label}{key === "name" ? " · 필수" : ""}</span><input required={key === "name"} value={key === "name" ? selectedEquipment.name : selectedEquipment.metadata?.[key] ?? ""} onChange={(event) => onUpdateEquipment?.(key === "name" ? { name: event.target.value } : { metadata: { [key]: event.target.value } })} /></label>)}
+      {[["name", "설비명"], ["model", "모델명"], ["manufacturer", "제조사"], ["serialNumber", "일련번호"], ["assetTag", "자산 번호"]].map(([key, label]) => <label className={styles.field} key={key} data-setup-field={key === "name" ? "equipment-name" : undefined}><span>{label}{key === "name" ? " · 필수" : ""}</span><input required={key === "name"} placeholder={key === "name" && singleEquipment ? "예: 주 펌프 01" : undefined} value={key === "name" ? selectedEquipment.name : selectedEquipment.metadata?.[key] ?? ""} onChange={(event) => onUpdateEquipment?.(key === "name" ? { name: event.target.value } : { metadata: { [key]: event.target.value } })} /></label>)}
       <label className={styles.field}><span>설비 설명</span><textarea value={selectedEquipment.metadata?.description ?? ""} onChange={(event) => onUpdateEquipment?.({ metadata: { description: event.target.value } })} /></label>
       <label className={styles.uploadButton}>대표 사진 등록 (2MB 이하)<input type="file" accept="image/jpeg,image/png,image/webp" onChange={uploadPhoto} /></label>
       {photoError && <p role="alert">{photoError}</p>}
@@ -195,7 +196,12 @@ export default function MonitoringSettingsPanel({
 
     </div> : null}
 
-    {["ASSET", "SCAN"].includes(tab) ? <div className={styles.content}><EquipmentModelSetupPanel phase={tab} equipment={selectedEquipment} binding={modelAsset} bindings={scopedAssets} onUpdateEquipment={onUpdateEquipment} onUpdateAsset={onUpdateAsset} onRemoveAsset={onRemoveAsset} onUploadAssetFiles={onUploadAssetFiles} viewerPreset={viewerPreset} onViewerPresetChange={onViewerPresetChange} onEquipmentRepresentationChange={onEquipmentRepresentationChange} cameraController={cameraController} /></div> : null}
+    {["ASSET", "SCAN"].includes(tab) ? <div className={styles.content}><EquipmentModelSetupPanel phase={tab} singleEquipment={singleEquipment} equipment={selectedEquipment} binding={modelAsset} bindings={scopedAssets} onUpdateEquipment={onUpdateEquipment} onUpdateAsset={onUpdateAsset} onRemoveAsset={onRemoveAsset} onUploadAssetFiles={onUploadAssetFiles} viewerPreset={viewerPreset} onViewerPresetChange={onViewerPresetChange} onEquipmentRepresentationChange={onEquipmentRepresentationChange} cameraController={cameraController} /></div> : null}
+    {singleEquipment && modelAsset && (tab === "SCAN" || tab === "ASSET" && modelMode === "SCAN") &&
+      <details className={styles.optionalModelSettings}><summary>등록된 모델·재질·텍스처 파일 관리</summary>
+        <EquipmentAssetFilesPanel key={[modelAsset.id, modelAsset.assetId, modelAsset.relatedSourceKey, modelAsset.textureSourceKey].join(":")}
+          binding={modelAsset} onUpdateAsset={onUpdateAsset} uploading={uploading} uploadNotice={uploadNotice} showUpload={false} />
+      </details>}
 
     {tab === "REVIEW" ? <div className={styles.content}>
       <section className={styles.finalView} aria-labelledby="final-view-title">
@@ -216,9 +222,15 @@ export default function MonitoringSettingsPanel({
         {cameraNotice && <p role="status">{cameraNotice}</p>}
       </section>
       <p className={styles.finalSavePrompt}>이 시작 구도와 연결 정보를 저장하시겠습니까?</p>
-      <div className={styles.review}>{activeSteps.slice(0, -1).map(({ id, label }) => <button type="button" key={id} onClick={() => setStep(id)}>{label} · {STATUS_TEXT[setup.steps[id]]} →</button>)}</div>
+      <div className={styles.review}>{activeSteps.slice(0, -1).map(({ id, label }) => {
+        const issue = setup.steps[id] === "DONE" ? getSetupStepValidation(id, { equipment: selectedEquipment, assets: scopedAssets, sensors: scopedSensors, points: scopedPoints, viewerPreset }) : null;
+        return <button type="button" key={id} onClick={() => setStep(issue?.step ?? id)}>
+          <span>{label} · {issue ? "재확인 필요" : STATUS_TEXT[setup.steps[id]]} →</span>
+          {issue && <small>{issue.message}</small>}
+        </button>;
+      })}</div>
       <p className={styles.help}>연결 정보를 확인하세요. 설정을 완료한 뒤 실제 측정값이 들어오는지도 확인해야 합니다.</p>
-      <dl className={styles.summary}><div><dt>센서</dt><dd>{scopedSensors.length}개 · 서버 식별 완료 {scopedSensors.filter((sensor) => sensor.serverSensorId).length}개</dd></div><div><dt>관측 영역</dt><dd>{scopedPoints.length}개 · 표시 항목 {scopedPoints.reduce((n, point) => n + point.measurements.filter((item) => item.visible).length, 0)}개</dd></div></dl>
+      <dl className={styles.summary}><div><dt>센서</dt><dd>{scopedSensors.length}개 · 서버 식별 완료 {scopedSensors.filter((sensor) => sensor.serverSensorId).length}개</dd></div><div><dt>관측 영역</dt><dd>{scopedPoints.length}개 · 표시 항목 {scopedPoints.reduce((n, point) => n + (point.measurements?.filter((item) => item.visible).length ?? 0), 0)}개</dd></div></dl>
     </div> : null}
 
     {tab === "SENSOR" ? <div className={styles.content}>
@@ -290,8 +302,8 @@ export default function MonitoringSettingsPanel({
     <footer className={styles.stepFooter}>
       {stepError?.equipmentId === selectedEquipment.id && stepError.step === tab && <p id={errorId} role="alert">{stepError.message}</p>}
       {tab === "REVIEW" ? <div><button type="button" onClick={() => setStep(activeSteps[stepIndex - 1].id)}>이전 단계</button><button type="button" disabled={uploading || saveDisabled} onClick={() => { if (setStep("REVIEW", "DONE")) onRequestSave?.(selectedEquipment.id); }}>이대로 저장</button></div>
-        : <div><button type="button" disabled={stepIndex === 0} onClick={() => setStep(activeSteps[stepIndex - 1].id)}>이전</button><button type="button" onClick={() => setStep(tab, "SKIPPED")}>건너뛰기</button><button type="button" onClick={() => setStep(tab, "PENDING")}>다시 편집</button><button type="button" disabled={uploading} onClick={() => setStep(tab, "DONE")}>완료 후 다음</button></div>}
-      {tab !== "REVIEW" && <small>입력 후 프로젝트를 저장해 보관하세요.</small>}
+        : <div><button type="button" disabled={stepIndex === 0} onClick={() => setStep(activeSteps[stepIndex - 1].id)}>이전</button>{canSkipStep && <button type="button" onClick={() => setStep(tab, "SKIPPED")}>건너뛰기</button>}<button type="button" onClick={() => setStep(tab, "PENDING")}>다시 편집</button><button type="button" disabled={uploading} onClick={() => setStep(tab, "DONE")}>완료 후 다음</button></div>}
+      {tab !== "REVIEW" && <small>{["SENSOR", "VIRTUAL_CAMERA", "POINT"].includes(tab) && !canSkipStep ? "등록된 항목이 있습니다. 확인을 마치거나 항목을 제거한 뒤 진행하세요." : "입력 후 프로젝트를 저장해 보관하세요."}</small>}
     </footer>
   </section>;
 }

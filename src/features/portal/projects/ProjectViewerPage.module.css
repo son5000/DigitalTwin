@@ -78,6 +78,10 @@
 .empty { margin: 12px 0; padding: 0 8px; color: var(--portal-muted); font-size: 11px; line-height: 1.7; }
 .dataStatus { display: flex; align-items: flex-start; gap: 10px; margin-top: 18px; padding: 12px; border: 1px solid var(--portal-border); border-radius: 8px; background: var(--portal-surface); }
 .dataStatus > i { width: 7px; height: 7px; flex: 0 0 7px; margin-top: 6px; border-radius: 50%; background: var(--portal-muted); }
+.liveConnection[data-status="CONNECTED"] { color: #3aa987; }
+.dataStatus[data-status="NORMAL"] > i { background: #3aa987; }
+.dataStatus[data-status="WARNING"] > i, .dataStatus[data-status="RECONNECTING"] > i { background: #bd8a32; }
+.dataStatus[data-status="DANGER"] > i, .dataStatus[data-status="ERROR"] > i { background: #d2625d; }
 .dataStatus strong { color: var(--portal-text); font-size: 11px; }
 .dataStatus p { margin: 5px 0 0; color: var(--portal-muted); font-size: 10px; line-height: 1.6; }
 .trendEmpty { display: grid; place-items: center; min-height: 104px; margin-top: 14px; padding: 12px; border: 1px dashed var(--portal-border); border-radius: 8px; color: var(--portal-muted); font-size: 11px; text-align: center; }

@@ -6,7 +6,7 @@ export const ENCLOSURE_WALLS = { front: "앞판", back: "뒷판", left: "왼쪽 
 
 function doorSet(source, width, height, defaultCount) {
   const doorCount = Number.isInteger(source.doorCount) && source.doorCount >= 0 && source.doorCount <= 5 ? source.doorCount : defaultCount;
-  const doorLayout = source.doorLayout === "STACKED" ? "STACKED" : "SIDE_BY_SIDE";
+  const doorLayout = source.doorLayout === "STACKED" || (doorCount > 1 && source.doorLayout !== "SIDE_BY_SIDE") ? "STACKED" : "SIDE_BY_SIDE";
   const legacyFirstRatio = doorLayout === "STACKED" ? source.upperDoorRatio : source.leftDoorRatio;
   const supplied = Array.isArray(source.doorRatios) && source.doorRatios.length === doorCount ? source.doorRatios : null;
   const weights = supplied ?? (doorCount === 2 ? [Number(legacyFirstRatio) || .5, 1 - (Number(legacyFirstRatio) || .5)] : Array(doorCount).fill(1));
@@ -16,11 +16,11 @@ function doorSet(source, width, height, defaultCount) {
     doorCount,
     doorLayout,
     doorRatios: safe.map((value) => value / total),
-    stackOrder: source.stackOrder === "TOP_DOWN" || source.stackOrder === "BOTTOM_UP" ? source.stackOrder : doorCount > 2 ? "BOTTOM_UP" : "TOP_DOWN",
+    stackOrder: source.stackOrder === "TOP_DOWN" || source.stackOrder === "BOTTOM_UP" ? source.stackOrder : "BOTTOM_UP",
     upperDoorRatio: clamp(source.upperDoorRatio, .001 / height, 1 - .001 / height, .5),
     leftDoorRatio: clamp(source.leftDoorRatio, .001 / width, 1 - .001 / width, .5),
     doors: Array.from({ length: 5 }, (_, index) => ({
-      hinge: ["LEFT", "RIGHT", "TOP", "BOTTOM"].includes(source.doors?.[index]?.hinge) ? source.doors[index].hinge : index === 0 ? "LEFT" : "RIGHT",
+      hinge: ["LEFT", "RIGHT", "TOP", "BOTTOM"].includes(source.doors?.[index]?.hinge) ? source.doors[index].hinge : "RIGHT",
       swing: source.doors?.[index]?.swing === "INWARD" ? "INWARD" : "OUTWARD",
       open: source.doors?.[index]?.open === true,
       angle: clamp(source.doors?.[index]?.angle, 0, 180, 150),
@@ -78,7 +78,7 @@ export function getEnclosureDoorLabel(enclosure, index) {
     ? `${enclosure.stackOrder === "BOTTOM_UP" ? index + 1 : enclosure.doorCount - index}층 문`
     : `왼쪽부터 ${index + 1}번 문`;
   return enclosure.doorLayout === "STACKED"
-    ? index === 0 ? "위쪽 문" : "아래쪽 문"
+    ? (index === (enclosure.stackOrder === "BOTTOM_UP" ? 0 : 1) ? "아래쪽 문" : "위쪽 문")
     : index === 0 ? "왼쪽 문" : "오른쪽 문";
 }
 

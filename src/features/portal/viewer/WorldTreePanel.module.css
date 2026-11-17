@@ -12,6 +12,10 @@
 .toggle[aria-expanded="true"] svg { transform: rotate(90deg); }
 .label { flex: 1; min-width: 70px; padding: 8px 5px; text-align: left; font-size: 12px !important; overflow-wrap: anywhere; }
 .label:disabled { color: var(--portal-muted); cursor: default; }
+.liveBadge { flex: 0 0 auto; margin-right: 5px; padding: 3px 6px; border-radius: 5px; background: var(--portal-surface); color: var(--portal-muted); font-size: 10px; }
+.liveBadge[data-status="NORMAL"] { color: #3aa987; }
+.liveBadge[data-status="WARNING"] { color: #bd8a32; }
+.liveBadge[data-status="DANGER"] { color: #d2625d; }
 .empty { color: var(--portal-muted); font-size: 12px; line-height: 1.6; }
 
 .roiEmpty { text-align: right; }

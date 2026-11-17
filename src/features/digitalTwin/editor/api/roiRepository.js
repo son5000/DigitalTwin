@@ -1,8 +1,9 @@
 import { isObservationRoi, observationPointToRoi, roiToObservationPoint, roiFromReferencePayload, roiToReferencePayload, validateRoi } from "../model/roiMonitoring.js";
 import { normalizeObservationPoint } from "../model/equipmentDetailModel.js";
-import { readProjects, updateProjectObservationPoints } from "../../../portal/projects/projectRepository.js";
+import { readProjects, roiStorageKey, updateProjectObservationPoints } from "../../../portal/projects/projectRepository.js";
+import { projectApiBase } from "../../../portal/projects/projectConfigurationApi.js";
 
-export const roiStorageKey = (projectId) => `digital-twin-rois-v1:${projectId}`;
+export { roiStorageKey };
 import { monitoringApiBase, monitoringRequest as request, uploadRoiReferenceImage } from "./monitoringClient.js";
 export { monitoringApiBase, lookupSensor } from "./monitoringClient.js";
 
@@ -14,7 +15,9 @@ export async function loadMonitoringProject(projectId, signal) {
 
 export function createRoiRepository(projectId, storage = window.localStorage) {
   const path = `/projects/${encodeURIComponent(projectId)}/rois`;
-  const shared = Boolean(monitoringApiBase) && readProjects(storage).projects.find((project) => project.id === projectId)?.storageMode !== "LOCAL";
+  const localProject = readProjects(storage).projects.find((project) => project.id === projectId || project.serverProjectId === projectId);
+  const backendProject = Boolean(projectApiBase) && (!localProject || localProject.storageMode === "SERVER");
+  const shared = Boolean(monitoringApiBase) && !backendProject && localProject?.storageMode !== "LOCAL";
   function readLocal() {
     const raw = storage.getItem(roiStorageKey(projectId));
     const records = raw ? JSON.parse(raw) : [];

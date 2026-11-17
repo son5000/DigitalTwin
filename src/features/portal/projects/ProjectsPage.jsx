@@ -1,12 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { GridViewIcon, ListViewIcon } from "@/components/icons";
 import Brand from "../components/Brand";
 import { navigateTo } from "@/features/customAssets/core/customAssetNavigation";
-import { createProject, getProjectDetails, openProject, readProjects } from "./projectRepository";
+import { canOpenProjectViewer, createProject, getProjectDetails, openProject, openRemoteProject, readProjects, removeProject } from "./projectRepository";
 import styles from "./ProjectsPage.module.css";
 import { downloadProjectBundle, exportProjectBundle, importProjectBundle } from "./projectBundle";
 import { projectApiBase } from "./projectConfigurationApi";
 import { listProjectConfigurations } from "./projectListApi";
+import { loadEditableProject } from "./projectEditApi";
+import ProjectDeleteDialog from "./ProjectDeleteDialog";
+import ProjectViewerLinksDialog from "./ProjectViewerLinksDialog";
 
 const PROJECT_VIEW_STORAGE_KEY = "digital-twin-projects-view-v1";
 
@@ -20,6 +23,13 @@ export default function ProjectsPage() {
   const [serverResult, setServerResult] = useState({ items: [], nextCursor: null, loading: Boolean(projectApiBase), error: "" });
   const [bundleState, setBundleState] = useState({ busy: false, message: "", error: false });
   const [viewMode, setViewMode] = useState(readProjectView);
+  const [editingId, setEditingId] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [linkTarget, setLinkTarget] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const editControllerRef = useRef(null);
+  useEffect(() => () => editControllerRef.current?.abort(), []);
   useEffect(() => {
     const refresh = () => {
       try { setResult({ projects: readProjects().projects, loading: false, error: "" }); }
@@ -48,12 +58,42 @@ export default function ProjectsPage() {
     } catch (error) { setServerResult((value) => ({ ...value, loading: false, error: error.message })); }
   }
 
-  function enterProject(id) {
+  async function enterProject(project = null) {
+    if (editingId) return;
+    const id = project?.id ?? project?.projectId;
+    setEditingId(id ?? "new");
     try {
-      if (id) openProject(id);
-      else createProject();
+      if (!project) createProject();
+      else if (project.projectId || project.storageMode === "SERVER"
+        && project.layout.savedAt === project.serverSavedAt && projectApiBase) {
+        const controller = new AbortController();
+        editControllerRef.current = controller;
+        const serverId = project.projectId ?? project.serverProjectId ?? id;
+        const loaded = await loadEditableProject(serverId, controller.signal);
+        openRemoteProject(id, loaded.layout, loaded.revision, window.localStorage, serverId);
+      } else openProject(id);
       navigateTo("/editor");
     } catch (error) { setResult((value) => ({ ...value, error: `프로젝트를 열지 못했습니다. ${error.message}` })); }
+    finally { editControllerRef.current = null; setEditingId(null); }
+  }
+
+  function requestDelete(id, name, localOnly = false, hasLocal = false) {
+    setDeleteError("");
+    setDeleteTarget({ id, name, localOnly, hasLocal });
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget || deleteBusy) return;
+    const { id, hasLocal } = deleteTarget;
+    setDeleteBusy(true);
+    setDeleteError("");
+    try {
+      const local = hasLocal && readProjects().projects.some((project) => project.id === id);
+      if (local) removeProject(id);
+      if (hasLocal) setResult({ projects: readProjects().projects, loading: false, error: "" });
+      setDeleteTarget(null);
+    } catch (error) { setDeleteError(`로컬 저장본을 삭제하지 못했습니다. ${error.message}`); }
+    finally { setDeleteBusy(false); }
   }
 
   async function exportBundle(project) {
@@ -81,8 +121,8 @@ export default function ProjectsPage() {
     catch { /* Keep the selected view for this session when storage is unavailable. */ }
   }
 
-  const localIds = new Set(result.projects.map((project) => project.id));
-  const serverOnlyProjects = serverResult.items.filter((project) => !localIds.has(project.projectId));
+  const localIds = new Set(result.projects.flatMap((project) => [project.id, project.serverProjectId].filter(Boolean)));
+  const serverOnlyProjects = serverResult.items.filter((project) => !localIds.has(project.projectId) && !localIds.has(project.externalProjectId));
   const scopeNames = { SITE: "전체 공간·부지", BUILDING: "건물 중심 관측", SINGLE_EQUIPMENT: "단일 설비 관측", MULTI_EQUIPMENT: "다중 설비 관측", CUSTOM: "사용자 정의" };
 
   return <div className={styles.page}>
@@ -99,7 +139,7 @@ export default function ProjectsPage() {
           <label className={styles.filePicker} data-disabled={bundleState.busy}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 16V3m-5 5 5-5 5 5M4 15v5a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5" /></svg>
             <span>{bundleState.busy ? "처리 중…" : "구성 파일 선택"}</span>
-            <input className={styles.fileInput} type="file" accept=".zip,.json,application/zip,application/json" aria-label="설치 구성 파일 선택" aria-describedby="bundle-import-format" disabled={bundleState.busy} onChange={importBundle} />
+            <input className={styles.fileInput} type="file" accept=".zip,.json,application/zip,application/json" aria-label="설치 구성 파일 선택" aria-describedby="bundle-import-format" disabled={bundleState.busy || Boolean(editingId)} onChange={importBundle} />
           </label>
         </div>
         {bundleState.message && <p className={styles.bundleMessage} data-error={bundleState.error} role={bundleState.error ? "alert" : "status"}>{bundleState.message}</p>}
@@ -124,33 +164,45 @@ export default function ProjectsPage() {
             return <article key={project.projectId} className={styles.card} aria-label={project.name}>
               <img className={styles.thumbnail} src={project.thumbnailUrl || `/portal/workflow-${image}.svg`} alt={`${scope} 미리보기`} width="800" height="480" />
               <div className={styles.cardBody}><div className={styles.cardInfo}><span className={styles.status} data-draft={project.status === "DRAFT"}>{project.status === "DRAFT" ? "작업 중" : "저장 완료"}</span><h2>{project.name}</h2><p>{scope}</p><small>최근 수정 · {Number.isNaN(modified.getTime()) ? "수정일 정보 없음" : modified.toLocaleString("ko-KR", { dateStyle: "medium", timeStyle: "short" })}</small></div>
-                <div className={styles.actions}>{project.publishedRevision ? <button className={styles.primary} onClick={() => navigateTo(`/viewer?project=${encodeURIComponent(project.projectId)}`)}>뷰어 열기</button> : <span>공개된 뷰어가 없습니다</span>}</div>
+                <div className={styles.actions}>
+                  <button className={project.status === "DRAFT" ? styles.primary : undefined} disabled={Boolean(editingId)} onClick={() => enterProject(project)}>{editingId === project.projectId ? "불러오는 중…" : project.status === "DRAFT" ? "이어서 편집" : "편집하기"}</button>
+                  {project.publishedRevision ? <button className={project.status === "DRAFT" ? undefined : styles.primary} disabled={Boolean(editingId)} onClick={() => navigateTo(`/viewer?project=${encodeURIComponent(project.projectId)}`)}>뷰어 열기</button> : null}
+                  {project.publishedRevision ? <button disabled={Boolean(editingId)} onClick={() => setLinkTarget({ id: project.projectId, name: project.name, localOnly: false, draft: project.status === "DRAFT" })}>직접 링크</button> : null}
+                  <button className={styles.danger} disabled title="백엔드 프로젝트 삭제 API가 제공되지 않습니다.">삭제 불가</button>
+                </div>
               </div>
             </article>;
           })}
           {result.projects.map((project) => {
             const details = getProjectDetails(project);
-            const serverProject = serverResult.items.find((item) => item.projectId === project.id);
-            const canOpenViewer = project.storageMode === "LOCAL" || !projectApiBase
-              ? project.layout.observationWorkflow?.configured !== false
-              : serverProject ? Boolean(serverProject.publishedRevision) : project.layout.observationWorkflow?.configured !== false;
+            const serverProject = serverResult.items.find((item) => item.projectId === (project.serverProjectId ?? project.id)
+              || item.externalProjectId === project.id);
+            const viewerProjectId = projectApiBase && project.storageMode === "SERVER"
+              ? project.serverProjectId ?? project.id : project.id;
+            const canOpenViewer = canOpenProjectViewer(project, serverProject, Boolean(projectApiBase));
             return <article key={project.id} className={styles.card} aria-label={details.name}>
               <img className={styles.thumbnail} src={details.thumbnail} alt={`${details.scope} 미리보기`} width="800" height="480" />
               <div className={styles.cardBody}><div className={styles.cardInfo}><span className={styles.status} data-draft={details.isDraft}>{details.status}</span><h2>{details.name}</h2><p>{details.scope}</p><small>최근 수정 · {details.modified}</small></div>
                 <div className={styles.actions}>
-                  {details.isDraft ? <button className={styles.primary} onClick={() => enterProject(project.id)}>이어서 편집</button> : null}
-                  {canOpenViewer ? <button className={details.isDraft ? undefined : styles.primary} onClick={() => navigateTo(`/viewer?project=${encodeURIComponent(project.id)}`)}>뷰어 열기</button> : null}
-                  <button className={styles.developer} onClick={() => navigateTo(`/viewer?project=${encodeURIComponent(project.id)}&developer=1`)} aria-label={`${details.name} 개발자 뷰어 열기`} title="테스트 데이터를 주입할 수 있는 뷰어">개발자 뷰어</button>
-                  {!details.isDraft ? <button onClick={() => enterProject(project.id)}>편집하기</button> : null}
-                  <button disabled={bundleState.busy} onClick={() => exportBundle(project)}>ZIP 내보내기</button>
+                  {details.isDraft ? <button className={styles.primary} disabled={Boolean(editingId)} onClick={() => enterProject(project)}>{editingId === project.id ? "불러오는 중…" : "이어서 편집"}</button> : null}
+                  {canOpenViewer ? <button className={details.isDraft ? undefined : styles.primary} disabled={Boolean(editingId)} onClick={() => navigateTo(`/viewer?project=${encodeURIComponent(viewerProjectId)}`)}>{details.isDraft && !serverProject?.publishedRevision ? "현재 구성 미리보기" : "뷰어 열기"}</button> : null}
+                  {canOpenViewer ? <button disabled={Boolean(editingId)} onClick={() => setLinkTarget({ id: viewerProjectId, name: details.name, layout: !projectApiBase || project.storageMode !== "SERVER" ? project.layout : null, localOnly: !projectApiBase || project.storageMode !== "SERVER", draft: details.isDraft })}>직접 링크</button> : null}
+                  {import.meta.env.DEV && <button className={styles.developer} disabled={Boolean(editingId)} onClick={() => navigateTo(`/viewer?project=${encodeURIComponent(project.id)}&developer=1`)} aria-label={`${details.name} 개발자 뷰어 열기`} title="테스트 데이터를 주입할 수 있는 뷰어">개발자 뷰어</button>}
+                  {!details.isDraft ? <button disabled={Boolean(editingId)} onClick={() => enterProject(project)}>{editingId === project.id ? "불러오는 중…" : "편집하기"}</button> : null}
+                  <button disabled={bundleState.busy || Boolean(editingId)} onClick={() => exportBundle(project)}>ZIP 내보내기</button>
+                  <button className={styles.danger} aria-label={`${details.name} 로컬 저장본 삭제`} disabled={Boolean(editingId)} onClick={() => requestDelete(project.id, details.name, true, true)}>로컬 삭제</button>
                 </div>
               </div>
             </article>;
           })}
-          <button className={`${styles.card} ${styles.newCard}`} onClick={() => enterProject()}><span aria-hidden="true">＋</span><strong>새 월드 만들기</strong><small>관측 범위 선택부터 시작하세요</small></button>
+          <button className={`${styles.card} ${styles.newCard}`} disabled={Boolean(editingId)} onClick={() => enterProject()}><span aria-hidden="true">＋</span><strong>새 월드 만들기</strong><small>관측 범위 선택부터 시작하세요</small></button>
         </div>
-        {serverResult.nextCursor && <button type="button" disabled={serverResult.loading} onClick={loadMoreProjects}>{serverResult.loading ? "불러오는 중…" : "프로젝트 더 보기"}</button>}
+        {serverResult.nextCursor && <button type="button" disabled={serverResult.loading || Boolean(editingId) || deleteBusy} onClick={loadMoreProjects}>{serverResult.loading ? "불러오는 중…" : "프로젝트 더 보기"}</button>}
       </>}
     </main>
+    {deleteTarget && <ProjectDeleteDialog name={deleteTarget.name} serverDelete={false} serverCopy={Boolean(projectApiBase && result.projects.find((item) => item.id === deleteTarget.id)?.serverProjectId)} busy={deleteBusy} error={deleteError}
+      onCancel={() => { if (!deleteBusy) setDeleteTarget(null); }} onConfirm={confirmDelete} />}
+    {linkTarget && <ProjectViewerLinksDialog key={linkTarget.id} projectId={linkTarget.id} name={linkTarget.name}
+      layout={linkTarget.layout} localOnly={linkTarget.localOnly} draft={linkTarget.draft} onClose={() => setLinkTarget(null)} />}
   </div>;
 }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getSensorCapabilities } from "../model/equipmentDetailModel";
 import { readProjects } from "@/features/portal/projects/projectRepository";
+import { projectApiBase } from "@/features/portal/projects/projectConfigurationApi";
 import { lookupSensor, monitoringApiBase, saveSensorCalibration } from "../api/monitoringClient";
 import { calibrationPayload, downloadMonitoringJson, validateCalibration } from "../model/monitoringContract";
 import { demoSensor } from "../model/monitoringDemo";
@@ -44,7 +45,7 @@ export default function SensorConnectionFields({ sensor, equipment, sensors, ass
       if (!confirmed) throw new Error("위치·화각 수동 보정 확인을 먼저 선택하세요.");
       setBusy(true);
       const request = new AbortController(); controller.current = request;
-      const remote = monitoringApiBase && sensor.dataSource !== "DEMO";
+      const remote = monitoringApiBase && !projectApiBase && sensor.dataSource !== "DEMO";
       const result = remote ? await saveSensorCalibration(payload, sensor.calibration?.revision ?? 0, request.signal) : { revision: sensor.calibration?.revision ?? 0 };
       if (request.signal.aborted) return;
       onChange(sensor.id, { calibration: { ...result, payload, signature: JSON.stringify(payload), savedAt: new Date().toISOString(), storage: remote ? "SERVER" : "LOCAL" } });
@@ -63,7 +64,7 @@ export default function SensorConnectionFields({ sensor, equipment, sensors, ass
     </>}
     {section !== "connection" && <>
     <label className={styles.check} data-setup-field="sensor-calibration"><input type="checkbox" required checked={confirmed} onChange={(event) => onChange(sensor.id, { calibrationConfirmed: event.target.checked, calibrationConfirmationModel: payload.model.version, calibrationConfirmationFrame: frameKey })} />위치·화각 수동 보정 확인 · 필수</label>
-    <button type="button" disabled={busy || !sensor.serverSensorId} onClick={save}>보정값 저장{monitoringApiBase && sensor.dataSource !== "DEMO" ? "·서버 전송" : "·로컬"}</button>
+    <button type="button" disabled={busy || !sensor.serverSensorId} onClick={save}>보정값 저장{monitoringApiBase && !projectApiBase && sensor.dataSource !== "DEMO" ? "·서버 전송" : "·로컬"}</button>
     <button type="button" onClick={() => { try { downloadMonitoringJson("sensor-calibration.json", validateCalibration(payload)); setMessage("현재 보정 좌표를 내보냈습니다."); } catch (error) { setMessage(error.message); } }}>보정 좌표 내보내기</button>
     <p className={styles.help}>{configured ? `보정 저장됨 · ${sensor.calibration.storage === "SERVER" ? "서버" : "브라우저"}` : "위치와 방향을 확인한 뒤 다시 저장하세요."}</p>
     </>}

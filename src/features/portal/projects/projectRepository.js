@@ -2,6 +2,7 @@ import { LAYOUT_STORAGE_KEY, readLocalLayout } from "../../digitalTwin/editor/mo
 import { getProjectName } from "../../digitalTwin/editor/model/projectMetadata.js";
 
 export const PROJECT_STORAGE_KEY = "digital-twin-projects-v1";
+export const roiStorageKey = (projectId) => `digital-twin-rois-v1:${projectId}`;
 const LEGACY_PROJECT_ID = "local-world";
 
 function isLayout(layout) {
@@ -31,16 +32,19 @@ export function readProjects(storage = window.localStorage) {
   return { ...registry, projects };
 }
 
-function activateProject(id, layout, storage) {
+function activateProject(id, layout, storage, projectEntry = null) {
   const registry = readProjects(storage);
   const previousRegistry = storage.getItem(PROJECT_STORAGE_KEY);
   const previousLayout = storage.getItem(LAYOUT_STORAGE_KEY);
   // Archive first: a failed write must never discard the current world.
-  storage.setItem(PROJECT_STORAGE_KEY, JSON.stringify(registry));
+  const projects = projectEntry
+    ? [...registry.projects.filter((project) => project.id !== id), projectEntry]
+    : registry.projects;
+  storage.setItem(PROJECT_STORAGE_KEY, JSON.stringify({ ...registry, projects }));
   try {
     if (layout) storage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(layout));
     else storage.removeItem(LAYOUT_STORAGE_KEY);
-    storage.setItem(PROJECT_STORAGE_KEY, JSON.stringify({ ...registry, activeId: id }));
+    storage.setItem(PROJECT_STORAGE_KEY, JSON.stringify({ ...registry, activeId: id, projects }));
   } catch (error) {
     if (previousLayout === null) storage.removeItem(LAYOUT_STORAGE_KEY);
     else storage.setItem(LAYOUT_STORAGE_KEY, previousLayout);
@@ -58,6 +62,66 @@ export function openProject(id, storage = window.localStorage) {
   const project = readProjects(storage).projects.find((item) => item.id === id);
   if (!project) throw new Error("프로젝트를 찾을 수 없습니다.");
   activateProject(id, project.layout, storage);
+}
+
+export function openRemoteProject(id, layout, revision, storage = window.localStorage, serverProjectId = id) {
+  if (!isLayout(layout) || !Number.isInteger(revision) || revision < 1) {
+    throw new Error("서버의 편집 저장본을 확인할 수 없습니다.");
+  }
+  const previous = readProjects(storage).projects.find((item) => item.id === id);
+  activateProject(id, layout, storage, { ...previous, id, layout, serverProjectId, storageMode: "SERVER", savedRevision: revision, serverSavedAt: layout.savedAt });
+}
+
+export function linkProjectServerId(id, serverProjectId, storage = window.localStorage) {
+  const registry = readProjects(storage);
+  if (!registry.projects.some((item) => item.id === id)) throw new Error("로컬 프로젝트를 찾을 수 없습니다.");
+  storage.setItem(PROJECT_STORAGE_KEY, JSON.stringify({ ...registry, projects: registry.projects.map((item) => item.id === id
+    ? { ...item, serverProjectId } : item) }));
+}
+
+export function markProjectSavedRevision(id, layout, revision, storage = window.localStorage, serverProjectId = id) {
+  if (!isLayout(layout) || !Number.isInteger(revision) || revision < 1) return;
+  const registry = readProjects(storage);
+  const project = registry.projects.find((item) => item.id === id);
+  if (!project) return;
+  storage.setItem(PROJECT_STORAGE_KEY, JSON.stringify({
+    ...registry,
+    projects: registry.projects.map((item) => item.id === id
+      ? { ...item, serverProjectId, storageMode: "SERVER", savedRevision: revision, serverSavedAt: layout.savedAt }
+      : item),
+  }));
+}
+
+export function markProjectPublishedRevision(id, revision, storage = window.localStorage) {
+  const registry = readProjects(storage);
+  storage.setItem(PROJECT_STORAGE_KEY, JSON.stringify({ ...registry, projects: registry.projects.map((item) => item.id === id
+    ? { ...item, publishedRevision: revision } : item) }));
+}
+
+export function removeProject(id, storage = window.localStorage) {
+  const registry = readProjects(storage);
+  if (!registry.projects.some((project) => project.id === id)) throw new Error("프로젝트를 찾을 수 없습니다.");
+  const previousRegistry = storage.getItem(PROJECT_STORAGE_KEY);
+  const previousLayout = storage.getItem(LAYOUT_STORAGE_KEY);
+  const roiKey = roiStorageKey(id);
+  const previousRois = storage.getItem(roiKey);
+  try {
+    if (registry.activeId === id) storage.removeItem(LAYOUT_STORAGE_KEY);
+    storage.removeItem(roiKey);
+    storage.setItem(PROJECT_STORAGE_KEY, JSON.stringify({
+      ...registry,
+      activeId: registry.activeId === id ? crypto.randomUUID() : registry.activeId,
+      projects: registry.projects.filter((project) => project.id !== id),
+    }));
+  } catch (error) {
+    if (previousLayout === null) storage.removeItem(LAYOUT_STORAGE_KEY);
+    else storage.setItem(LAYOUT_STORAGE_KEY, previousLayout);
+    if (previousRois === null) storage.removeItem(roiKey);
+    else storage.setItem(roiKey, previousRois);
+    if (previousRegistry === null) storage.removeItem(PROJECT_STORAGE_KEY);
+    else storage.setItem(PROJECT_STORAGE_KEY, previousRegistry);
+    throw error;
+  }
 }
 
 export function updateProjectObservationPoints(projectId, update, storage = window.localStorage) {
@@ -90,4 +154,11 @@ export function getProjectDetails(project) {
     isDraft: layout.projectStatus === "DRAFT" || layout.observationWorkflow?.configured === false,
     status: layout.projectStatus === "DRAFT" || layout.observationWorkflow?.configured === false ? "작업 중" : "저장 완료",
   };
+}
+
+export function canOpenProjectViewer(project, serverProject = null, apiConfigured = false) {
+  if (project.storageMode !== "SERVER" || !apiConfigured) return project.layout.observationWorkflow?.configured !== false;
+  if (serverProject) return Boolean(serverProject.publishedRevision);
+  return project.storageMode === "SERVER" && Number.isInteger(project.publishedRevision)
+    && project.publishedRevision > 0;
 }

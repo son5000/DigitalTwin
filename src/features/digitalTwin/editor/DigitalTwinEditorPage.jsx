@@ -8,8 +8,8 @@ import { getRuntimeCustomAsset } from "@/features/customAssets/core/customAssetR
 import { CUSTOM_BUILDING_CREATE_ID, CUSTOM_EQUIPMENT_CREATE_ID } from "@/features/customAssets/core/customAssetTypes";
 import { loadLayout, saveLayout, serializeLayout } from "@/features/digitalTwin/editor/api/layoutRepository";
 import { monitoringApiBase } from "@/features/digitalTwin/editor/api/monitoringClient";
-import { readProjects } from "@/features/portal/projects/projectRepository";
-import { projectApiBase, saveProjectConfiguration } from "@/features/portal/projects/projectConfigurationApi";
+import { linkProjectServerId, markProjectPublishedRevision, markProjectSavedRevision, readProjects } from "@/features/portal/projects/projectRepository";
+import { createBackendProject, projectApiBase, publishProjectConfiguration, saveProjectConfiguration } from "@/features/portal/projects/projectConfigurationApi";
 import { uploadProjectAssets } from "@/features/portal/projects/projectAssetApi";
 import BuildingDetailNavigator from "@/features/digitalTwin/editor/components/BuildingDetailNavigator";
 import EditorToolbar from "@/features/digitalTwin/editor/components/EditorToolbar";
@@ -80,7 +80,7 @@ import {
 import { equipmentAssetRepository } from "@/features/digitalTwin/editor/api/equipmentAssetRepository";
 import { createLocalEquipmentAssetRecord } from "@/features/digitalTwin/editor/model/equipmentAssetFiles";
 import { ASSET_SOURCE_TYPES } from "@/features/digitalTwin/editor/model/equipmentDetailModel";
-import { getEquipmentSetup, getEquipmentSetupSaveSummary, updateEquipmentSetup } from "@/features/digitalTwin/editor/model/equipmentSetup";
+import { getEquipmentSetup, getEquipmentSetupSaveSummary, hasEquipmentModelPreview, updateEquipmentSetup } from "@/features/digitalTwin/editor/model/equipmentSetup";
 
 import styles from "./DigitalTwinEditorPage.module.css";
 
@@ -184,6 +184,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
   const [movementPlaybackError, setMovementPlaybackError] = useState("");
   const movementClockRef = useRef({ currentTime: 0, duration: 0, status: MOVEMENT_PLAYBACK_STATES.STOPPED, onUiTimeChange: null });
   const equipmentCameraControllerRef = useRef(null);
+  const creatingSingleEquipmentRef = useRef(false);
   const equipmentWorkspaceViewRef = useRef(null);
   const buildingSaveRequestRef = useRef(0);
   const buildingReplacementPendingRef = useRef(false);
@@ -746,6 +747,20 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     setMonitoringEquipmentPickerOpen(false);
     return equipmentId;
   }, [addFloorEquipment, editor.allFloorEquipment.length, editor.currentFloor?.id, editor.gridSettings.baseSize, editor.observationWorkflow.viewerSettings?.equipmentIds, selectFloorEquipment, selectedFloor?.id, updateObservationViewerSettings]);
+  useEffect(() => {
+    if (editor.observationWorkflow.scopeType !== OBSERVATION_SCOPE_TYPES.SINGLE_EQUIPMENT || editor.allMonitoringEquipment.length) {
+      creatingSingleEquipmentRef.current = false;
+      return;
+    }
+    if (!layoutReadyRef.current || !editor.currentFloor?.id || creatingSingleEquipmentRef.current) return;
+    creatingSingleEquipmentRef.current = true;
+    const equipmentId = handleMonitoringEquipmentAdd("CABINET_SINGLE");
+    if (!equipmentId) {
+      creatingSingleEquipmentRef.current = false;
+      return;
+    }
+    updateFloorEquipment(equipmentId, { name: "", enclosure: { enabled: false }, metadata: { initialModelPending: true, exteriorSelected: false } });
+  }, [editor.allMonitoringEquipment.length, editor.currentFloor?.id, editor.observationWorkflow.scopeType, handleMonitoringEquipmentAdd, updateFloorEquipment]);
   const handleMonitoringAssetFiles = useCallback(async (equipmentId, files, { preserveExterior = true, scanSlot = null } = {}) => {
     const prepared = createLocalEquipmentAssetRecord(files);
     if (!prepared.ok) {
@@ -801,11 +816,9 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     selectMonitoringDevice(null);
     selectMonitoringBinding(null);
     updateObservationViewerSettings({ activeEquipmentId: equipmentId });
-    const item = editor.allMonitoringEquipment.find((entry) => entry.id === equipmentId);
-    if (item) updateMonitoringEquipment(equipmentId, { metadata: { detailSetup: updateEquipmentSetup(item, "BASIC") } });
     setActiveFloatingPanelId(WORLD_PANEL_IDS.DETAILS);
     setMonitoringEquipmentPickerOpen(false);
-  }, [editor.allMonitoringEquipment, updateMonitoringEquipment, selectAssetBinding, selectMonitoringBinding, selectMonitoringDevice, selectObservationPoint, updateObservationViewerSettings]);
+  }, [selectAssetBinding, selectMonitoringBinding, selectMonitoringDevice, selectObservationPoint, updateObservationViewerSettings]);
   const handleMonitoringEquipmentChange = useCallback((changes) => {
     if (monitoringEquipmentId) updateMonitoringEquipment(monitoringEquipmentId, changes);
   }, [monitoringEquipmentId, updateMonitoringEquipment]);
@@ -855,14 +868,14 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
       return;
     }
     if (stepId === WORLD_WIZARD_STEP_IDS.MONITORING) {
-      handleMonitoringEquipmentSelect(editor.allMonitoringEquipment[0]?.id ?? null);
+      handleMonitoringEquipmentSelect(monitoringEquipmentId);
       setActiveFloatingPanelId(WORLD_PANEL_IDS.DETAILS);
       return;
     }
     const floor = selectedFloor ?? editor.floors.find((item) => item.parentId === focusedBuilding?.id);
     if (floor) navigateToFloor(floor.id);
     setActiveFloatingPanelId(stepId === WORLD_WIZARD_STEP_IDS.MONITORING ? WORLD_PANEL_IDS.DETAILS : WORLD_PANEL_IDS.OBJECTS);
-  }, [editor.allMonitoringEquipment, editor.floors, editor.observationWorkflow.activeStepIds, focusedBuilding?.id, handleMonitoringEquipmentSelect, navigateToFloor, navigateToSite, resetSiteInteraction, selectedFloor]);
+  }, [editor.floors, editor.observationWorkflow.activeStepIds, focusedBuilding?.id, handleMonitoringEquipmentSelect, monitoringEquipmentId, navigateToFloor, navigateToSite, resetSiteInteraction, selectedFloor]);
   const requestStepChange = useCallback((stepId) => {
     if (!editor.observationWorkflow.activeStepIds.includes(stepId)) return;
     const prompt = getStepTransitionPrompt({
@@ -879,16 +892,23 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     setStepTransitionPrompt(null);
     enterStep(stepId);
   }, [editor.allMonitoringEquipment.length, editor.observationWorkflow.activeStepIds, editor.observationWorkflow.scopeType, enterStep, userBuildings.length, wizardStepId]);
+  const getCurrentSetupSummary = useCallback((equipment = editor.allMonitoringEquipment) => getEquipmentSetupSaveSummary(
+    equipment, editor.equipmentAssetBindings,
+    { sensors: editor.sensorBindings, points: editor.observationPoints, viewerPreset: editor.viewerPreset },
+  ), [editor.allMonitoringEquipment, editor.equipmentAssetBindings, editor.sensorBindings, editor.observationPoints, editor.viewerPreset]);
   const saveAndReturnToProjects = useCallback(async (projectStatus = "DRAFT") => {
     if (isSaving) return;
     if (pendingAssetUploads > 0) {
       setSaveStatus("3D 파일 저장이 끝난 후 다시 저장해 주세요.");
       return;
     }
+    const summary = getCurrentSetupSummary();
+    const needsEquipment = [OBSERVATION_SCOPE_TYPES.SINGLE_EQUIPMENT, OBSERVATION_SCOPE_TYPES.MULTI_EQUIPMENT].includes(editor.observationWorkflow.scopeType);
+    const finalStatus = projectStatus === "READY" && (summary.equipmentCount || needsEquipment && !editor.allMonitoringEquipment.length) ? "DRAFT" : projectStatus;
     let payload = null;
     try {
       if (editor.observationWorkflow.configured || editor.projectName.trim()) {
-        payload = saveLayout({ ...editor.layoutDocument, projectStatus });
+        payload = saveLayout({ ...editor.layoutDocument, projectStatus: finalStatus });
       }
     } catch {
       setSaveStatus("저장하지 못했습니다");
@@ -904,12 +924,26 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
       setIsSaving(true);
       setSaveStatus("프로젝트 구성을 서버에 저장하는 중입니다…");
       try {
-        const projectId = readProjects().activeId;
-        setSaveStatus("프로젝트 파일을 서버에 저장하는 중입니다…");
-        const assetUploadId = await uploadProjectAssets(projectId, payload);
+        const projects = readProjects();
+        const projectId = projects.activeId;
+        const localProject = projects.projects.find((project) => project.id === projectId);
+        const baseRevision = localProject?.savedRevision ?? 0;
+        await uploadProjectAssets(projectId, payload);
+        let serverProjectId = localProject?.serverProjectId ?? (localProject?.storageMode === "SERVER" ? projectId : null);
+        if (!serverProjectId) {
+          setSaveStatus("서버 프로젝트를 생성하는 중입니다…");
+          serverProjectId = (await createBackendProject(projectId, payload)).id;
+          linkProjectServerId(projectId, serverProjectId);
+        }
         setSaveStatus("프로젝트 구성을 서버에 저장하는 중입니다…");
-        const result = await saveProjectConfiguration(projectId, payload, undefined, assetUploadId);
-        setSaveStatus(`서버 저장 완료 · 버전 ${result.revision}`);
+        const result = await saveProjectConfiguration(serverProjectId, payload, undefined, baseRevision);
+        markProjectSavedRevision(projectId, payload, result.revision, window.localStorage, serverProjectId);
+        if (finalStatus === "READY") {
+          setSaveStatus("서버 게시 검증과 공개를 진행하는 중입니다…");
+          await publishProjectConfiguration(serverProjectId, result.revision);
+          markProjectPublishedRevision(projectId, result.revision);
+        }
+        setSaveStatus(`서버 ${finalStatus === "READY" ? "게시" : "초안 저장"} 완료 · 버전 ${result.revision}`);
       } catch (error) {
         setSaveStatus(`서버 저장 실패 · ${error.message}`);
         setStepTransitionPrompt({
@@ -926,7 +960,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     setHasUnsavedChanges(false);
     setStepTransitionPrompt(null);
     navigateToAppRoute("/projects");
-  }, [editor.layoutDocument, editor.observationWorkflow.configured, editor.projectName, isSaving, pendingAssetUploads]);
+  }, [editor.allMonitoringEquipment.length, editor.layoutDocument, editor.observationWorkflow.configured, editor.observationWorkflow.scopeType, editor.projectName, getCurrentSetupSummary, isSaving, pendingAssetUploads]);
   const requestReturnToProjects = useCallback(() => {
     setStepTransitionPrompt({
       caption: "프로젝트 목록", title: "프로젝트 목록으로 돌아가시겠습니까?",
@@ -996,11 +1030,12 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
         setSaveStatus("3D 파일 저장이 끝난 후 다시 저장해 주세요.");
         return;
       }
-      const summary = getEquipmentSetupSaveSummary(editor.allMonitoringEquipment, editor.equipmentAssetBindings);
-      if (summary.equipmentCount > 0) {
+      const summary = getCurrentSetupSummary();
+      const needsEquipment = [OBSERVATION_SCOPE_TYPES.SINGLE_EQUIPMENT, OBSERVATION_SCOPE_TYPES.MULTI_EQUIPMENT].includes(editor.observationWorkflow.scopeType);
+      if (summary.equipmentCount > 0 || needsEquipment && !editor.allMonitoringEquipment.length) {
         setStepTransitionPrompt({
-          caption: "저장 확인", title: "아직 완료되지 않은 단계가 있습니다",
-          message: `설비 ${summary.equipmentCount}개에 미완료 ${summary.pendingCount}단계, 건너뛴 ${summary.skippedCount}단계가 있습니다. 현재 상태로 저장하고 프로젝트 목록으로 돌아가시겠습니까? 나중에 이어서 수정할 수 있습니다.`,
+          caption: "저장 확인", title: summary.equipmentCount ? "아직 완료되지 않은 단계가 있습니다" : "관측할 설비가 없습니다",
+          message: summary.equipmentCount ? `설비 ${summary.equipmentCount}개에 미완료·재확인 ${summary.pendingCount}단계, 건너뛴 ${summary.skippedCount}단계가 있습니다. 현재 상태를 작업 중으로 저장하고 나중에 이어서 편집할 수 있습니다.` : "설비를 등록해야 뷰어를 완성할 수 있습니다. 현재 상태를 작업 중으로 저장하시겠습니까?",
           actions: [{ id: STEP_TRANSITION_ACTION_IDS.CANCEL, label: "계속 편집" }, { id: STEP_TRANSITION_ACTION_IDS.SAVE_AND_EXIT, label: "저장 후 목록으로" }],
         });
         return;
@@ -1011,7 +1046,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
         actions: [{ id: STEP_TRANSITION_ACTION_IDS.CANCEL, label: "계속 편집" }, { id: STEP_TRANSITION_ACTION_IDS.SAVE_AND_EXIT, label: "저장 후 목록으로" }],
       });
     }
-  }, [activeWizardSteps, editor.allMonitoringEquipment, editor.equipmentAssetBindings, pendingAssetUploads, requestStepChange, wizardStepId]);
+  }, [activeWizardSteps, editor.allMonitoringEquipment.length, editor.observationWorkflow.scopeType, getCurrentSetupSummary, pendingAssetUploads, requestStepChange, wizardStepId]);
   const handleFinalReviewSave = useCallback((equipmentId) => {
     if (pendingAssetUploads > 0) {
       setSaveStatus("3D 파일 저장이 끝난 후 다시 저장해 주세요.");
@@ -1020,17 +1055,17 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     const reviewedEquipment = editor.allMonitoringEquipment.map((item) => item.id === equipmentId
       ? { ...item, metadata: { ...item.metadata, detailSetup: updateEquipmentSetup(item, "REVIEW", "DONE", editor.equipmentAssetBindings) } }
       : item);
-    const summary = getEquipmentSetupSaveSummary(reviewedEquipment, editor.equipmentAssetBindings);
+    const summary = getCurrentSetupSummary(reviewedEquipment);
     setStepTransitionPrompt(summary.equipmentCount > 0 ? {
       caption: "저장 확인", title: "아직 완료되지 않은 단계가 있습니다",
-      message: `설비 ${summary.equipmentCount}개에 미완료 ${summary.pendingCount}단계, 건너뛴 ${summary.skippedCount}단계가 있습니다. 현재 상태로 저장하고 프로젝트 목록으로 돌아가시겠습니까? 나중에 이어서 수정할 수 있습니다.`,
+      message: `설비 ${summary.equipmentCount}개에 미완료·재확인 ${summary.pendingCount}단계, 건너뛴 ${summary.skippedCount}단계가 있습니다. 현재 상태를 작업 중으로 저장하고 나중에 이어서 편집할 수 있습니다.`,
       actions: [{ id: STEP_TRANSITION_ACTION_IDS.CANCEL, label: "계속 편집" }, { id: STEP_TRANSITION_ACTION_IDS.SAVE_AND_EXIT, label: "저장 후 목록으로" }],
     } : {
       caption: "최종 확인", title: "이 화면으로 저장하시겠습니까?", projectStatus: "READY",
       message: "확인한 시작 화면과 설비 설정을 저장하고 프로젝트 목록으로 이동합니다.",
       actions: [{ id: STEP_TRANSITION_ACTION_IDS.CANCEL, label: "계속 편집" }, { id: STEP_TRANSITION_ACTION_IDS.SAVE_AND_EXIT, label: "저장 후 목록으로" }],
     });
-  }, [editor.allMonitoringEquipment, editor.equipmentAssetBindings, pendingAssetUploads]);
+  }, [editor.allMonitoringEquipment, editor.equipmentAssetBindings, getCurrentSetupSummary, pendingAssetUploads]);
   const handleLoad = useCallback(() => {
     const saved = loadLayout();
     setSaveStatus(saved && hydrateLayout(saved) ? "저장된 월드를 불러왔습니다" : "저장된 배치가 없습니다");
@@ -1053,7 +1088,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     }
   };
   const handleSendBundle = async () => {
-    if (pendingAssetUploads > 0 || isExporting || !monitoringApiBase) return;
+    if (pendingAssetUploads > 0 || isExporting || !monitoringApiBase || projectApiBase) return;
     setIsExporting(true);
     setSaveStatus("서버에 보낼 설정과 파일을 확인하고 있습니다…");
     try {
@@ -1312,14 +1347,14 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                   }}
                 >
                   <option value="">설비를 선택하세요</option>
-                  {editor.allMonitoringEquipment.map((equipment) => <option key={equipment.id} value={equipment.id}>{equipment.name}{!isEquipmentSpace ? ` · ${equipment.locationLabel}` : ""}</option>)}
+                  {editor.allMonitoringEquipment.map((equipment) => <option key={equipment.id} value={equipment.id}>{equipment.name || "새 관측 설비"}{!isEquipmentSpace ? ` · ${equipment.locationLabel}` : ""}</option>)}
                 </select>
               </label>
             ) : null}
             {isMonitoringStep ? <button type="button" onClick={() => setMonitoringEquipmentPickerOpen(true)}>설비 추가</button> : null}
             <button type="button" className={styles.expandScopeButton} onClick={() => setShowObservationScopeSelector(true)}>관측 범위 변경</button>
             <button type="button" disabled={pendingAssetUploads > 0 || isSaving || isExporting} onClick={handleExportBundle} title="현재 설정과 대표 이미지·스캔·텍스처를 함께 내보내기">{isExporting ? "ZIP 생성 중…" : "ZIP 내보내기"}</button>
-            {monitoringApiBase && <button type="button" disabled={pendingAssetUploads > 0 || isSaving || isExporting} onClick={handleSendBundle} title="설정과 등록된 파일을 프로젝트 서버로 전송">서버로 전송</button>}
+            {monitoringApiBase && !projectApiBase && <button type="button" disabled={pendingAssetUploads > 0 || isSaving || isExporting} onClick={handleSendBundle} title="설정과 등록된 파일을 프로젝트 서버로 전송">서버로 전송</button>}
             <button type="button" className={styles.projectBackButton} disabled={pendingAssetUploads > 0 || isSaving} onClick={requestReturnToProjects}>프로젝트 목록으로 돌아가기</button>
           </div>
           <section className={styles.stageGuide} aria-label="현재 화면 작업"><button type="button" disabled={primaryDisabled} title={pendingAssetUploads > 0 ? "3D 파일 저장 중입니다" : primaryDisabled ? "건축물과 층을 먼저 선택하세요" : wizardStep.primaryLabel} onClick={handlePrimaryAction}>{hasNextWizardStep ? <ArrowRightIcon size={16} /> : <SaveIcon size={16} />}<span>{pendingAssetUploads > 0 ? "파일 저장 중…" : hasNextWizardStep ? "다음" : "저장"}</span></button></section>
@@ -1466,7 +1501,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                 onViewerPresetChange={updateViewerPreset}
                 onEquipmentRepresentationChange={updateEquipmentRepresentationOverride}
                 onAddEquipment={() => setMonitoringEquipmentPickerOpen(true)}
-                equipmentPicker={(monitoringEquipmentPickerOpen || !monitoringEquipment) ? <MonitoringEquipmentPicker
+                equipmentPicker={(monitoringEquipmentPickerOpen || !monitoringEquipment && editor.observationWorkflow.scopeType !== OBSERVATION_SCOPE_TYPES.SINGLE_EQUIPMENT) ? <MonitoringEquipmentPicker
                   equipment={editor.allMonitoringEquipment}
                   selectedEquipmentId={monitoringEquipmentId}
                   required={!monitoringEquipment}
@@ -1478,7 +1513,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                 /> : null}
                 onAlignmentChange={(changes, bindingId) => bindingId && updateAssetBinding(bindingId, { alignmentTransform: changes })}
                 pointOptions={{ selectedId: editor.selectedObservationPoint?.id, onSelect: selectObservationPoint, onChange: updateObservationPoint, onAdd: addObservationPoint }}
-                worldView={monitoringEquipment ? <MonitoringRoiWorkspace key={monitoringEquipment.id} editorMode
+                worldView={monitoringEquipment && (editor.observationWorkflow.scopeType !== OBSERVATION_SCOPE_TYPES.SINGLE_EQUIPMENT || hasEquipmentModelPreview(monitoringEquipment, editor.equipmentAssetBindings)) ? <MonitoringRoiWorkspace key={monitoringEquipment.id} editorMode
                   equipment={monitoringEquipment}
                   assetBindings={editor.equipmentAssetBindings}
                   viewerPreset={editor.viewerPreset}
@@ -1679,6 +1714,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
                 workspaceViewControllerRef={equipmentWorkspaceViewRef}
                 cameraController={equipmentCameraControllerRef}
                 key={monitoringEquipmentId}
+                singleEquipment={editor.observationWorkflow.scopeType === OBSERVATION_SCOPE_TYPES.SINGLE_EQUIPMENT}
                 equipment={editor.allMonitoringEquipment} selectedEquipmentId={monitoringEquipmentId}
                 viewerPreset={editor.viewerPreset} onViewerPresetChange={updateViewerPreset} onEquipmentRepresentationChange={updateEquipmentRepresentationOverride}
                 uploadNotice={monitoringEquipmentNotice}

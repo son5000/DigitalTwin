@@ -43,6 +43,37 @@
 .actions button, .back { min-height: 42px; padding: 0 16px; border: 1px solid #c8daf8; border-radius: 8px; background: white; color: #2458d6; font-size: 13px; }
 .actions .primary { background: #2f6bff; border-color: #2f6bff; color: #fff; }
 .actions .developer { border-color: #d5deeb; background: #f5f7fb; color: #405774; }
+.actions .danger { margin-left: auto; border-color: #e4c4c4; color: #a12d35; }
+.actions button:disabled { opacity: .55; cursor: wait; }
+.deleteDialog { box-sizing: border-box; width: min(440px, calc(100% - 32px)); margin: auto; padding: 26px; border: 1px solid #dbe5f2; border-radius: 14px; background: #fff; color: #0b1730; color-scheme: light; box-shadow: 0 20px 60px #0f172a33; }
+.deleteDialog::backdrop { background: #071a32a6; }
+.deleteDialog h2 { margin: 0 0 12px; font-size: 20px; }
+.deleteDialog p { margin: 0; color: #536681; font-size: 14px; line-height: 1.7; overflow-wrap: anywhere; }
+.deleteDialog p strong { color: #0b1730; }
+.deleteDialog .deleteError { margin-top: 16px; color: #a12d35; }
+.deleteActions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
+.deleteActions button { min-height: 42px; padding: 0 16px; border: 1px solid #c8daf8; border-radius: 8px; background: #fff; color: #2458d6; cursor: pointer; }
+.deleteActions .dangerConfirm { border-color: #a12d35; background: #a12d35; color: #fff; }
+.deleteActions button:disabled { opacity: .55; cursor: wait; }
+.linkDialog { box-sizing: border-box; width: min(680px, calc(100% - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 24px; overflow: auto; border: 1px solid #dbe5f2; border-radius: 14px; background: #fff; color: #0b1730; color-scheme: light; box-shadow: 0 20px 60px #0f172a33; }
+.linkDialog::backdrop { background: #071a32a6; }
+.linkDialog button { min-height: 38px; padding: 0 12px; border: 1px solid #c8daf8; border-radius: 8px; background: #fff; color: #2458d6; cursor: pointer; white-space: nowrap; }
+.linkDialog button:hover { background: #edf4ff; }
+.linkHeading, .linkRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.linkHeading { align-items: flex-start; }
+.linkHeading h2 { margin: 0 0 8px; font-size: 20px; }
+.linkHeading p, .linkSection p { margin: 0; color: #536681; font-size: 13px; line-height: 1.6; }
+.linkHint { margin: 18px 0; padding: 10px 12px; border-radius: 8px; background: #edf4ff; color: #405774; font-size: 12px; line-height: 1.6; }
+.linkSection { padding: 16px 0; border-top: 1px solid #e3eaf3; }
+.linkSection h3 { margin: 0 0 12px; font-size: 15px; }
+.linkRow { min-height: 42px; }
+.linkRow span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.linkSearch, .linkSelected input { box-sizing: border-box; width: 100%; min-height: 40px; padding: 0 10px; border: 1px solid #c8daf8; border-radius: 8px; background: #fff; color: #0b1730; font-size: 13px; }
+.linkEquipmentList { max-height: 240px; margin: 10px 0 0; padding: 0; overflow: auto; list-style: none; }
+.linkEquipmentList li + li { border-top: 1px solid #eef2f8; }
+.linkSelected { display: block; margin-top: 12px; color: #405774; font-size: 12px; font-weight: 600; }
+.linkSelected input { margin-top: 6px; font-weight: 400; }
+.linkNotice { margin: 8px 0 0; color: #2458d6; font-size: 12px; }
 .actions button:hover, .back:hover { filter: brightness(.96); }
 .newCard { min-height: 330px; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 24px; border-style: dashed; border-color: #9cbdf2; color: #2458d6; }
 .newCard > span { font-size: 42px; margin-bottom: 16px; }
