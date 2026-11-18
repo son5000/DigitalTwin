@@ -156,9 +156,6 @@ export function getProjectDetails(project) {
   };
 }
 
-export function canOpenProjectViewer(project, serverProject = null, apiConfigured = false) {
-  if (project.storageMode !== "SERVER" || !apiConfigured) return project.layout.observationWorkflow?.configured !== false;
-  if (serverProject) return Boolean(serverProject.publishedRevision);
-  return project.storageMode === "SERVER" && Number.isInteger(project.publishedRevision)
-    && project.publishedRevision > 0;
+export function canOpenProjectViewer(project) {
+  return isLayout(project.layout) && project.layout.observationWorkflow?.configured !== false;
 }

@@ -167,6 +167,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
   const [terrainBrush, setTerrainBrush] = useState(DEFAULT_TERRAIN_BRUSH);
   const [terrainAreaSelection, setTerrainAreaSelection] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
+  const projectSaveControllerRef = useRef(null);
   const [isExporting, setIsExporting] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showOnlySelectedBuilding, setShowOnlySelectedBuilding] = useState(false);
@@ -897,7 +898,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
     { sensors: editor.sensorBindings, points: editor.observationPoints, viewerPreset: editor.viewerPreset },
   ), [editor.allMonitoringEquipment, editor.equipmentAssetBindings, editor.sensorBindings, editor.observationPoints, editor.viewerPreset]);
   const saveAndReturnToProjects = useCallback(async (projectStatus = "DRAFT") => {
-    if (isSaving) return;
+    if (isSaving || projectSaveControllerRef.current) return;
     if (pendingAssetUploads > 0) {
       setSaveStatus("3D 파일 저장이 끝난 후 다시 저장해 주세요.");
       return;
@@ -921,46 +922,57 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
       return;
     }
     if (payload && projectApiBase) {
+      const controller = new AbortController();
+      projectSaveControllerRef.current = controller;
+      const { signal } = controller;
       setIsSaving(true);
-      setSaveStatus("프로젝트 구성을 서버에 저장하는 중입니다…");
+      setSaveStatus("3D 파일과 텍스처를 준비하고 서버에 전송하는 중입니다…");
       try {
         const projects = readProjects();
         const projectId = projects.activeId;
         const localProject = projects.projects.find((project) => project.id === projectId);
         const baseRevision = localProject?.savedRevision ?? 0;
-        const assetManifest = await uploadProjectAssets(projectId, payload);
+        const assetManifest = await uploadProjectAssets(projectId, payload, signal);
+        signal.throwIfAborted();
         let serverProjectId = localProject?.serverProjectId ?? (localProject?.storageMode === "SERVER" ? projectId : null);
         if (!serverProjectId) {
           setSaveStatus("서버 프로젝트를 생성하는 중입니다…");
-          serverProjectId = (await createBackendProject(projectId, payload)).id;
+          serverProjectId = (await createBackendProject(projectId, payload, signal)).id;
+          signal.throwIfAborted();
           linkProjectServerId(projectId, serverProjectId);
         }
         setSaveStatus("프로젝트 구성을 서버에 저장하는 중입니다…");
-        const result = await saveProjectConfiguration(serverProjectId, payload, undefined, baseRevision, assetManifest);
+        const result = await saveProjectConfiguration(serverProjectId, payload, signal, baseRevision, assetManifest);
+        signal.throwIfAborted();
         markProjectSavedRevision(projectId, payload, result.revision, window.localStorage, serverProjectId);
         if (finalStatus === "READY") {
           setSaveStatus("서버 게시 검증과 공개를 진행하는 중입니다…");
-          await publishProjectConfiguration(serverProjectId, result.revision);
+          await publishProjectConfiguration(serverProjectId, result.revision, signal);
+          signal.throwIfAborted();
           markProjectPublishedRevision(projectId, result.revision);
         }
         setSaveStatus(`서버 ${finalStatus === "READY" ? "게시" : "초안 저장"} 완료 · 버전 ${result.revision}`);
       } catch (error) {
-        setSaveStatus(`서버 저장 실패 · ${error.message}`);
-        setStepTransitionPrompt({
-          caption: "서버 저장 안내", title: "서버에 저장하지 못했습니다",
-          projectStatus,
-          message: `${error.message} 로컬 저장은 완료되었으며 현재 편집 화면을 유지합니다.`,
-          actions: [{ id: STEP_TRANSITION_ACTION_IDS.CANCEL, label: "계속 편집" }, { id: STEP_TRANSITION_ACTION_IDS.SAVE_AND_EXIT, label: "다시 저장" }],
-        });
-        return;
+        if (signal.aborted) return;
+        // The layout was saved locally before attempting the server request.
+        setSaveStatus(`로컬 저장 완료 · 서버 저장 실패: ${error.message}`);
       } finally {
-        setIsSaving(false);
+        projectSaveControllerRef.current = null;
+        if (!signal.aborted) setIsSaving(false);
       }
     }
     setHasUnsavedChanges(false);
     setStepTransitionPrompt(null);
     navigateToAppRoute("/projects");
   }, [editor.allMonitoringEquipment.length, editor.layoutDocument, editor.observationWorkflow.configured, editor.observationWorkflow.scopeType, editor.projectName, getCurrentSetupSummary, isSaving, pendingAssetUploads]);
+  const returnWithLocalSave = useCallback(() => {
+    // A controller exists only after the local layout has been saved successfully.
+    if (!projectSaveControllerRef.current) return;
+    projectSaveControllerRef.current.abort();
+    setHasUnsavedChanges(false);
+    setStepTransitionPrompt(null);
+    navigateToAppRoute("/projects");
+  }, []);
   const requestReturnToProjects = useCallback(() => {
     setStepTransitionPrompt({
       caption: "프로젝트 목록", title: "프로젝트 목록으로 돌아가시겠습니까?",
@@ -1251,14 +1263,17 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
 
   const transitionDialog = stepTransitionPrompt ? (
         <div className={styles.transitionPromptBackdrop} onMouseDown={(event) => {
-          if (event.target === event.currentTarget) setStepTransitionPrompt(null);
+          if (!isSaving && event.target === event.currentTarget) setStepTransitionPrompt(null);
         }}>
           <section className={styles.transitionPrompt} role="alertdialog" aria-modal="true" aria-labelledby="step-transition-title" aria-describedby="step-transition-message">
             <span>{stepTransitionPrompt.caption ?? "단계 이동 안내"}</span>
-            <h2 id="step-transition-title">{stepTransitionPrompt.title ?? "선행 작업이 필요합니다"}</h2>
-            <p id="step-transition-message">{stepTransitionPrompt.message}</p>
+            <h2 id="step-transition-title">{isSaving ? "로컬 저장을 완료했습니다" : stepTransitionPrompt.title ?? "선행 작업이 필요합니다"}</h2>
+            <p id="step-transition-message">{isSaving ? "서버 저장을 기다리는 중입니다. 지금 목록으로 이동해도 이 브라우저에서 이어서 편집할 수 있습니다." : stepTransitionPrompt.message}</p>
+            {isSaving && <p role="status">{saveStatus}</p>}
             <div className={styles.transitionPromptActions}>
-              {stepTransitionPrompt.actions.map((action, index) => (
+              {isSaving ? (
+                <button type="button" className={styles.transitionPromptPrimary} onClick={returnWithLocalSave}>로컬 저장본으로 목록 이동</button>
+              ) : stepTransitionPrompt.actions.map((action, index) => (
                 <button
                   key={action.id}
                   type="button"

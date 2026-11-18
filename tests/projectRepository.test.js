@@ -15,7 +15,7 @@ test("프로젝트 목록은 실제로 열 수 있는 로컬·공개 뷰어만 �
   assert.equal(canOpenProjectViewer(draft, null, true), true);
   assert.equal(canOpenProjectViewer({ ...draft, storageMode: "LOCAL" }, null, true), true);
   assert.equal(canOpenProjectViewer({ ...draft, storageMode: "SERVER", savedRevision: 2 }, { publishedRevision: 1 }, true), true);
-  assert.equal(canOpenProjectViewer({ ...draft, storageMode: "SERVER", savedRevision: 2 }, null, true), false);
+  assert.equal(canOpenProjectViewer({ ...draft, storageMode: "SERVER", savedRevision: 2 }, null, true), true);
   assert.equal(canOpenProjectViewer({ ...draft, storageMode: "SERVER", savedRevision: 2, publishedRevision: 1 }, null, true), true);
 });
 

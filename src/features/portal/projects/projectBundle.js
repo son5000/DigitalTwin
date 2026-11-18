@@ -3,7 +3,8 @@ import { textureAssetRepository } from "../../digitalTwin/editor/api/textureAsse
 import { createRoiRepository, roiStorageKey } from "../../digitalTwin/editor/api/roiRepository";
 import { customAssetRepository } from "../../customAssets/storage/customAssetRepository";
 import { getCustomAssetIdFromTemplate } from "../../customAssets/core/customAssetTypes";
-import { isObservationRoi, roiToObservationPoint, validateRoi } from "../../digitalTwin/editor/model/roiMonitoring";
+import { isObservationRoi, observationPointToRoi, roiToObservationPoint, validateRoi } from "../../digitalTwin/editor/model/roiMonitoring";
+import { normalizeObservationPoint } from "../../digitalTwin/editor/model/equipmentDetailModel.js";
 import { calibrationPayload } from "../../digitalTwin/editor/model/monitoringContract.js";
 import { PROJECT_STORAGE_KEY, readProjects } from "./projectRepository";
 import { decodeProjectFile, encodeProjectZip, safeBundleName } from "./projectBundleFiles.js";
@@ -47,8 +48,16 @@ export async function exportProjectBundle(project, { onProgress = () => {}, stor
       });
     });
   }
+  // Export the current editor snapshot without waiting for an unavailable ROI API.
+  // In-memory points take precedence over older saved copies of the same ROI.
+  const localRois = createRoiRepository(project.id, storage).listLocal();
+  const points = project.layout.observationConfig?.observationPoints ?? project.layout.observationPoints ?? [];
+  const rois = [...localRois.filter((roi) => !isObservationRoi(roi)),
+    ...points.map((point) => observationPointToRoi(normalizeObservationPoint(point)))];
+  const observationPoints = rois.filter(isObservationRoi).map(roiToObservationPoint);
+  project.layout.observationPoints = observationPoints;
+  project.layout.observationConfig = { ...project.layout.observationConfig, observationPoints };
   collect(project.layout);
-  const rois = await createRoiRepository(project.id, storage).list(AbortSignal.timeout(15000));
   collect(rois);
   const assets = { equipment: [], textures: [], custom: [] };
   for (const id of customIds) {
@@ -178,7 +187,7 @@ export async function importProjectBundle(file, storage = window.localStorage, {
       });
       if (layout.observationConfig) layout.observationConfig.sensorBindings = layout.sensorBindings;
     }
-    if (source.version === 1) {
+    {
       const existingPoints = layout.observationConfig?.observationPoints ?? layout.observationPoints ?? [];
       const additions = bundle.rois.filter((roi) => isObservationRoi(roi) && !existingPoints.some((point) => point.id === roi.id)).map(roiToObservationPoint);
       layout.observationPoints = [...existingPoints, ...additions];
@@ -188,7 +197,7 @@ export async function importProjectBundle(file, storage = window.localStorage, {
     storage.setItem(roiStorageKey(projectId), JSON.stringify(bundle.rois.filter((roi) => !pointIds.has(roi.id))));
     // The existing active editor document is left intact. Publish last, only
     // after all dependencies have been imported successfully.
-    storage.setItem(PROJECT_STORAGE_KEY, JSON.stringify({ ...registry, projects: [...registry.projects, { ...bundle.project, id: projectId, storageMode: "LOCAL" }] }));
+    storage.setItem(PROJECT_STORAGE_KEY, JSON.stringify({ ...registry, projects: [...registry.projects, { id: projectId, layout, storageMode: "LOCAL" }] }));
   } catch (error) {
     for (const { kind, repository, id } of written.reverse()) {
       try { if (kind === "custom") await repository.delete(id); else await repository.remove(id); } catch { /* Preserve the original failure. */ }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { equipmentPath, loadEquipmentTelemetry, monitoringApiBase, acknowledgeAlarm } from "../api/monitoringClient";
+import { equipmentPath, loadEquipmentTelemetry, monitoringApiBase, acknowledgeAlarm, readAlarmAcknowledgements } from "../api/monitoringClient";
 import { validateTelemetry } from "../model/monitoringContract";
 import { demoReading } from "../model/monitoringDemo";
 
@@ -19,9 +19,11 @@ export default function useEquipmentTelemetry(projectId, equipmentId, rois, susp
     function accept(input) {
       if (!active) return;
       const data = validateTelemetry(input, equipmentId);
+      const acknowledgements = readAlarmAcknowledgements(projectId, equipmentId);
       setState((previous) => {
         const alarms = new Map((previous.key === key ? previous.alarms : []).map((alarm) => [alarm.id, alarm]));
-        data.alarms.filter((alarm) => alarm.id && ["WARNING", "DANGER"].includes(alarm.severity) && Number.isFinite(Date.parse(alarm.occurredAt))).forEach((alarm) => alarms.set(alarm.id, alarm));
+        data.alarms.filter((alarm) => alarm.id && ["WARNING", "DANGER"].includes(alarm.severity) && Number.isFinite(Date.parse(alarm.occurredAt))).forEach((alarm) => alarms.set(alarm.id,
+          acknowledgements[alarm.id] ? { ...alarm, acknowledgedAt: acknowledgements[alarm.id] } : alarm));
         return { ...data, key, alarms: [...alarms.values()].sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt)).slice(0, 100), status: demo ? "DEMO" : "CONNECTED", error: "" };
       });
     }
@@ -72,8 +74,8 @@ export default function useEquipmentTelemetry(projectId, equipmentId, rois, susp
   }, [key, projectId, equipmentId, demo, suspended]);
 
   async function acknowledge(alarm) {
-    if (!demo) await acknowledgeAlarm(projectId, equipmentId, alarm.id);
-    setState((current) => current.key !== key ? current : { ...current, alarms: current.alarms.map((item) => item.id === alarm.id ? { ...item, acknowledgedAt: new Date().toISOString() } : item) });
+    const result = await acknowledgeAlarm(projectId, equipmentId, alarm.id, demo);
+    setState((current) => current.key !== key ? current : { ...current, alarms: current.alarms.map((item) => item.id === alarm.id ? { ...item, acknowledgedAt: result.acknowledgedAt, acknowledgementStorage: result.storage } : item) });
   }
   function simulateAlarm() {
     if (!demo) return;

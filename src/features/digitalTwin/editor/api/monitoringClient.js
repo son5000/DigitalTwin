@@ -87,7 +87,18 @@ export async function uploadRoiReferenceImage(projectId, equipmentId, roiId, mea
   if (!result?.assetId) throw new Error("서버의 기준 사진 식별 번호를 확인하세요.");
   return { ...frame, serverAssetId: result.assetId };
 }
-export async function acknowledgeAlarm(projectId, equipmentId, alarmId) {
-  requireLegacyMonitoring("설비별 경고 확인");
-  return monitoringRequest(`${equipmentPath(projectId, equipmentId)}/alarms/${encodeURIComponent(alarmId)}/acknowledge`, { method: "POST" });
+export function readAlarmAcknowledgements(projectId, equipmentId, storage = window.localStorage) {
+  const raw = storage.getItem(`digital-twin-alarm-ack-v1:${projectId}:${equipmentId}`);
+  return raw ? JSON.parse(raw) : {};
+}
+export async function acknowledgeAlarm(projectId, equipmentId, alarmId, localOnly = false) {
+  const acknowledgedAt = new Date().toISOString();
+  const records = readAlarmAcknowledgements(projectId, equipmentId);
+  window.localStorage.setItem(`digital-twin-alarm-ack-v1:${projectId}:${equipmentId}`, JSON.stringify({ ...records, [alarmId]: acknowledgedAt }));
+  if (!localOnly) try {
+    requireLegacyMonitoring("설비별 경고 확인");
+    await monitoringRequest(`${equipmentPath(projectId, equipmentId)}/alarms/${encodeURIComponent(alarmId)}/acknowledge`, { method: "POST" });
+    return { acknowledgedAt, storage: "SERVER" };
+  } catch { /* Acknowledgement remains local when the service is unavailable. */ }
+  return { acknowledgedAt, storage: "LOCAL" };
 }

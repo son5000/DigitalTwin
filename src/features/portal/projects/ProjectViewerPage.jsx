@@ -34,10 +34,9 @@ import { DISABLED_TRANSFORM_TOOLS } from "@/features/digitalTwin/editor/constant
 import { VIEW_MODES } from "@/features/digitalTwin/editor/constants/equipmentShapeTemplates";
 import { SITE_INTERACTION_MODES } from "@/features/digitalTwin/editor/constants/siteEnvironmentTemplates";
 import { MOVEMENT_PLAYBACK_STATES } from "@/features/digitalTwin/editor/model/movementPath";
-import { getProjectDetails, PROJECT_STORAGE_KEY, readProjects } from "./projectRepository";
+import { getProjectDetails, PROJECT_STORAGE_KEY } from "./projectRepository";
 import { projectApiBase } from "./projectConfigurationApi";
-import { loadViewerProjectConfiguration } from "./projectViewerApi";
-import { loadViewerProjectAssets } from "./projectAssetApi";
+import { findLocalViewerProject, loadProjectForViewer } from "./projectViewerLoader";
 import useViewerLiveStatus from "./useViewerLiveStatus";
 import styles from "./ProjectsPage.module.css";
 import viewerStyles from "./ProjectViewerPage.module.css";
@@ -47,45 +46,43 @@ const VIEWER_MOVEMENT_PLAYBACK = { status: MOVEMENT_PLAYBACK_STATES.PLAYING, cur
 const VIEWER_MOVEMENT_PAUSED = { status: MOVEMENT_PLAYBACK_STATES.PAUSED, currentTime: 0, revision: 0 };
 const METRIC_LABELS = { TEMPERATURE: "온도", PRESSURE: "압력", VIBRATION: "진동", NOISE: "소음", POWER: "전력", FLOW: "유량", VIDEO: "영상" };
 const LIVE_STATUS_LABELS = { NORMAL: "정상", WARNING: "주의", DANGER: "위험", NO_DATA: "데이터 없음" };
-async function loadViewerProject(projectId, signal) {
-  const result = await loadViewerProjectConfiguration(projectId, signal);
-  await loadViewerProjectAssets(projectId, result.revision, result.layout, signal, result.assetManifest);
-  return { id: result.projectId, externalProjectId: result.externalProjectId,
-    layout: result.layout, revision: result.revision, storageMode: "SERVER" };
-}
-
 export default function ProjectViewerPage({ projectId, requestedEquipmentId = null, operationsSection = null, operationsRecord = null }) {
   const [result, setResult] = useState(() => {
     try {
-      const project = readProjects().projects.find((item) => item.id === projectId);
-      if (projectApiBase && (!project || project.storageMode === "SERVER")) return { loading: true };
-      return project ? { project } : { error: "프로젝트를 찾을 수 없습니다." };
+      const project = findLocalViewerProject(projectId);
+      if (projectApiBase && (!project || project.storageMode === "SERVER" && project.layout.savedAt === project.serverSavedAt)) return { loading: true };
+      return project ? { project: { ...project, storageMode: "LOCAL" } } : { error: "프로젝트를 찾을 수 없습니다." };
     } catch (error) { return projectApiBase ? { loading: true } : { error: error.message }; }
   });
   const localImport = Boolean(result.project && result.project.storageMode !== "SERVER");
   useEffect(() => {
     if (!projectApiBase || localImport) return;
     const controller = new AbortController();
-    loadViewerProject(projectId, controller.signal)
+    loadProjectForViewer(projectId, controller.signal)
       .then((project) => { if (!controller.signal.aborted) setResult({ project }); })
       .catch((error) => { if (!controller.signal.aborted) setResult({ error: error.message }); });
     return () => controller.abort();
   }, [projectId, localImport]);
   useEffect(() => {
-    if (projectApiBase && !localImport) return;
     let timer;
     function refresh(event) {
-      if (![LAYOUT_STORAGE_KEY, PROJECT_STORAGE_KEY].includes(event.key)) return;
+      if (event.type === "digital-twin-roi-change") {
+        if (event.detail?.projectId !== findLocalViewerProject(projectId)?.id) return;
+      } else if (![LAYOUT_STORAGE_KEY, PROJECT_STORAGE_KEY].includes(event.key)) return;
       clearTimeout(timer);
       timer = setTimeout(() => {
         try {
-          const project = readProjects().projects.find((item) => item.id === projectId);
-          if (project) setResult((current) => JSON.stringify(current.project) === JSON.stringify(project) ? current : { project });
+          const project = findLocalViewerProject(projectId);
+          if (project) setResult((current) => {
+            const next = { ...project, storageMode: "LOCAL" };
+            return JSON.stringify(current.project) === JSON.stringify(next) ? current : { project: next };
+          });
         } catch { /* Preserve the displayed world if another tab is still saving. */ }
       }, 350);
     }
     window.addEventListener("storage", refresh);
-    return () => { clearTimeout(timer); window.removeEventListener("storage", refresh); };
+    window.addEventListener("digital-twin-roi-change", refresh);
+    return () => { clearTimeout(timer); window.removeEventListener("storage", refresh); window.removeEventListener("digital-twin-roi-change", refresh); };
   }, [projectId, localImport]);
   if (result.loading) return <ViewerLoadingScreen projectLoading />;
   return result.project ? <SavedWorldViewer project={result.project} requestedEquipmentId={requestedEquipmentId} operationsSection={operationsSection} operationsRecord={operationsRecord} /> : <main className={styles.page}><div className={styles.main}><p role="alert" className={styles.notice}>{result.error}</p><button className={styles.back} onClick={() => navigateTo("/projects")}>프로젝트 목록</button></div></main>;

@@ -29,7 +29,7 @@ function createStore(projectId) {
         const stableRois = readingsOnly || nextSignature === roisSignature ? state.rois : rois;
         if (!readingsOnly) roisSignature = nextSignature;
         if (!readingsOnly) lastRoiRefresh = Date.now();
-        emit({ rois: stableRois, readings, error: "", loading: false, now: Date.now() });
+        emit({ rois: stableRois, readings, shared: repository.shared, error: "", loading: false, now: Date.now() });
       }
     } catch (error) {
       if (version === generation) emit({ error: error.name === "AbortError" ? "서버 응답이 지연되고 있습니다. 다시 연결합니다." : error.message, readings: [], loading: false, now: Date.now() });

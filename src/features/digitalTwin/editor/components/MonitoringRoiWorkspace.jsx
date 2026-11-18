@@ -417,7 +417,7 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
       if (profileIssue) throw new Error(profileIssue);
       const result = await monitoring.save(point ? observationPointToRoi(point) : currentDraft, equipment);
       setDraft(result); setEditing(false); setPreview(null);
-      setNotice(monitoring.shared ? "관측 영역을 저장했습니다." : "이 브라우저에 관측 영역을 저장했습니다. 다른 기기와 공유하려면 서버 연결이 필요합니다.");
+      setNotice("관측 영역을 이 브라우저에 저장했습니다. ZIP 내보내기에도 포함됩니다.");
     } catch (issue) { setError(issue.message); }
     finally { setBusy(false); }
   }

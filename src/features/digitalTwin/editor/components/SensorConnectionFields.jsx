@@ -46,10 +46,15 @@ export default function SensorConnectionFields({ sensor, equipment, sensors, ass
       setBusy(true);
       const request = new AbortController(); controller.current = request;
       const remote = monitoringApiBase && !projectApiBase && sensor.dataSource !== "DEMO";
-      const result = remote ? await saveSensorCalibration(payload, sensor.calibration?.revision ?? 0, request.signal) : { revision: sensor.calibration?.revision ?? 0 };
+      let storedRemotely = false;
+      let result = { revision: sensor.calibration?.revision ?? 0 };
+      if (remote) try {
+        result = await saveSensorCalibration(payload, result.revision, request.signal);
+        storedRemotely = true;
+      } catch { /* Keep the validated calibration in the local project on failure. */ }
       if (request.signal.aborted) return;
-      onChange(sensor.id, { calibration: { ...result, payload, signature: JSON.stringify(payload), savedAt: new Date().toISOString(), storage: remote ? "SERVER" : "LOCAL" } });
-      setMessage(remote ? "센서 보정값을 서버에 저장했습니다." : "이 브라우저에만 보관했습니다. 서버에는 저장되지 않았습니다.");
+      onChange(sensor.id, { calibration: { ...result, payload, signature: JSON.stringify(payload), savedAt: new Date().toISOString(), storage: storedRemotely ? "SERVER" : "LOCAL" } });
+      setMessage(storedRemotely ? "센서 보정값을 서버에 저장했습니다." : "센서 보정값을 로컬 구성에 보관했습니다. 프로젝트 저장·ZIP 내보내기에 포함됩니다.");
     } catch (error) { if (!controller.current?.signal.aborted) setMessage(error.message); }
     finally { if (!controller.current?.signal.aborted) setBusy(false); }
   }
