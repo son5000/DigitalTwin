@@ -928,7 +928,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
         const projectId = projects.activeId;
         const localProject = projects.projects.find((project) => project.id === projectId);
         const baseRevision = localProject?.savedRevision ?? 0;
-        await uploadProjectAssets(projectId, payload);
+        const assetManifest = await uploadProjectAssets(projectId, payload);
         let serverProjectId = localProject?.serverProjectId ?? (localProject?.storageMode === "SERVER" ? projectId : null);
         if (!serverProjectId) {
           setSaveStatus("서버 프로젝트를 생성하는 중입니다…");
@@ -936,7 +936,7 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
           linkProjectServerId(projectId, serverProjectId);
         }
         setSaveStatus("프로젝트 구성을 서버에 저장하는 중입니다…");
-        const result = await saveProjectConfiguration(serverProjectId, payload, undefined, baseRevision);
+        const result = await saveProjectConfiguration(serverProjectId, payload, undefined, baseRevision, assetManifest);
         markProjectSavedRevision(projectId, payload, result.revision, window.localStorage, serverProjectId);
         if (finalStatus === "READY") {
           setSaveStatus("서버 게시 검증과 공개를 진행하는 중입니다…");

@@ -1,4 +1,4 @@
-# 설비·공간 뷰어와 ROI 연동
+﻿# 설비·공간 뷰어와 ROI 연동
 
 센서 보정, 비전·열화상 텍스처, 영상 변화율, 위치별 음원, 실시간 경고 계약은 [frontend-monitoring-contract.md](frontend-monitoring-contract.md)를 함께 참조합니다. ROI의 새 측정 항목은 `vision.changePercent`(%), 조건 연산자는 `gte`(이상), `gt`(초과), `lt`(미만)입니다. 관측 뷰어는 설비별 SSE 스냅샷의 ROI 판정을 우선하며, 아래 3초 조회는 기존 ROI 저장소의 조회 계약입니다. 예시 모드는 별도 활성화한 동안만 샘플 규칙을 평가합니다.
 

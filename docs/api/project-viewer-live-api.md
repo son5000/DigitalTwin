@@ -1,6 +1,6 @@
 ﻿# 뷰어 실시간 상태 API
 
-프론트 구현: [projectViewerLiveApi.js](../src/features/portal/projects/projectViewerLiveApi.js), [useViewerLiveStatus.js](../src/features/portal/projects/useViewerLiveStatus.js). 호출 화면: [ProjectViewerPage.jsx](../src/features/portal/projects/ProjectViewerPage.jsx). 공통 주소·ID 규칙은 [API 대응표](backend-api-coverage.md)를 따른다.
+프론트 구현: [projectViewerLiveApi.js](../../src/features/portal/projects/projectViewerLiveApi.js), [useViewerLiveStatus.js](../../src/features/portal/projects/useViewerLiveStatus.js). 호출 화면: [ProjectViewerPage.jsx](../../src/features/portal/projects/ProjectViewerPage.jsx). 공통 주소·ID 규칙은 [API 대응표](../integration/backend-api-coverage.md)를 따른다.
 
 ## 호출 흐름
 

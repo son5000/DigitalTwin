@@ -1,6 +1,6 @@
-# 프론트·백엔드 API 대응표
+﻿# 프론트·백엔드 API 대응표
 
-기준: 백엔드 전달 문서 `[프론트전달] 백엔드_접속과_기능별_연동_안내.docx`와 현재 DigitalTwin 프론트 소스(2026-11-16). 이 표의 **연결**은 프론트 호출 코드가 해당 계약을 사용한다는 뜻이다. 실서버 왕복 성공을 뜻하지 않는다. 별도 링크의 [연동 흐름](backend-api-integration.md)도 함께 본다.
+기준: 백엔드 전달 문서 `[프론트전달] 백엔드_접속과_기능별_연동_안내.docx`와 현재 DigitalTwin 프론트 소스(2026-11-17). 이 표의 **연결**은 프론트 호출 코드가 해당 계약을 사용한다는 뜻이다. 실서버 왕복 성공을 뜻하지 않는다. [연동 흐름](backend-api-integration.md), 신규 API의 [백엔드 구현 요청](backend-viewer-asset-handoff.md)도 함께 본다.
 
 ## 공통 규칙
 
@@ -18,11 +18,12 @@
 | 계약 | 프론트 진입·함수 | 상태·한계 |
 | --- | --- | --- |
 | `POST /api/v1/projects` | 에디터 저장 → `createBackendProject` | 연결. 서버 UUID를 로컬 ID와 분리해 보관. |
-| `PUT /api/v1/projects/{id}/draft` | 에디터 저장 → `saveProjectConfiguration` | 연결. 자산 없는 layout만 현재 원격 저장 가능. |
+| `PUT /api/v1/projects/{id}/draft` | 에디터 저장 → `saveProjectConfiguration` | 연결. 업로드 결과의 manifest 전달 구현. NATIVE_BUNDLE은 백엔드 확장 필요. |
 | `POST /api/v1/projects/{id}/validate`, `POST .../publish` | READY 저장 → `publishProjectConfiguration` | 연결. 고정 표시 검증/게시이며 운영 분석 활성화가 아니다. |
 | `GET /api/v1/projects` | 프로젝트 목록 → `listProjectConfigurations` | 연결. `nextCursor`로 추가 조회. |
-| `GET /api/v1/projects/{id}?mode=editor` | 이어서 편집 → `loadEditableProject` | 연결. 서버의 최신 초안 layout과 revision 사용. 자산 manifest가 있으면 현 형식 차이로 중단. |
-| `GET /api/v1/projects/{id}?mode=viewer` | 뷰어·직접 링크 → `loadViewerProjectConfiguration` | 연결. 게시본만 사용. 자산 manifest가 있으면 현 형식 차이로 중단. |
+| `GET /api/v1/projects/{id}?mode=editor` | 이어서 편집 → `loadEditableProject` | 연결. 최신 초안과 자산 복원. 축약 목업은 전체 layout 재게시 필요. |
+| `GET /api/v1/projects/{id}?mode=viewer` | 뷰어·직접 링크 → `loadViewerProjectConfiguration` | 연결. 게시본과 자산 복원. hierarchy/설비-모델 매핑이 없으면 구체적 오류 표시. |
+| `GET /api/v1/display-assets/{id}`, `GET .../files/{member_id}` | `loadDisplayAsset` | 연결. 실제 목업 파일 크기·해시 검증 성공. glTF/GLB와 설비 binding 복원. |
 | `GET /api/v1/equipment-mappings?projectId=...&equipmentId=...` (H51) | 뷰어 → `loadEquipmentMapping` | 연결. 미등록 404는 매핑 필요로 표시. 매핑 생성/변경 UI는 없음. |
 | `GET /api/v1/enclosures/{uid}/snapshot?view_type=...` (W02) | 뷰어 → `loadEnclosureSnapshot` | 연결. 함체·슬롯·최근 관찰·활성 경고로 요약 상태를 표시. ROI별 KPI와 모델 바인딩은 아직 연결 안 됨. |
 | `WSS /api/v1/events` (W03) | 뷰어 → `useViewerLiveStatus` | 연결. 함체별 SUBSCRIBE, seq 중복 배제, 알림 후 W02 재조회, 폴링 복구. 브라우저 handshake/Origin 실검증 필요. |
@@ -35,7 +36,7 @@
 | 프론트 경로·기능 | 현재 처리 | 맞추기 위해 필요한 작업 |
 | --- | --- | --- |
 | 기존 `VITE_MONITORING_API_BASE`의 `PUT /projects/{id}/bundle` · `digital-twin-project` ZIP | 새 백엔드 설정 시 버튼을 숨기고 호출을 차단. 로컬 ZIP 내보내기는 유지 | 백엔드의 표시 자산 업로드와 프로젝트 초안 저장 절차로 변환. 기존 단일 ZIP PUT은 문서에 없음. |
-| `PUT/GET /projects/{id}/assets`, `assetUploadId` (이전 프론트 제안) | 현재 서버 호출 없음. 자산 필요 프로젝트의 원격 저장·조회 차단 | `POST /api/v1/display-assets` 승인 ZIP, `assetManifest`, GET manifest/멤버 복원과 기존 OBJ/PLY/MTL의 형식 문제 해결. |
+| `POST /api/v1/project-assets`, `GET /api/v1/project-assets/{id}/file` (신규 제안) | 원본 ZIP 업로드·해시 검증·복원 구현 | 백엔드 신규 구현 및 프로젝트 NATIVE_BUNDLE 참조 지원 필요. 이전 `/projects/{id}/assets`, `assetUploadId`는 사용하지 않음. |
 | `DELETE /projects/{id}` (이전 프론트 제안) | 서버 삭제 비활성, 로컬 사본만 삭제 | 백엔드가 삭제 정책과 API를 제공해야 함. |
 | 기존 `VITE_MONITORING_API_BASE`의 `/projects/{id}/rois` 목록·저장·삭제·`/readings`·`/preview`·기준 사진 업로드 | 새 백엔드 프로젝트에서는 호출하지 않음. 로컬 ROI는 브라우저에만 남음 | 백엔드의 `slots/{slot}/rois`, `rois/{id}`, `baseline`, W02/W11 관찰을 프론트 ROI·설비 ID와 연결. 서버 ROI 삭제/미리보기/이미지 업로드는 문서상 동일 경로 없음. |
 | 기존 `VITE_MONITORING_API_BASE`의 `/projects/{id}/equipment/{equipmentId}/monitoring` 및 `/events` SSE | 새 백엔드 프로젝트에서 호출 중단 | W02/W11/W12와 WSS로 설비·ROI별 데이터 모델 변환. WSS는 완전한 SSE 스냅샷이 아님. |
@@ -53,14 +54,14 @@
 | 관측 영역·기준 | `GET/POST /slots/{slot}/rois`; `PUT /rois/{id}`; `POST /rois/{id}/baseline` | 프론트 ROI 좌표·측정 항목을 slot/ROI 원문 ID와 양방향 변환. 삭제·프리뷰의 백엔드 대응 여부는 별도 결정. |
 | 임계치·센서 조작 | `GET/POST /enclosures/{uid}/thresholds`; `PUT /thresholds/{id}`; `POST /slots/{id}/configurations`; `POST /slots/{id}/swaps`; `GET /commands/{id}` | 편집 저장과 실제 장치 적용을 분리하고 접수된 명령의 완료 상태 표시. |
 | 경고·관찰 이력 | `GET /enclosures/{uid}/alarms`; `GET /enclosures/{uid}/observations`; `POST /alarms/{id}/ack` | 목록/추이/확인 UI를 서버 alarm·observation ID에 연결. W02는 최근 스냅샷만 사용 중. |
-| 표시 자산·구성 | `POST/GET /display-assets`; `GET /display-assets/{id}/files/{member_id}`; `POST/GET /display-configurations`; `POST /display-configurations/validate` | 승인 ZIP 인코딩, glTF/GLB 모델 로드, 불변 자산 ID와 프로젝트 revision의 `assetManifest` 연결. 프로젝트 저장 API와 역할 중복 없이 결정. |
+| 표시 자산 생성·별도 표시 구성 | `POST /display-assets`; `POST/GET /display-configurations`; `POST /display-configurations/validate` | 기존 표시 ZIP 생성·업로드는 미연결. 표시 자산 GET/멤버 복원은 위 1절에 구현됨. 에디터 원본은 신규 원본 ZIP 계약을 사용. |
 | 영상 변화 판독 | `GET/PUT /rois/{id}/change-analysis`; `GET/POST .../evaluations` | 분석 설정 버전·원본 JPEG·평가 결과를 서버 모델로 연결. |
 | 레버·게이지 판독 | 각각 `GET/PUT /rois/{id}/lever-analysis` 및 `/gauge-analysis`, `GET/POST .../evaluations` | 각 판독 UI의 설정·평가·이력을 서버 응답으로 연결. WSS 통지로 평가 결과를 추정하지 않음. |
 | 청취 | `POST /enclosures/{uid}/listen-sessions`; `DELETE /listen-sessions/{session_id}` | 세션 응답의 오디오 URL/명령 상태를 이용한 시작·종료. 기존 위치별 `/audio`와 본문이 다름. |
 
 ## 우선 결정할 계약
 
-1. **자산**: 프론트 OBJ/PLY/MTL·텍스처·커스텀 에셋을 glTF/GLB 승인 ZIP으로 변환할 주체와 기존 자산 ID↔서버 `asset_id` 매핑을 정한다. 이 전에는 업로드 자산이 있는 프로젝트의 타 브라우저 뷰어를 보장할 수 없다.
+1. **자산**: [원본 ZIP 계약](backend-viewer-asset-handoff.md)의 신규 API와 프로젝트 manifest 지원을 백엔드에서 구현한다. 프론트 업로드·복원은 구현했지만, 실서버의 타 브라우저 저장·조회는 공동 검증이 필요하다.
 2. **ROI/실측**: 프론트 설비·센서·ROI ID와 백엔드 enclosure/slot/ROI ID의 매핑, 측정값의 시각·품질·구성 버전을 합의한다. 연결 전에는 KPI 숫자를 실제 측정값처럼 만들지 않는다.
 3. **삭제·보정·프리뷰**: 백엔드 문서에 없는 동일 기능은 새 경로를 만들지, 프론트의 기능을 로컬 전용으로 유지할지 결정한다.
 4. **운영 환경**: 브라우저에서 `/api/v1/events` WSS handshake/Origin, `/api/v1/media` CORS, 프로젝트 저장→게시→조회, FE01/FE02를 실제 서버로 확인한다. 코드 검사·빌드는 이 검증을 대신하지 않는다.

@@ -29,7 +29,7 @@ export function canSkipEquipmentSetupStep(stepId, { equipment, sensors = [], poi
 export function getEquipmentModelMode(equipment, assets = []) {
   const choice = equipment?.metadata?.modelComposition;
   if (["SCAN", "SHAPE", "BOTH"].includes(choice)) return choice;
-  const binding = assets.filter((item) => item.equipmentId === equipment?.id && ["OBJ", "PLY"].includes(item.assetType)).at(-1);
+  const binding = assets.filter((item) => item.equipmentId === equipment?.id && ["OBJ", "PLY", "GLTF", "GLB"].includes(item.assetType)).at(-1);
   return !binding || binding.displayMode === "PROXY" ? "SHAPE" : binding.includeProxy || binding.displayMode === "COMPARE" ? "BOTH" : "SCAN";
 }
 
@@ -151,7 +151,7 @@ export function getSetupStepValidation(step, context) {
     if (enclosure.enabled && [enclosure.width, enclosure.height, enclosure.depth, enclosure.thickness].some((value) => !finite(value) || Number(value) <= 0)) return issue("model-size", "외관의 가로·높이·깊이와 판 두께를 0보다 크게 입력하세요.");
   }
   if ((step === "ASSET" && modelMode !== "BOTH") || step === "SCAN") {
-    const scans = assets.filter((asset) => asset.equipmentId === equipment?.id && ["OBJ", "PLY"].includes(asset.assetType));
+    const scans = assets.filter((asset) => asset.equipmentId === equipment?.id && ["OBJ", "PLY", "GLTF", "GLB"].includes(asset.assetType));
     const assigned = scans.filter((asset) => asset.scanSlot);
     const wholeScan = scans.some((asset) => !asset.scanSlot);
     const doors = modelMode === "BOTH" && getEnclosure(equipment).enabled ? getEnclosureDoorEntries(equipment) : [];

@@ -16,7 +16,7 @@ export default function EquipmentModelSetupPanel({ phase = "ASSET", equipment, b
   const [notice, setNotice] = useState("");
   const [selectedBindingId, setSelectedBindingId] = useState(null);
   const [uploadingSlot, setUploadingSlot] = useState("");
-  const scans = bindings.filter((item) => ["OBJ", "PLY"].includes(item.assetType));
+  const scans = bindings.filter((item) => ["OBJ", "PLY", "GLTF", "GLB"].includes(item.assetType));
   const mode = getEquipmentModelMode(equipment, scans);
   const wholeScan = scans.filter((item) => !item.scanSlot).at(-1);
   const showScanSettings = phase === "SCAN" || mode === "SCAN";

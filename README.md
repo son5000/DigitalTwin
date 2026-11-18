@@ -64,6 +64,8 @@ npm run dev
 
 ## 프로젝트 구조
 
+API 연동, 뷰어 JSON·DB 설계, 관제 계약은 [문서 목록과 용도 안내](docs/README.md)에서 확인할 수 있습니다.
+
 ```text
 src/
 ├─ components/icons/                 # 공통 SVG 아이콘과 타입 Registry

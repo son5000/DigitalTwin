@@ -2,7 +2,7 @@ import { normalizeHeatmap } from "./sensorHeatmap.js";
 
 export const EQUIPMENT_DETAIL_VERSION = 1;
 
-export const ASSET_TYPES = Object.freeze({ OBJ: "OBJ", PLY: "PLY", IMAGE: "IMAGE", TEXTURE: "TEXTURE" });
+export const ASSET_TYPES = Object.freeze({ OBJ: "OBJ", PLY: "PLY", GLTF: "GLTF", GLB: "GLB", IMAGE: "IMAGE", TEXTURE: "TEXTURE" });
 export const ASSET_SOURCE_TYPES = Object.freeze({ PROJECT: "PROJECT", UPLOAD: "UPLOAD", SERVER_KEY: "SERVER_KEY", URL: "URL" });
 export const ASSET_USAGE_TYPES = Object.freeze({ MODEL: "MODEL", POINT_CLOUD: "POINT_CLOUD", REFERENCE_IMAGE: "REFERENCE_IMAGE", TEXTURE: "TEXTURE", CAMERA_FRAME: "CAMERA_FRAME" });
 export const EQUIPMENT_DISPLAY_MODES = Object.freeze({ PROXY: "PROXY", ACTUAL: "ACTUAL", COMPARE: "COMPARE", POINT_CLOUD: "POINT_CLOUD" });
@@ -69,6 +69,7 @@ export function createEquipmentAssetBinding(equipmentId, asset, source = {}) {
     id: source.id ?? createId("EQUIPMENT_ASSET_BINDING"),
     equipmentId,
     assetId: source.assetId ?? asset.assetId ?? createId("ASSET"),
+    ...(source.backendAsset ? { backendAsset: { ...source.backendAsset } } : {}),
     name: source.name ?? asset.name ?? "설비 자산",
     sourceType: source.sourceType ?? ASSET_SOURCE_TYPES.PROJECT,
     sourceKey: source.sourceKey ?? asset.sourceKey ?? "",

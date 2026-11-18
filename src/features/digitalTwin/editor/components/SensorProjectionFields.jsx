@@ -49,7 +49,7 @@ export default function SensorProjectionFields({ sensor, equipment, assets = [],
       onChange(sensor.id, {
         projectionSample: { enabled: true, url: VISION_SAMPLE_URL, width, height, loadedAt: new Date().toISOString() },
         textureProjection: normalizeSensorProjection({ ...current.textureProjection, enabled: true, kind: "VISION", equipmentId: equipment.id,
-          target: current.textureProjection?.target ?? (assets.some((asset) => ["OBJ", "PLY"].includes(asset.assetType)) ? "ACTUAL" : "PROXY") }),
+          target: current.textureProjection?.target ?? (assets.some((asset) => ["OBJ", "PLY", "GLTF", "GLB"].includes(asset.assetType)) ? "ACTUAL" : "PROXY") }),
       });
       setMessage("샘플을 불러왔습니다. 오브젝트의 적용면을 선택하고 이미지를 조절하세요.");
     } catch (error) { if (!request.signal.aborted) setMessage(error.message || "샘플 이미지를 읽지 못했습니다."); }
@@ -69,7 +69,7 @@ export default function SensorProjectionFields({ sensor, equipment, assets = [],
         textureProjection: normalizeSensorProjection({ ...current.textureProjection, enabled: true, kind: "THERMAL", equipmentId: equipment.id,
           palette: "JET",
           temperatureMin: summary.min, temperatureMax: summary.max > summary.min ? summary.max : summary.min + 1,
-          target: current.textureProjection?.target ?? (assets.some((asset) => ["OBJ", "PLY"].includes(asset.assetType)) ? "ACTUAL" : "PROXY") }),
+          target: current.textureProjection?.target ?? (assets.some((asset) => ["OBJ", "PLY", "GLTF", "GLB"].includes(asset.assetType)) ? "ACTUAL" : "PROXY") }),
       });
       setMessage("열화상 샘플을 불러왔습니다. 현재 3D 시점에 카메라를 배치한 뒤 이미지와 설비 위치를 맞추세요.");
     } catch (error) { if (!request.signal.aborted) setMessage(error.message || "온도 CSV를 읽지 못했습니다."); }

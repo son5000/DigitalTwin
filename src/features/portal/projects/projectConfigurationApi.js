@@ -18,7 +18,7 @@ function requestSignal(signal, timeout = 30000) {
   return signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
 }
 
-export function createProjectConfigurationPayload(layout, baseRevision = 0) {
+export function createProjectConfigurationPayload(layout, baseRevision = 0, assetManifest = []) {
   if (!isRecord(layout) || layout.version !== 18 || !Array.isArray(layout.hierarchy?.nodes)) {
     throw new Error("저장할 프로젝트 구성을 확인해 주세요.");
   }
@@ -26,16 +26,22 @@ export function createProjectConfigurationPayload(layout, baseRevision = 0) {
   if (new Blob([JSON.stringify(layout)]).size > 1024 * 1024) {
     throw new Error("서버의 구성 크기 제한은 1MiB입니다. 큰 이미지나 스캔은 별도 자산 등록이 필요합니다.");
   }
-  return { baseRevision, layout, assetManifest: [], clientRequestId: crypto.randomUUID() };
+  if (!Array.isArray(assetManifest) || assetManifest.some((asset) => !isRecord(asset)
+    || typeof asset.asset_id !== "string" || !asset.asset_id || !/^[a-f0-9]{64}$/i.test(asset.manifest_sha256 ?? "")
+    || (asset.kind != null && !["NATIVE_BUNDLE", "DISPLAY_ASSET"].includes(asset.kind))
+    || (asset.kind === "NATIVE_BUNDLE" && !/^[a-f0-9]{64}$/i.test(asset.archive_sha256 ?? "")))
+    || new Set(assetManifest.map((asset) => asset.asset_id)).size !== assetManifest.length) throw new Error("저장할 자산 명세를 확인해 주세요.");
+  return { baseRevision, layout, assetManifest, clientRequestId: crypto.randomUUID() };
 }
 
 export async function projectRequest(path, options = {}) {
   if (!projectApiBase) throw new Error("프로젝트 API 주소가 설정되지 않았습니다.");
+  const { timeout, ...requestOptions } = options;
   const response = await fetch(`${projectApiBase}${path}`, {
     credentials: "same-origin",
-    ...options,
-    signal: requestSignal(options.signal),
-    headers: { ...(options.body ? { "Content-Type": "application/json" } : {}), ...options.headers },
+    ...requestOptions,
+    signal: requestSignal(options.signal, timeout),
+    headers: { ...(typeof options.body === "string" ? { "Content-Type": "application/json" } : {}), ...options.headers },
   });
   const body = response.status === 204 ? null : await response.json().catch(() => null);
   if (!response.ok) {
@@ -68,10 +74,10 @@ export async function createBackendProject(externalProjectId, layout, signal) {
   return result.project;
 }
 
-export async function saveProjectConfiguration(projectId, layout, signal, baseRevision = 0) {
+export async function saveProjectConfiguration(projectId, layout, signal, baseRevision = 0, assetManifest = []) {
   assertProjectId(projectId);
   const result = await projectRequest(`/projects/${encodeURIComponent(projectId)}/draft`, {
-    method: "PUT", signal, body: JSON.stringify(createProjectConfigurationPayload(layout, baseRevision)),
+    method: "PUT", signal, body: JSON.stringify(createProjectConfigurationPayload(layout, baseRevision, assetManifest)),
   });
   if (result?.projectId !== projectId || !Number.isInteger(result.revision) || result.revision <= baseRevision) {
     throw new Error("서버의 프로젝트 저장 결과를 확인할 수 없습니다.");

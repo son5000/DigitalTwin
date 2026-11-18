@@ -2127,7 +2127,7 @@ export default function SiteOverviewScene({
       ...item, position: { x: 0, y: 0, z: 0, ...item.position }, rotation: { x: 0, y: 0, z: 0, ...item.rotation },
       dimensions: { width: 1, height: 1, depth: 1, ...item.dimensions }, appearance: { color: "#6f8f9d", opacity: 1, ...item.appearance },
     }, baseY: 0 }));
-    const modelBindings = new Map(equipmentAssetBindings.filter((binding) => ["OBJ", "PLY"].includes(binding.assetType)).map((binding) => [binding.equipmentId, binding]));
+    const modelBindings = new Map(equipmentAssetBindings.filter((binding) => ["OBJ", "PLY", "GLTF", "GLB"].includes(binding.assetType)).map((binding) => [binding.equipmentId, binding]));
     const boundIds = new Set(modelBindings.keys());
     const detailedModels = [];
     createEquipmentRenderObjects(entries.filter(({ equipment }) => !boundIds.has(equipment.id)), { theme, enableLod: false }).forEach((object) => root.add(object));

@@ -143,7 +143,7 @@ function createInterior(data, theme, labelRoot, labelClass, onSelectFloor) {
   const entry = { data, theme, root, groups, labels, materials: [], localBounds: new Map(), equipmentTargets: new Map(), detailedModels: [], disposed: false };
   const bindings = new Map();
   (data.assetBindings ?? []).forEach((binding) => {
-    if (!["OBJ", "PLY"].includes(binding.assetType)) return;
+    if (!["OBJ", "PLY", "GLTF", "GLB"].includes(binding.assetType)) return;
     bindings.set(binding.equipmentId, [...(bindings.get(binding.equipmentId) ?? []), binding]);
   });
   const renderOptions = { theme, viewerTranslucent: true, enableLod: false };

@@ -1,0 +1,9 @@
+# Human-readable documents use a BOM for automatic UTF-8 detection on Windows.
+# JSON remains BOM-free for strict JSON parsers.
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+
+[*.{md,sql,html}]
+charset = utf-8-bom

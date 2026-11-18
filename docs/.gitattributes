@@ -1,0 +1,5 @@
+# Preserve the documented LF format even with core.autocrlf on Windows.
+*.md text eol=lf
+*.sql text eol=lf
+*.html text eol=lf
+*.json text eol=lf

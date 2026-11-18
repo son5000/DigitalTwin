@@ -1,8 +1,10 @@
-# 디지털 트윈 화면 구성·설정 데이터베이스 설계안
+﻿# 디지털 트윈 화면 구성·설정 데이터베이스 설계안
 
 작성일: 2026-10-22  
 대상: 현재 DigitalTwin 프론트엔드의 프로젝트 편집기, 사용자 정의 오브젝트, 3D 뷰어  
 상태: **백엔드 협의용 설계안. 테이블 생성·마이그레이션·데이터 변경은 수행하지 않음.**
+
+2026-11-18 보완: 현재 `layout.version=18`의 전체 필드·중첩 값·DB 위치·SQL은 [에디터·뷰어 전체 JSON 저장 계약](../../viewer/viewer-json-database-contract.md)을 우선 참조한다. 아래 내용은 2026-10-22 설계 검토 기록이다.
 
 ## 1. 권장 구성과 설계 범위
 
@@ -145,7 +147,7 @@ JSON은 `schema_version`으로 검증한다. 객체/배열 형태만 검사하�
 
 - 정규 장면 좌표는 **m, 오른손 좌표계, +Y 위쪽**, 노드 변환은 부모 로컬 좌표를 기준으로 한다. 기존 월드/층 기준 데이터는 이전 어댑터가 부모 로컬로 변환한다.
 - 장면 회전은 현재 코드와 맞춰 Euler XYZ 라디안으로 저장할 수 있다. 백엔드 `sensor_pose`의 quaternion과 변환 계약을 별도로 둔다.
-- 현재 센서 로컬 정면은 `-Y`, 영상 위쪽은 `-Z`다. 일반 카메라의 전방과 같다고 가정하지 않는다. [현재 보정 계약](frontend-monitoring-contract.md)을 따른다.
+- 현재 센서 로컬 정면은 `-Y`, 영상 위쪽은 `-Z`다. 일반 카메라의 전방과 같다고 가정하지 않는다. [현재 보정 계약](../../monitoring/frontend-monitoring-contract.md)을 따른다.
 - 원본 모델의 MM/CM/M·축·원점은 자산 버전에 기록하고, 실제 정합 행렬을 저장한다. 단위 변환을 업로드와 뷰어에서 두 번 적용하지 않는다.
 - 3D ROI는 설비 로컬 m, 기존 `roi_version.points`는 영상 정규화 0–1 좌표다. 두 공간을 자동으로 같은 것으로 변환하지 않는다.
 
@@ -728,15 +730,14 @@ ROI 또는 센서 표시만 수정하는 API도 같은 project 충돌 규약과 
 
 ### 현재 프론트 코드
 
-- [전체 layout 저장 필드](../src/features/digitalTwin/editor/api/layoutRepository.js), [프로젝트 저장소](../src/features/portal/projects/projectRepository.js)
-- [장면 계층](../src/features/digitalTwin/editor/model/digitalTwinHierarchy.js), [층 도면 상태](../src/features/digitalTwin/editor/store/useFloorPlanState.js), [지형 직렬화](../src/features/digitalTwin/editor/terrain/TerrainPersistence.js)
-- [설비 모델·정합·센서·구형 ROI](../src/features/digitalTwin/editor/model/equipmentDetailModel.js), [관측 모드](../src/features/digitalTwin/editor/model/observationWorkflow.js)
-- [뷰어 프리셋](../src/features/digitalTwin/editor/model/viewerPreset.js), [센서 투사](../src/features/digitalTwin/editor/model/sensorProjection.js), [이동 경로](../src/features/digitalTwin/editor/model/movementPath.js), [정적 텍스처 매핑](../src/features/digitalTwin/editor/model/userTexture.js)
-- [설비 파일 저장소](../src/features/digitalTwin/editor/api/equipmentAssetRepository.js), [텍스처 저장소](../src/features/digitalTwin/editor/api/textureAssetRepository.js), [ROI 저장소](../src/features/digitalTwin/editor/api/roiRepository.js)
-- [사용자 정의 자산 저장소](../src/features/customAssets/storage/customAssetRepository.js), [사용자 정의 자산 구조](../src/features/customAssets/core/customAssetTypes.js)
-- [테마](../src/features/digitalTwin/editor/store/useEditorTheme.js), [편집 편의 설정](../src/features/digitalTwin/editor/store/useEditorPreferences.js), [즐겨찾기·최근 사용](../src/features/digitalTwin/editor/store/useDigitalTwinEditorState.js)
-- [현재 로컬 운영 기록](../src/features/portal/viewer/operationsModel.js)
-- [프론트 모니터링 계약](frontend-monitoring-contract.md), [ROI 모니터링 계약](roi-monitoring-contract.md)
+- [전체 layout 저장 필드](../../../src/features/digitalTwin/editor/api/layoutRepository.js), [프로젝트 저장소](../../../src/features/portal/projects/projectRepository.js)
+- [장면 계층](../../../src/features/digitalTwin/editor/model/digitalTwinHierarchy.js), [층 도면 상태](../../../src/features/digitalTwin/editor/store/useFloorPlanState.js), [지형 직렬화](../../../src/features/digitalTwin/editor/terrain/TerrainPersistence.js)
+- [설비 모델·정합·센서·구형 ROI](../../../src/features/digitalTwin/editor/model/equipmentDetailModel.js), [관측 모드](../../../src/features/digitalTwin/editor/model/observationWorkflow.js)
+- [뷰어 프리셋](../../../src/features/digitalTwin/editor/model/viewerPreset.js), [센서 투사](../../../src/features/digitalTwin/editor/model/sensorProjection.js), [이동 경로](../../../src/features/digitalTwin/editor/model/movementPath.js), [정적 텍스처 매핑](../../../src/features/digitalTwin/editor/model/userTexture.js)
+- [설비 파일 저장소](../../../src/features/digitalTwin/editor/api/equipmentAssetRepository.js), [텍스처 저장소](../../../src/features/digitalTwin/editor/api/textureAssetRepository.js), [ROI 저장소](../../../src/features/digitalTwin/editor/api/roiRepository.js)
+- [사용자 정의 자산 저장소](../../../src/features/customAssets/storage/customAssetRepository.js), [사용자 정의 자산 구조](../../../src/features/customAssets/core/customAssetTypes.js)
+- [테마](../../../src/features/digitalTwin/editor/store/useEditorTheme.js), [편집 편의 설정](../../../src/features/digitalTwin/editor/store/useEditorPreferences.js), [즐겨찾기·최근 사용](../../../src/features/digitalTwin/editor/store/useDigitalTwinEditorState.js)
+- [현재 로컬 운영 기록](../../../src/features/portal/viewer/operationsModel.js)
+- [프론트 모니터링 계약](../../monitoring/frontend-monitoring-contract.md), [ROI 모니터링 계약](../../monitoring/roi-monitoring-contract.md)
 
 현재 코드·기존 연동 문서와 첨부 PDF 사이의 차이는 11절에 정리했다. 본 설계안은 기존 백엔드 스키마/API가 이미 변경되었거나 실측 연동이 완료되었다는 의미가 아니다.
-

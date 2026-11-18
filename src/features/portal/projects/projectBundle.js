@@ -9,6 +9,7 @@ import { PROJECT_STORAGE_KEY, readProjects } from "./projectRepository";
 import { decodeProjectFile, encodeProjectZip, safeBundleName } from "./projectBundleFiles.js";
 import { monitoringApiBase } from "../../digitalTwin/editor/api/monitoringClient.js";
 import { projectApiBase } from "./projectConfigurationApi.js";
+import { collectAssetReferences } from "./projectAssetRestore.js";
 
 function visit(value, callback) {
   if (!value || typeof value !== "object" || value instanceof Blob) return;
@@ -70,17 +71,7 @@ export async function exportProjectBundle(project, { onProgress = () => {}, stor
 }
 
 export function collectProjectAssetIds(layout) {
-  const equipmentIds = new Set(), textureIds = new Set(), customIds = new Set();
-  visit(layout, (node) => {
-    if (node.sourceType === "UPLOAD" && node.assetId) equipmentIds.add(node.assetId);
-    if (node.textureAssetId) textureIds.add(node.textureAssetId);
-    if (node.customAssetId) customIds.add(node.customAssetId);
-    Object.values(node).forEach((value) => {
-      const id = typeof value === "string" && getCustomAssetIdFromTemplate(value);
-      if (id) customIds.add(id);
-    });
-  });
-  return { equipmentIds, textureIds, customIds };
+  return collectAssetReferences(layout);
 }
 
 // Use the same archive format for server-side asset storage without copying
@@ -95,7 +86,7 @@ export async function createProjectAssetArchive(projectId, layout) {
     const asset = await customAssetRepository.get(id);
     if (!asset) throw new Error(`커스텀 모델을 찾을 수 없습니다: ${id}`);
     assets.custom.push(asset);
-    visit(asset, (node) => { if (node.textureAssetId) textureIds.add(node.textureAssetId); });
+    collectAssetReferences(asset, { equipmentIds, textureIds, customIds });
   }
   for (const id of equipmentIds) {
     const asset = await equipmentAssetRepository.get(id);

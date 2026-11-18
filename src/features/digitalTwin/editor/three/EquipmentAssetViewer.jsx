@@ -53,7 +53,16 @@ async function resolveBindingSources(binding) {
       ?? null;
   };
   const manager = new THREE.LoadingManager();
-  manager.setURLModifier((url) => findObjectUrl(url) ?? url);
+  manager.setURLModifier((url) => {
+    if (asset.assetType === "GLTF" || asset.assetType === "GLB") {
+      // Raw glTF URIs are checked before parsing; blob URLs here may be embedded GLB images.
+      if (url.startsWith("data:") || url.startsWith("blob:")) return url;
+      const stored = findObjectUrl(url);
+      if (!stored) throw new Error("모델이 자산 명세에 없는 외부 파일을 참조합니다.");
+      return stored;
+    }
+    return findObjectUrl(url) ?? url;
+  });
   const primaryUrl = findObjectUrl(asset.primaryFilePath ?? asset.primaryFileName) ?? findObjectUrl(binding.sourceKey);
   return {
     // Pass the stored Blob directly: parsing must not depend on a temporary URL
@@ -62,6 +71,8 @@ async function resolveBindingSources(binding) {
     relatedSource: findObjectUrl(binding.relatedSourceKey),
     textureSource: findObjectUrl(binding.textureSourceKey),
     manager,
+    displayMaterials: asset.displayMaterials ?? [],
+    memberNames: objectUrls.flatMap((entry) => [entry.name, entry.path]),
     revoke: () => objectUrls.forEach((entry) => URL.revokeObjectURL(entry.url)),
   };
 }
@@ -84,6 +95,11 @@ async function loadBindingObjectNow(binding, { signal } = {}) {
   const { source, relatedSource, textureSource, manager, revoke } = sources;
   if (!source) { revoke(); throw new Error("MISSING_LOCAL_FILE"); }
   try {
+    if ([ASSET_TYPES.GLTF, ASSET_TYPES.GLB].includes(binding.assetType)) {
+      const { loadStoredGltf } = await import("./loadStoredGltf.js");
+      const object = await loadStoredGltf(source, manager, sources.displayMaterials, signal, sources.memberNames);
+      return { object, revoke, fallbackMaterial: false };
+    }
     if (binding.assetType === ASSET_TYPES.OBJ) {
       const parsed = await parseScanInWorker(source, "OBJ", signal);
       let materialCreator;
@@ -304,7 +320,7 @@ export default function EquipmentAssetViewer({ environment, cameraController, in
     JSON.stringify(equipment.userTexture),
   ].join("|") : "";
   const alignmentKey = binding?.alignmentTransform ? JSON.stringify(binding.alignmentTransform) : "";
-  const requestedDisplayMode = forcedDisplayMode ?? (binding && [ASSET_TYPES.OBJ, ASSET_TYPES.PLY].includes(binding.assetType)
+  const requestedDisplayMode = forcedDisplayMode ?? (binding && [ASSET_TYPES.OBJ, ASSET_TYPES.PLY, ASSET_TYPES.GLTF, ASSET_TYPES.GLB].includes(binding.assetType)
     ? binding.displayMode ?? EQUIPMENT_DISPLAY_MODES.ACTUAL
     : EQUIPMENT_DISPLAY_MODES.PROXY);
   const displayMode = requestedDisplayMode === EQUIPMENT_DISPLAY_MODES.ACTUAL && binding?.includeProxy ? EQUIPMENT_DISPLAY_MODES.COMPARE : requestedDisplayMode;
@@ -451,7 +467,7 @@ export default function EquipmentAssetViewer({ environment, cameraController, in
   useEffect(() => {
     const runtime = runtimeRef.current;
     const bindingSnapshot = bindingRef.current;
-    const hasRenderableBinding = Boolean(shouldLoadDetailed && bindingSnapshot && [ASSET_TYPES.OBJ, ASSET_TYPES.PLY].includes(bindingSnapshot.assetType));
+    const hasRenderableBinding = Boolean(shouldLoadDetailed && bindingSnapshot && [ASSET_TYPES.OBJ, ASSET_TYPES.PLY, ASSET_TYPES.GLTF, ASSET_TYPES.GLB].includes(bindingSnapshot.assetType));
     if (!runtime || !hasRenderableBinding) {
       setLoadState("PROXY");
       return undefined;
@@ -580,5 +596,5 @@ export default function EquipmentAssetViewer({ environment, cameraController, in
   }, [focusDetail, loadState, cameraKey, shouldLoadDetailed]);
 
   const messages = { PROXY: "외관 도형 표시 중", LOADING: "대용량 스캔 자산을 불러오는 중…", READY: "실제 자산 정합 모드", READY_FALLBACK: "모델 표시 중 · 텍스처 대신 기본 재질 적용", NO_3D: "이미지·텍스처는 하단 카메라 화면에서 확인합니다.", MISSING: "업로드 원본 파일을 다시 연결해 주세요.", UNSUPPORTED: "지원하지 않는 파일 형식입니다.", EMPTY: "파일에 표시할 3D 형상이 없습니다.", WEBGL_ERROR: "WebGL 뷰어를 초기화하지 못했습니다.", ERROR: "자산을 불러오지 못했습니다." };
-  return <section className={styles.viewer} aria-label="설비 실제 자산 뷰어"><div ref={mountRef} className={styles.canvas} /><ModelLayerControls value={layerSettings} hasScan={Boolean(binding && [ASSET_TYPES.OBJ, ASSET_TYPES.PLY].includes(binding.assetType))} scanDefault={displayMode !== EQUIPMENT_DISPLAY_MODES.PROXY} shapeDefault={displayMode === EQUIPMENT_DISPLAY_MODES.PROXY || displayMode === EQUIPMENT_DISPLAY_MODES.COMPARE} shapeOpacity={equipment.enclosure?.opacity ?? equipment.appearance?.opacity ?? 1} onChange={(value) => setModelLayers((current) => ({ ...current, [equipment.id]: value }))} />{displayMode !== EQUIPMENT_DISPLAY_MODES.ACTUAL && <EnclosureDoorControls equipment={displayedEquipment} onToggle={(index, open, side) => setDoorOverride(enclosureDoorOverride(equipment, displayedEquipment, index, open, side))} />}<div className={styles.status} data-state={loadState}>{loadMessage || messages[loadState]}</div></section>;
+  return <section className={styles.viewer} aria-label="설비 실제 자산 뷰어"><div ref={mountRef} className={styles.canvas} /><ModelLayerControls value={layerSettings} hasScan={Boolean(binding && [ASSET_TYPES.OBJ, ASSET_TYPES.PLY, ASSET_TYPES.GLTF, ASSET_TYPES.GLB].includes(binding.assetType))} scanDefault={displayMode !== EQUIPMENT_DISPLAY_MODES.PROXY} shapeDefault={displayMode === EQUIPMENT_DISPLAY_MODES.PROXY || displayMode === EQUIPMENT_DISPLAY_MODES.COMPARE} shapeOpacity={equipment.enclosure?.opacity ?? equipment.appearance?.opacity ?? 1} onChange={(value) => setModelLayers((current) => ({ ...current, [equipment.id]: value }))} />{displayMode !== EQUIPMENT_DISPLAY_MODES.ACTUAL && <EnclosureDoorControls equipment={displayedEquipment} onToggle={(index, open, side) => setDoorOverride(enclosureDoorOverride(equipment, displayedEquipment, index, open, side))} />}<div className={styles.status} data-state={loadState}>{loadMessage || messages[loadState]}</div></section>;
 }

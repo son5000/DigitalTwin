@@ -84,8 +84,8 @@ export default function useMonitoringState({ equipment }) {
       status: assetType === "UNSUPPORTED" ? "UNSUPPORTED" : source.status ?? "READY",
     });
     setEquipmentAssetBindings((items) => [...items.filter((item) => {
-      if (![ASSET_TYPES.OBJ, ASSET_TYPES.PLY].includes(binding.assetType) || item.equipmentId !== equipmentId
-        || ![ASSET_TYPES.OBJ, ASSET_TYPES.PLY].includes(item.assetType)) return true;
+      if (![ASSET_TYPES.OBJ, ASSET_TYPES.PLY, ASSET_TYPES.GLTF, ASSET_TYPES.GLB].includes(binding.assetType) || item.equipmentId !== equipmentId
+        || ![ASSET_TYPES.OBJ, ASSET_TYPES.PLY, ASSET_TYPES.GLTF, ASSET_TYPES.GLB].includes(item.assetType)) return true;
       if (binding.scanSlot) return item.scanSlot
         ? item.scanSlot.side !== binding.scanSlot.side || item.scanSlot.index !== binding.scanSlot.index
         : !["CABINET_SCAN_OBJ", "CABINET_SCAN_PLY"].includes(item.assetId);

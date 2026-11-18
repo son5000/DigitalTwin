@@ -1,6 +1,6 @@
 import { getEnclosureScanSlot } from "./equipmentEnclosure.js";
 
-const isScan = (binding) => ["OBJ", "PLY"].includes(binding.assetType);
+const isScan = (binding) => ["OBJ", "PLY", "GLTF", "GLB"].includes(binding.assetType);
 
 export function equipmentScanBindings(equipment, assets = []) {
   const scans = assets.filter((binding) => binding.equipmentId === equipment?.id && isScan(binding));
