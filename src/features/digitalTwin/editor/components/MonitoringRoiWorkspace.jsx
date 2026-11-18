@@ -5,6 +5,7 @@ import useRoiMonitoring from "../store/useRoiMonitoring";
 import { clampRoiRadius, getRoiReading, isObservationRoi, observationPointToRoi, roiToObservationPoint, ROI_METRICS, ROI_STATUSES } from "../model/roiMonitoring.js";
 import { readProjects } from "@/features/portal/projects/projectRepository";
 import { projectApiBase } from "@/features/portal/projects/projectConfigurationApi";
+import { isDeveloperViewer } from "@/features/portal/portalSession.js";
 import styles from "./MonitoringRoiWorkspace.module.css";
 import MonitoringDataPanel from "./MonitoringDataPanel";
 import useEquipmentTelemetry from "../store/useEquipmentTelemetry";
@@ -82,7 +83,7 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
   const model = useMemo(() => modelReference(equipment, sceneProps.assetBindings), [equipment, sceneProps.assetBindings]);
   const compatibleRois = useMemo(() => monitoring.rois.filter((roi) => roi.equipmentId !== equipmentId || !roi.surface?.model?.version || roi.surface.model.version === model.version), [monitoring.rois, equipmentId, model.version]);
   const projectionSensors = sceneProps.sensors ?? EMPTY_SENSORS;
-  const developerTools = !editorMode && new URLSearchParams(window.location.search).get("developer") === "1";
+  const developerTools = !editorMode && isDeveloperViewer(window.location.search);
   const simulation = useViewerSimulation({ allowed: developerTools, equipment, equipmentId, modelVersion: model.version, rois: compatibleRois, sensors: projectionSensors });
   const storedProject = readProjects().projects.find((project) => project.id === projectId || project.serverProjectId === projectId);
   const backendProject = Boolean(projectApiBase) && (!storedProject || storedProject.storageMode === "SERVER");

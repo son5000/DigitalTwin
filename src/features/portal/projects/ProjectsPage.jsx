@@ -10,6 +10,7 @@ import { listProjectConfigurations } from "./projectListApi";
 import { loadEditableProject } from "./projectEditApi";
 import ProjectDeleteDialog from "./ProjectDeleteDialog";
 import ProjectViewerLinksDialog from "./ProjectViewerLinksDialog";
+import { canUseDeveloperViewer } from "../portalSession.js";
 
 const PROJECT_VIEW_STORAGE_KEY = "digital-twin-projects-view-v1";
 
@@ -19,6 +20,7 @@ function readProjectView() {
 }
 
 export default function ProjectsPage() {
+  const developerViewerAvailable = canUseDeveloperViewer();
   const [result, setResult] = useState({ projects: [], loading: true, error: "" });
   const [serverResult, setServerResult] = useState({ items: [], nextCursor: null, loading: Boolean(projectApiBase), error: "" });
   const [bundleState, setBundleState] = useState({ busy: false, message: "", error: false });
@@ -168,6 +170,7 @@ export default function ProjectsPage() {
                   <button className={project.status === "DRAFT" ? styles.primary : undefined} disabled={Boolean(editingId)} onClick={() => enterProject(project)}>{editingId === project.projectId ? "불러오는 중…" : project.status === "DRAFT" ? "이어서 편집" : "편집하기"}</button>
                   {project.publishedRevision ? <button className={project.status === "DRAFT" ? undefined : styles.primary} disabled={Boolean(editingId)} onClick={() => navigateTo(`/viewer?project=${encodeURIComponent(project.projectId)}`)}>뷰어 열기</button> : null}
                   {project.publishedRevision ? <button disabled={Boolean(editingId)} onClick={() => setLinkTarget({ id: project.projectId, name: project.name, localOnly: false, draft: project.status === "DRAFT" })}>직접 링크</button> : null}
+                  {developerViewerAvailable && project.publishedRevision ? <button className={styles.developer} disabled={Boolean(editingId)} onClick={() => navigateTo(`/viewer?project=${encodeURIComponent(project.projectId)}&developer=1`)} aria-label={`${project.name} 개발자 뷰어 열기`} title="테스트 데이터를 주입할 수 있는 뷰어">개발자 뷰어</button> : null}
                   <button className={styles.danger} disabled title="백엔드 프로젝트 삭제 API가 제공되지 않습니다.">삭제 불가</button>
                 </div>
               </div>
@@ -187,7 +190,7 @@ export default function ProjectsPage() {
                   {details.isDraft ? <button className={styles.primary} disabled={Boolean(editingId)} onClick={() => enterProject(project)}>{editingId === project.id ? "불러오는 중…" : "이어서 편집"}</button> : null}
                   {canOpenViewer ? <button className={details.isDraft ? undefined : styles.primary} disabled={Boolean(editingId)} onClick={() => navigateTo(`/viewer?project=${encodeURIComponent(viewerProjectId)}`)}>{details.isDraft && !serverProject?.publishedRevision ? "현재 구성 미리보기" : "뷰어 열기"}</button> : null}
                   {canOpenViewer ? <button disabled={Boolean(editingId)} onClick={() => setLinkTarget({ id: viewerProjectId, name: details.name, layout: !projectApiBase || project.storageMode !== "SERVER" ? project.layout : null, localOnly: !projectApiBase || project.storageMode !== "SERVER", draft: details.isDraft })}>직접 링크</button> : null}
-                  {import.meta.env.DEV && <button className={styles.developer} disabled={Boolean(editingId)} onClick={() => navigateTo(`/viewer?project=${encodeURIComponent(project.id)}&developer=1`)} aria-label={`${details.name} 개발자 뷰어 열기`} title="테스트 데이터를 주입할 수 있는 뷰어">개발자 뷰어</button>}
+                  {developerViewerAvailable && <button className={styles.developer} disabled={Boolean(editingId)} onClick={() => navigateTo(`/viewer?project=${encodeURIComponent(viewerProjectId)}&developer=1`)} aria-label={`${details.name} 개발자 뷰어 열기`} title="테스트 데이터를 주입할 수 있는 뷰어">개발자 뷰어</button>}
                   {!details.isDraft ? <button disabled={Boolean(editingId)} onClick={() => enterProject(project)}>{editingId === project.id ? "불러오는 중…" : "편집하기"}</button> : null}
                   <button disabled={bundleState.busy || Boolean(editingId)} onClick={() => exportBundle(project)}>ZIP 내보내기</button>
                   <button className={styles.danger} aria-label={`${details.name} 로컬 저장본 삭제`} disabled={Boolean(editingId)} onClick={() => requestDelete(project.id, details.name, true, true)}>로컬 삭제</button>

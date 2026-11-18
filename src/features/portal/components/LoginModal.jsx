@@ -1,7 +1,7 @@
 ﻿import { useEffect, useRef, useState } from "react";
 import { CloseIcon } from "@/components/icons/actionIcons";
 import { LockIcon } from "@/components/icons/toolbarIcons";
-import { portalContent } from "../portalContent";
+import { signInDemoAccount } from "../portalSession.js";
 import styles from "./LoginModal.module.css";
 
 function AuthForm({ mode, onChangeMode, onLogin }) {
@@ -19,8 +19,13 @@ function AuthForm({ mode, onChangeMode, onLogin }) {
       return;
     }
     const data = new FormData(event.currentTarget);
-    if (data.get("email") === portalContent.demoEmail && data.get("password") === portalContent.demoPassword) {
-      onLogin();
+    try {
+      if (signInDemoAccount(data.get("email"), data.get("password"))) {
+        onLogin();
+        return;
+      }
+    } catch {
+      setError("로그인 상태를 보관하지 못했습니다. 브라우저 저장소 권한을 확인해주세요.");
       return;
     }
     setError("아이디 또는 비밀번호를 확인해주세요.");
