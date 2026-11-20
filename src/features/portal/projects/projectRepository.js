@@ -138,6 +138,26 @@ export function updateProjectObservationPoints(projectId, update, storage = wind
   return layout;
 }
 
+function getRepresentativeImage(layout) {
+  const isImage = (value) => typeof value === "string" && value.startsWith("data:image/");
+  if (isImage(layout.representativeImage)) return layout.representativeImage;
+
+  // Step 1 stores the uploaded photo on the equipment, not on the project.
+  // Read the saved instances directly so cards also work without the server.
+  const equipment = new Map();
+  const addEquipment = (items) => {
+    if (!Array.isArray(items)) return;
+    items.forEach((item) => {
+      if (item?.id && !equipment.has(item.id)) equipment.set(item.id, item);
+    });
+  };
+  Object.values(layout.equipmentByFloorId ?? {}).forEach(addEquipment);
+  Object.values(layout.roomScenes ?? {}).forEach((scene) => addEquipment(scene?.equipment));
+  addEquipment(layout.equipment);
+  addEquipment(layout.siteObjects);
+  return [...equipment.values()].map((item) => item.metadata?.representativeImage).find(isImage);
+}
+
 export function getProjectDetails(project) {
   const { layout } = project;
   const scope = layout.observationWorkflow?.scopeType ?? "SITE";
@@ -147,9 +167,7 @@ export function getProjectDetails(project) {
   return {
     name: getProjectName(layout),
     scope: names[scope] ?? names.SITE,
-    thumbnail: typeof layout.representativeImage === "string" && layout.representativeImage.startsWith("data:image/")
-      ? layout.representativeImage
-      : `/portal/workflow-${image}.svg`,
+    thumbnail: getRepresentativeImage(layout) ?? `/portal/workflow-${image}.svg`,
     modified: Number.isNaN(date.getTime()) ? "수정일 정보 없음" : date.toLocaleString("ko-KR", { dateStyle: "medium", timeStyle: "short" }),
     isDraft: layout.projectStatus === "DRAFT" || layout.observationWorkflow?.configured === false,
     status: layout.projectStatus === "DRAFT" || layout.observationWorkflow?.configured === false ? "작업 중" : "저장 완료",

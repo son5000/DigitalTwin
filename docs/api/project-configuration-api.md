@@ -2,6 +2,8 @@
 
 현재 백엔드 계약의 기본 주소는 `/api/v1`이다. 프론트 구현: [projectConfigurationApi.js](../../src/features/portal/projects/projectConfigurationApi.js), 호출 화면: [DigitalTwinEditorPage.jsx](../../src/features/digitalTwin/editor/DigitalTwinEditorPage.jsx). 공통 주소·응답·식별자 규칙은 [API 대응표](../integration/backend-api-coverage.md)를 따른다.
 
+2026-11-19 백엔드 전달용 단일 문서: [편집 저장·뷰어 반영·삭제 연동 계약](../integration/project-save-publish-delete-handoff.md). 기존 경로를 유지하며 전체 요청·응답·원본 자산·DB·오류·삭제 정책·인수 조건을 한 곳에 모았다.
+
 ## 호출 순서
 
 1. 처음 저장할 때 `POST /projects`에 `{name,scope,externalProjectId,clientRequestId}`를 전송한다. 응답 `data.project.id`는 서버 UUID이며 로컬 프로젝트 ID와 구분해 보관한다. `initialLayout`은 보내지 않으므로 생성 직후 revision은 0이다.

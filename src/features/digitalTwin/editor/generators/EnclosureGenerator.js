@@ -24,6 +24,7 @@ export function generateEnclosure(equipment, { edgeColor, sceneTheme }) {
   }
   for (const side of ["FRONT", "REAR"]) {
     const set = side === "FRONT" ? c : c.rear;
+    if (set.interiorLayout === "SHARED") continue;
     for (let index = 0; index < set.doorCount - 1; index++) {
       const slot = getEnclosureScanSlot(equipment, index, side);
       if (!slot) continue;

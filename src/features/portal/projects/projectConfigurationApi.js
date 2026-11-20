@@ -39,6 +39,7 @@ export async function projectRequest(path, options = {}) {
   const { timeout, ...requestOptions } = options;
   const response = await fetch(`${projectApiBase}${path}`, {
     credentials: "same-origin",
+    cache: "no-store",
     ...requestOptions,
     signal: requestSignal(options.signal, timeout),
     headers: { ...(typeof options.body === "string" ? { "Content-Type": "application/json" } : {}), ...options.headers },

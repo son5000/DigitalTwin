@@ -80,6 +80,52 @@ test("saved representative image replaces the project card fallback", () => {
   assert.equal(captured.thumbnail, "data:image/png;base64,captured");
 });
 
+test("step 1 photos from each saved equipment collection appear on local project cards", () => {
+  const photo = "data:image/jpeg;base64,step-one-photo";
+  const equipment = { id: "pump", metadata: { representativeImage: photo } };
+  for (const collection of [
+    { equipmentByFloorId: { floor: [equipment] } },
+    { roomScenes: { room: { equipment: [equipment] } } },
+    { equipment: [equipment] },
+    { siteObjects: [equipment] },
+  ]) {
+    const storage = storageWith({ ...world("사진 프로젝트"), ...collection });
+    const project = readProjects(storage).projects[0];
+    assert.equal(getProjectDetails(project).thumbnail, photo);
+    createProject(storage);
+    storage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(world("다른 프로젝트")));
+    const projects = readProjects(storage).projects;
+    assert.equal(getProjectDetails(projects.find((item) => item.id === project.id)).thumbnail, photo);
+    assert.equal(getProjectDetails(projects.find((item) => item.id !== project.id)).thumbnail, "/portal/workflow-site.svg");
+  }
+});
+
+test("project snapshots keep priority and equipment photo updates and removal use the current saved instance", () => {
+  const photo = "data:image/png;base64,current-photo";
+  const oldPhoto = "data:image/png;base64,old-photo";
+  const layout = {
+    ...world("대표 사진 변경"),
+    equipmentByFloorId: { floor: [{ id: "pump", metadata: { representativeImage: photo } }] },
+    roomScenes: { room: { equipment: [{ id: "pump", metadata: { representativeImage: oldPhoto } }] } },
+  };
+  const storage = storageWith(layout);
+  assert.equal(getProjectDetails(readProjects(storage).projects[0]).thumbnail, photo);
+  assert.equal(getProjectDetails({ layout: { ...layout, representativeImage: oldPhoto } }).thumbnail, oldPhoto);
+  layout.equipmentByFloorId.floor[0].metadata.representativeImage = null;
+  storage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(layout));
+  assert.equal(getProjectDetails(readProjects(storage).projects[0]).thumbnail, "/portal/workflow-site.svg");
+});
+
+test("equipment without a persistent photo is skipped when resolving the card image", () => {
+  const photo = "data:image/webp;base64,saved-photo";
+  const layout = { ...world("다중 설비"), equipmentByFloorId: { floor: [
+    { id: "empty" },
+    { id: "temporary", metadata: { representativeImage: "blob:expired" } },
+    { id: "photo", metadata: { representativeImage: photo } },
+  ] } };
+  assert.equal(getProjectDetails({ layout }).thumbnail, photo);
+});
+
 test("remote draft activation preserves the previous working world and revision", () => {
   const storage = storageWith(world("기존 월드"));
   const firstId = readProjects(storage).activeId;

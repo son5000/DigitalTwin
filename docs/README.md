@@ -1,11 +1,12 @@
 ﻿# 문서 안내
 
-정리 기준일: **2026-11-18**. 기존 문서 27개를 주제별로 분류했다. 이 파일은 각 문서의 용도와 읽는 순서를 안내하는 전체 목록이다.
+정리 기준일: **2026-11-19**. 문서 28개를 주제별로 분류했다. 이 파일은 각 문서의 용도와 읽는 순서를 안내하는 전체 목록이다.
 
 ## 먼저 볼 문서
 
 | 하고 싶은 일 | 읽는 순서 |
 |---|---|
+| 편집 저장·뷰어 반영·프로젝트 삭제를 백엔드에 한 문서로 전달하기 | [프로젝트 저장·게시·삭제 통합 계약](integration/project-save-publish-delete-handoff.md) — 요청·응답, DB, 파일, 오류, 인수 조건 포함 |
 | 에디터의 모든 설정을 백엔드에 저장·복원하기 | [전체 JSON·DB 계약](viewer/viewer-json-database-contract.md) → `viewer/fields/`의 세부 필드 → [DB 스키마](viewer/schema/viewer-configuration-schema.sql) |
 | 프론트와 백엔드의 연결 상태·부족한 API 확인하기 | [API 대응 현황](integration/backend-api-coverage.md) → [연동 설정](integration/backend-api-integration.md) → `api/`의 해당 기능 |
 | 프로젝트가 열리지 않거나 모델 파일이 복원되지 않는 이유 확인하기 | [뷰어·자산 전달 사항](integration/backend-viewer-asset-handoff.md) → [뷰어 조회 API](api/project-viewer-api.md) → [파일 API](api/project-asset-api.md) |
@@ -18,7 +19,7 @@
 
 | 폴더 | 내용 | 문서 수 |
 |---|---|---:|
-| `integration/` | 현재 연동 상황, 차이점, 백엔드 전달 사항 | 3 |
+| `integration/` | 현재 연동 상황, 차이점, 백엔드 전달 사항 | 4 |
 | `api/` | 프로젝트 기능별 요청·응답 계약 | 7 |
 | `monitoring/` | 센서·영상·ROI의 도메인 계약 | 4 |
 | `viewer/` | 구성 저장·복원과 프로젝트 번들의 전체 설계 | 2 |
@@ -39,6 +40,7 @@
 | [backend-api-coverage.md](integration/backend-api-coverage.md) | 프론트 호출과 백엔드 API의 대응 관계, 미연결·누락·협의 항목. 전체 구현 범위를 점검할 때 본다. | 수동 관리 |
 | [backend-api-integration.md](integration/backend-api-integration.md) | API 주소·환경 설정, 응답 처리, 연결 방식과 제한. 로컬/배포 환경의 연동을 설정할 때 본다. | 수동 관리 |
 | [backend-viewer-asset-handoff.md](integration/backend-viewer-asset-handoff.md) | 목업 프로젝트의 구성 부족, 표시 자산·원본 파일의 저장/다운로드/복원 요구사항과 제안 API. 백엔드 개발자에게 전달한다. | 수동 관리 |
+| [project-save-publish-delete-handoff.md](integration/project-save-publish-delete-handoff.md) | 편집 저장·검증·게시·조회·삭제의 단일 전달 계약. 원본 자산, 식별자, DB 처리, 오류, 크기 제한, 프론트 호출 위치와 인수 조건을 포함한다. | 수동 관리 |
 
 ### 프로젝트 API — `api/`
 

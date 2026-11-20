@@ -2,6 +2,8 @@
 
 기준: 백엔드 전달 문서 `[프론트전달] 백엔드_접속과_기능별_연동_안내.docx`와 현재 DigitalTwin 프론트 소스(2026-11-17). 이 표의 **연결**은 프론트 호출 코드가 해당 계약을 사용한다는 뜻이다. 실서버 왕복 성공을 뜻하지 않는다. [연동 흐름](backend-api-integration.md), 신규 API의 [백엔드 구현 요청](backend-viewer-asset-handoff.md)도 함께 본다.
 
+2026-11-19 보완: 프로젝트 DELETE 프론트 요청·화면 연결을 구현했다. 서버 지원은 미확인이며 [저장·게시·삭제 통합 계약](project-save-publish-delete-handoff.md)에 신규 서버 구현 요구사항을 정의했다.
+
 ## 공통 규칙
 
 | 항목 | 적용 규칙 |
@@ -37,7 +39,7 @@
 | --- | --- | --- |
 | 기존 `VITE_MONITORING_API_BASE`의 `PUT /projects/{id}/bundle` · `digital-twin-project` ZIP | 새 백엔드 설정 시 버튼을 숨기고 호출을 차단. 로컬 ZIP 내보내기는 유지 | 백엔드의 표시 자산 업로드와 프로젝트 초안 저장 절차로 변환. 기존 단일 ZIP PUT은 문서에 없음. |
 | `POST /api/v1/project-assets`, `GET /api/v1/project-assets/{id}/file` (신규 제안) | 원본 ZIP 업로드·해시 검증·복원 구현 | 백엔드 신규 구현 및 프로젝트 NATIVE_BUNDLE 참조 지원 필요. 이전 `/projects/{id}/assets`, `assetUploadId`는 사용하지 않음. |
-| `DELETE /projects/{id}` (이전 프론트 제안) | 서버 삭제 비활성, 로컬 사본만 삭제 | 백엔드가 삭제 정책과 API를 제공해야 함. |
+| `DELETE /projects/{id}` (신규 서버 구현 요구) | 프론트 요청·확인창·서버 성공 후 로컬 정리 구현 | 통합 계약의 204/200 응답, 논리 삭제·동시성·게시본 접근 차단 정책 구현 필요. 실서버 미확인. |
 | 기존 `VITE_MONITORING_API_BASE`의 `/projects/{id}/rois` 목록·저장·삭제·`/readings`·`/preview`·기준 사진 업로드 | 새 백엔드 프로젝트에서는 호출하지 않음. 로컬 ROI는 브라우저에만 남음 | 백엔드의 `slots/{slot}/rois`, `rois/{id}`, `baseline`, W02/W11 관찰을 프론트 ROI·설비 ID와 연결. 서버 ROI 삭제/미리보기/이미지 업로드는 문서상 동일 경로 없음. |
 | 기존 `VITE_MONITORING_API_BASE`의 `/projects/{id}/equipment/{equipmentId}/monitoring` 및 `/events` SSE | 새 백엔드 프로젝트에서 호출 중단 | W02/W11/W12와 WSS로 설비·ROI별 데이터 모델 변환. WSS는 완전한 SSE 스냅샷이 아님. |
 | 기존 `VITE_MONITORING_API_BASE`의 `/projects/{id}/sensors/{sensorId}/calibration` PUT | 새 백엔드에서는 로컬 보정 저장으로 표시 | 현재 백엔드에 센서별 calibration revision API 없음. 운영 장치 적용과 편집기 보정 저장을 구분해 계약 결정. |

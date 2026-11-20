@@ -15,6 +15,7 @@ function doorSet(source, width, height, defaultCount) {
   return {
     doorCount,
     doorLayout,
+    interiorLayout: doorLayout === "SIDE_BY_SIDE" && source.interiorLayout === "SHARED" ? "SHARED" : "PARTITIONED",
     doorRatios: safe.map((value) => value / total),
     stackOrder: source.stackOrder === "TOP_DOWN" || source.stackOrder === "BOTTOM_UP" ? source.stackOrder : "BOTTOM_UP",
     upperDoorRatio: clamp(source.upperDoorRatio, .001 / height, 1 - .001 / height, .5),
@@ -121,17 +122,20 @@ export function resizeEnclosureDoor(equipment, side, index, value) {
   return side === "REAR" ? { rear: { ...enclosure.rear, doorRatios } } : { doorRatios };
 }
 
-// The local origin is the lower-left corner seen through the closed door.
+// The local origin is the lower-left corner of the interior seen from this side.
+// Side-by-side doors without partitions share the full interior and its origin.
 // +X follows the door width, +Y is up, and -Z points into that compartment.
 export function getEnclosureScanSlot(equipment, index, side = "FRONT") {
   if (side !== "FRONT" && side !== "REAR") return null;
-  const c = getEnclosure(equipment), cell = getEnclosureDoorCell(equipment, index, side);
-  if (!c.enabled || !cell) return null;
+  const c = getEnclosure(equipment), doorCell = getEnclosureDoorCell(equipment, index, side);
+  if (!c.enabled || !doorCell) return null;
   const set = side === "REAR" ? c.rear : c;
+  const shared = set.interiorLayout === "SHARED";
+  const cell = shared ? { ...doorCell, left: -c.width / 2 + c.thickness, width: c.width - 2 * c.thickness } : doorCell;
   const lowerNeighbor = set.stackOrder === "BOTTOM_UP" ? index > 0 : index < set.doorCount - 1;
   const upperNeighbor = set.stackOrder === "BOTTOM_UP" ? index < set.doorCount - 1 : index > 0;
-  const leftInset = set.doorLayout === "SIDE_BY_SIDE" && index > 0 ? c.thickness / 2 : 0;
-  const rightInset = set.doorLayout === "SIDE_BY_SIDE" && index < set.doorCount - 1 ? c.thickness / 2 : 0;
+  const leftInset = !shared && set.doorLayout === "SIDE_BY_SIDE" && index > 0 ? c.thickness / 2 : 0;
+  const rightInset = !shared && set.doorLayout === "SIDE_BY_SIDE" && index < set.doorCount - 1 ? c.thickness / 2 : 0;
   const bottomInset = set.doorLayout === "STACKED" && lowerNeighbor ? c.thickness / 2 : 0;
   const topInset = set.doorLayout === "STACKED" && upperNeighbor ? c.thickness / 2 : 0;
   const innerDepth = c.depth - 2 * c.thickness;

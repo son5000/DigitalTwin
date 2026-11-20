@@ -1,5 +1,7 @@
 ﻿# 프로젝트 삭제 API
 
-전달받은 백엔드 문서에는 `DELETE /api/v1/projects/{id}`가 없다. 프론트의 [projectDeleteApi.js](../../src/features/portal/projects/projectDeleteApi.js)는 서버 삭제를 수행하지 않고 명시적 오류를 반환한다. [ProjectsPage.jsx](../../src/features/portal/projects/ProjectsPage.jsx)는 서버 프로젝트의 삭제 버튼을 비활성화하며, 로컬 저장본은 확인 팝업 후 브라우저 저장소에서만 지운다. 서버 사본과 공개 링크는 유지된다.
+2026-11-19: [projectDeleteApi.js](../../src/features/portal/projects/projectDeleteApi.js)에 `DELETE /api/v1/projects/{서버 UUID}` 호출을 구현했다. 요청 본문은 없다. 성공은 **204 No Content** 또는 200 `{request_id,data:{projectId,deleted:true}}`다. 잘못된 ID/삭제 확인값은 실패로 처리한다.
 
-서버 삭제를 제공하려면 백엔드에서 권한·게시본·연결 자산·실시간 매핑·복구 정책 및 응답 코드를 먼저 정의해야 한다. 그 계약이 나온 뒤 프론트가 확인 팝업의 삭제 범위와 요청을 연결한다. 과거 `DELETE /projects/{id}` 및 204 응답 설명은 프론트 제안이었으며 구현된 백엔드 계약이 아니다. 전체 대응은 [API 대응표](../integration/backend-api-coverage.md)를 참조한다.
+[ProjectsPage.jsx](../../src/features/portal/projects/ProjectsPage.jsx)는 서버 연결 프로젝트에 확인창과 프로젝트 삭제를 제공하며, 서버 성공 후에만 해당 서버와 연결된 이 브라우저 저장본·ROI를 제거한다. 실패하면 로컬 사본을 유지한다. 서버 성공 후 로컬 정리 실패 시 이를 구분해 알리고 같은 확인창의 재시도는 로컬 정리만 수행한다. 서버 ID가 없거나 API 미설정이면 로컬 삭제만 제공한다.
+
+**백엔드의 실제 삭제 구현·배포는 확인되지 않았다.** 기존 백엔드 전달 문서에는 이 API가 없었다. 권한·논리 삭제·게시본 접근 차단·동시 저장 차단·공유 자산 유지·멱등 재삭제·오류 규칙은 [저장·게시·삭제 통합 계약 10절](../integration/project-save-publish-delete-handoff.md#10-신규-프로젝트-삭제-api)에 정의했다. 이 통합 문서 하나를 백엔드 개발자에게 전달한다.

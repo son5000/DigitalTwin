@@ -6,4 +6,4 @@
 
 프론트는 각 항목의 서버 `id`, `name`, `scope`, 현재 `revision`, `publishedRevision`, `externalProjectId`를 읽는다. 백엔드의 `status`는 DRAFT이며 뷰어 공개 여부는 `publishedRevision`으로 판단한다. 로컬 저장본과 서버 목록은 서버 ID/외부 ID로 중복 카드를 피한다. 게시본이 없는 서버 카드는 이어서 편집만 제공한다.
 
-서버 프로젝트 삭제 API는 백엔드 문서에 없다. 서버 카드의 삭제를 비활성화하고 로컬 저장본 삭제만 제공한다. 기존 `GET /projects` 프론트 제안에서 사용한 `schemaVersion`, `projectId`, `scopeType` 응답 계약은 현재 백엔드 원문이 아니다.
+서버 카드의 더보기에는 프로젝트 삭제를 제공하며, 신규 DELETE의 서버 구현은 [저장·게시·삭제 통합 계약](../integration/project-save-publish-delete-handoff.md)을 따른다. 프론트 호출은 구현했고 서버 지원은 미확인이다. 로컬 전용 프로젝트는 로컬 저장본만 삭제한다. 기존 `GET /projects` 프론트 제안에서 사용한 `schemaVersion`, `projectId`, `scopeType` 응답 계약은 현재 백엔드 원문이 아니다.

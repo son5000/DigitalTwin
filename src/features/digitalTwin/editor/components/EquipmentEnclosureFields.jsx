@@ -11,6 +11,10 @@ function DoorSetFields({ equipment, side, onChange, onSizeChange }) {
   return <fieldset className={styles.settingsGroup}><legend>{side === "REAR" ? "뒷면 문" : "앞면 문"}</legend>
     <label className={styles.field}><span>문 수</span><select value={c.doorCount} onChange={(event) => { const doorCount = Number(event.target.value); onChange({ doorCount, doorRatios: null, ...(doorCount > 1 && c.doorCount <= 1 ? { doorLayout: "STACKED", stackOrder: "BOTTOM_UP" } : {}) }); }}>{Array.from({ length: 6 }, (_, count) => <option value={count} key={count}>{count === 0 ? "문 없음" : `${count}개`}</option>)}</select></label>
     {c.doorCount > 1 && <><label className={styles.field}><span>문 배치</span><select value={c.doorLayout} onChange={(event) => onChange({ doorLayout: event.target.value, doorRatios: null, stackOrder: event.target.value === "STACKED" ? "BOTTOM_UP" : c.stackOrder })}><option value="SIDE_BY_SIDE">좌우로 배치</option><option value="STACKED">아래에서 위로 배치</option></select></label><p className={styles.help}>{stacked ? "층별 높이를 바꾸면 다른 층 높이는 유지되고 외관 전체 높이가 맞춰집니다." : "문 가로폭을 바꾸면 이웃한 문의 폭이 맞춰집니다."}</p></>}
+    {!stacked && c.doorCount > 1 && <>
+      <label className={styles.field}><span>내부 공간</span><select value={c.interiorLayout} onChange={(event) => onChange({ interiorLayout: event.target.value })}><option value="SHARED">한 공간 · 칸막이 없음</option><option value="PARTITIONED">문별 공간 · 칸막이 있음</option></select></label>
+      <p className={styles.help}>한 공간을 선택하면 문만 좌우로 나뉘고, 스캔은 전체 내부 폭에 맞춰집니다.</p>
+    </>}
     {stacked && c.doorCount > 1 && <div className={styles.drawerHeightGrid} role="group" aria-label={`${side === "REAR" ? "뒷면" : "앞면"} 층별 높이`}>
       {c.doors.slice(0, c.doorCount).map((_, index) => <NumericField key={index} displayPrecision={1} label={`${getEnclosureDoorLabel(c, index)} 내부 높이`} unit="cm" value={(getEnclosureScanSlot(equipment, index, side)?.dimensions.height ?? 0) * 100} min={1} step={.1} onChange={(value) => onSizeChange(side, index, value / 100)} />)}
     </div>}

@@ -155,3 +155,12 @@ test("alarm acknowledgement remains persisted when backend is unavailable", asyn
   assert.equal(result.storage, "LOCAL");
   assert.equal(client.readAlarmAcknowledgements("local", "equipment", storage).alarm, result.acknowledgedAt);
 });
+
+test("server deletion and access rejection do not reopen a synchronized cached viewer", async () => {
+  for (const status of [401, 403, 404, 410]) {
+    setup("SERVER");
+    globalThis.fetch = async () => Response.json({ error: { code: "PROJECT_UNAVAILABLE", message: "unavailable" } }, { status });
+    await assert.rejects(loader.loadProjectForViewer("server", undefined, storage), (error) => error.status === status);
+    assert.equal(projects.readProjects(storage).projects.length, 1); // A rejected read is not authorization to erase local edits.
+  }
+});
