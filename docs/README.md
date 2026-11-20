@@ -1,6 +1,6 @@
 ﻿# 문서 안내
 
-정리 기준일: **2026-11-19**. 문서 28개를 주제별로 분류했다. 이 파일은 각 문서의 용도와 읽는 순서를 안내하는 전체 목록이다.
+정리 기준일: **2026-11-20**. 문서 27개를 주제별로 분류했다. 이 파일은 각 문서의 용도와 읽는 순서를 안내하는 전체 목록이다.
 
 ## 먼저 볼 문서
 
@@ -27,7 +27,7 @@
 | `viewer/schema/` | DB 테이블·컬럼·제약조건 제안 | 1 |
 | `viewer/data/` | 기계가 읽는 필드 색인과 기본값 카탈로그 | 2 |
 | `viewer/examples/` | 실제 serializer로 만든 예제 JSON | 1 |
-| `archive/2026-10/` | 이전 설계의 검토 기록 | 2 |
+| `archive/2026-11/` | 현재 구현과 다른 이전 저장 API 참고안 | 1 |
 
 아래에서 **수동 관리**는 사람이 소스·계약을 검토해 수정하는 문서, **자동 생성**은 생성 스크립트의 산출물, **이전 설계**는 참고용 기록을 뜻한다. 문서에 적힌 구현 제안과 실제 서버 지원 여부는 구분해야 한다. 각 문서의 기준일·확인 범위를 확인한다.
 
@@ -91,12 +91,11 @@
 | [viewer-template-catalog.json](viewer/data/viewer-template-catalog.json) | 실제 프론트의 설비·부지·건축·구조물 템플릿별 기본값과 재질·선택지. 템플릿마다 달라지는 `parameters` 등을 해석할 때 사용한다. | 자동 생성 |
 | [viewer-layout-example.json](viewer/examples/viewer-layout-example.json) | 현재 생성기와 serializer로 만든 구성 예제. 비기본값의 보존도 확인한다. 전체 선택 기능을 모두 포함한 샘플이나 서버 발행 검증의 증명은 아니다. | 스크립트로 생성, 명시적으로 갱신 |
 
-### 이전 설계 — `archive/2026-10/`
+### 이전 설계 — `archive/2026-11/`
 
 | 파일 | 정의하는 내용 / 주의점 | 관리 |
 |---|---|---|
-| [frontend-configuration-database-design.md](archive/2026-10/frontend-configuration-database-design.md) | 2026-10-22에 백엔드 설계 자료와 프론트를 비교한 초기 DB 설계 기록. 현재 구현 시에는 `viewer/`의 최신 전체 계약을 우선한다. | 이전 설계 |
-| [frontend-configuration-database-design.html](archive/2026-10/frontend-configuration-database-design.html) | 같은 초기 설계의 브라우저 열람·인쇄용 HTML. 현재 SQL 스키마의 설명 파일로 사용하지 않는다. | 이전 설계 |
+| [project-configuration-api-legacy.md](archive/2026-11/project-configuration-api-legacy.md) | 기존 루트 문서의 `/configuration` 및 분리 payload 참고안. 현재 프론트의 `/draft`·전체 `layout` 계약과 다르므로 구현 기준으로 사용하지 않는다. 원문은 참고용으로 보존했다. | 이전 설계 |
 
 ## 문서끼리 역할이 겹쳐 보일 때
 

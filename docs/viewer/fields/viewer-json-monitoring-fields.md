@@ -700,7 +700,7 @@ JSON 위치: `sensorBindings[].calibration`, `observationConfig.sensorBindings[]
 | `payload` | object | payload |
 | `signature` | string | JSON.stringify(payload) |
 | `savedAt` | string | new Date().toISOString() |
-| `storage` | string | remote ? "SERVER" : "LOCAL" |
+| `storage` | string | storedRemotely ? "SERVER" : "LOCAL" |
 
 ## ModelScanReference
 

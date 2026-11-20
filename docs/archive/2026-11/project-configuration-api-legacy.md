@@ -1,3 +1,5 @@
+﻿> 이전 참고안 — 2026-11-20 분류. 아래 원문은 현재 프론트 구현 계약이 아니다. 실제 호출은 [프로젝트 생성·저장·게시 API](../../api/project-configuration-api.md)의 PUT /draft와 전체 layout 전송을 따른다. 백엔드 연결에는 [저장·게시·삭제 통합 계약](../../integration/project-save-publish-delete-handoff.md)을 사용한다.
+
 # 프로젝트 저장·뷰어 조회 API 계약
 
 ## API

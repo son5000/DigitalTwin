@@ -132,6 +132,7 @@ JSON 위치: `equipmentByFloorId.{floorId}[].enclosure`, `roomScenes.{roomId}.eq
 |---|---|---|
 | `doorCount` | integer | doorCount |
 | `doorLayout` | string | doorLayout |
+| `interiorLayout` | string | doorLayout === "SIDE_BY_SIDE" && source.interiorLayout === "SHARED" ? "SHARED" : "PARTITIONED" |
 | `doorRatios` | array | safe.map((value) => value / total) |
 | `stackOrder` | string | source.stackOrder === "TOP_DOWN" &#124;&#124; source.stackOrder === "BOTTOM_UP" ? source.stackOrder : "BOTTOM_UP" |
 | `upperDoorRatio` | number | clamp(source.upperDoorRatio, .001 / height, 1 - .001 / height, .5) |
