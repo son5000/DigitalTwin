@@ -31,7 +31,7 @@ test("create, edit, publish, list and delete use one server identity and preserv
     if (pathname === "/api/v1/projects" && method === "POST") {
       assert.equal(body.externalProjectId, "local-id");
       assert.ok(body.clientRequestId);
-      return ok({ project: { id: "server-id", externalProjectId: body.externalProjectId } });
+      return ok({ project: { id: "server-id", externalProjectId: body.externalProjectId, revision: 0 } });
     }
     if (pathname === "/api/v1/projects") return ok({ items: deleted ? [] : [{ id: "server-id", externalProjectId: "local-id", name: "설비", scope: "SINGLE_EQUIPMENT", revision, publishedRevision }], nextCursor: null });
     assert.ok(pathname.startsWith("/api/v1/projects/server-id"));

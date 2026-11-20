@@ -426,6 +426,7 @@ export default function useDigitalTwinEditorState() {
   const [projectName, setProjectName] = useState("");
   const [viewerPreset, setViewerPreset] = useState(createViewerPreset);
   const [representativeImage, setRepresentativeImage] = useState(null);
+  const [sourceLayout, setSourceLayout] = useState({});
   const [historyAvailability, setHistoryAvailability] = useState({ canUndo: false, canRedo: false });
   const snapSize = gridSettings.baseSize;
   const scanTimersRef = useRef(new Map());
@@ -1030,6 +1031,7 @@ export default function useDigitalTwinEditorState() {
   }, []);
 
   const resetLayout = useCallback(() => {
+    setSourceLayout({});
     clearHistory();
     setDetailAssets((assets) => {
       assets.forEach((asset) => asset.objectUrl && URL.revokeObjectURL(asset.objectUrl));
@@ -1095,6 +1097,7 @@ export default function useDigitalTwinEditorState() {
 
     clearHistory();
     setHierarchy(nextHierarchy);
+    setSourceLayout(layout);
     setProjectName(layout.observationWorkflow?.configured === false ? layout.name ?? "" : getProjectName(layout));
     setObservationWorkflow({
       ...normalizedWorkflow,
@@ -2063,6 +2066,7 @@ export default function useDigitalTwinEditorState() {
     setViewerPreset((current) => setEquipmentDisplayOverride(current, equipmentId, override));
   }, []);
   const layoutDocument = useMemo(() => ({
+    ...sourceLayout,
     name: projectName,
     projectStatus: "DRAFT",
     hierarchy,
@@ -2083,12 +2087,13 @@ export default function useDigitalTwinEditorState() {
     viewerPreset,
     representativeImage,
     observationConfig: {
+      ...sourceLayout.observationConfig,
       equipmentAssetBindings: monitoringEditor.equipmentAssetBindings,
       sensorBindings: monitoringEditor.sensorBindings,
       observationPoints: monitoringEditor.observationPoints,
       serverBindings: monitoringEditor.serverBindings,
     },
-  }), [projectName, currentRoomScene, floorEquipmentEditor.equipmentByFloorId, floorPlanEditor.floorPlansById, floorPlanEditor.verticalStructuresByBuildingId, gridSettings, hierarchy, monitoringEditor.equipmentAssetBindings, monitoringEditor.observationPoints, monitoringEditor.sensorBindings, monitoringEditor.serverBindings, observationWorkflow, representativeImage, roomScenes, siteEnvironment, siteObjects, viewerPreset]);
+  }), [sourceLayout, projectName, currentRoomScene, floorEquipmentEditor.equipmentByFloorId, floorPlanEditor.floorPlansById, floorPlanEditor.verticalStructuresByBuildingId, gridSettings, hierarchy, monitoringEditor.equipmentAssetBindings, monitoringEditor.observationPoints, monitoringEditor.sensorBindings, monitoringEditor.serverBindings, observationWorkflow, representativeImage, roomScenes, siteEnvironment, siteObjects, viewerPreset]);
 
   const updateMonitoringEquipment = useCallback((equipmentId, changes) => {
     const equipment = allMonitoringEquipment.find((item) => item.id === equipmentId);

@@ -4,6 +4,8 @@
 
 ## 현재 프론트 상태
 
+2026-11-20: BE v1.0 전달서에서 native 경로 운영 반영을 보고했다. 아래 신규 제안은 최초 요청 당시 표현이며 최신 자동 저장·재시도·CORS 확인은 [ZIP 적용 결과](../integration/zip-import-persistence-integration.md)를 따른다. 실제 운영 ZIP 왕복은 별도 검증 대상이다.
+
 [projectAssetApi.js](../../src/features/portal/projects/projectAssetApi.js)는 자산이 없으면 `assetManifest: []`, 자산이 있으면 기존 원본을 `digital-twin-assets` v2 ZIP으로 묶어 **신규 제안 경로** `POST /api/v1/project-assets`에 전송한다. 성공한 불변 자산 참조를 초안 저장에 전달한다. 백엔드가 아직 경로를 구현하지 않았다면 저장 실패 원인을 명확하게 표시하고 로컬 저장을 유지한다.
 
 `NATIVE_BUNDLE`은 `/project-assets/{asset_id}/file`에서 ZIP을 내려받아 archive/project.json SHA-256, ZIP 목록, 자산 의존성을 검증하고 설비·텍스처·커스텀 정의를 복원한다. 기존 표시 자산은 `/display-assets` 명세·파일을 조회하고 크기·해시 검증 후 연결된 설비의 glTF/GLB를 로드한다. 목업의 누락된 layout이나 모델-설비 연결을 임의 생성하지 않는다.

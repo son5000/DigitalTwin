@@ -16,6 +16,7 @@ JSON 위치: `$`.
 
 | 하위 필드 | 자료형 | 생성·정규화·허용값 근거 |
 |---|---|---|
+| `*` | JSON (확장/병합) | layout |
 | `version` | integer | 18 |
 | `savedAt` | string | new Date().toISOString() |
 | `name` | string | typeof layout.name === "string" ? layout.name.trim() : "" |
@@ -24,7 +25,8 @@ JSON 위치: `$`.
 | `observationWorkflow` | object | layout.observationWorkflow |
 | `viewerPreset` | object | layout.viewerPreset |
 | `representativeImage` | string&#124;null | typeof layout.representativeImage === "string" ? layout.representativeImage : null |
-| `siteEnvironment` | object | { width: layout.siteEnvironment.width, depth: layout.siteEnvironment.depth, sizeMode: layout.siteEnvironment.sizeMode, autoFitBuildingId: layout.siteEnvironment.autoFitBuildingId, groundMaterial: layout.siteEnvironment.groundMaterial, backgroundTheme: layout.siteEnvironment.backgroundTheme, terrain: serializeTerrain( layout.siteEnvironment.terrain, layout.siteEnvironment.width, layout.siteEnvironment.depth, layout.siteEnvironment.groundMaterial, ), } |
+| `siteEnvironment` | object | { ...layout.siteEnvironment, width: layout.siteEnvironment.width, depth: layout.siteEnvironment.depth, sizeMode: layout.siteEnvironment.sizeMode, autoFitBuildingId: layout.siteEnvironment.autoFitBuildingId, groundMaterial: layout.siteEnvironment.groundMaterial, backgroundTheme: layout.siteEnvironment.backgroundTheme, terrain: serializeTerrain( layout.siteEnvironment.terrain, layout.siteEnvironment.width, layout.siteEnvironment.depth, layout.siteEnvironment.groundMaterial, ), } |
+| `siteEnvironment.*` | JSON (확장/병합) | layout.siteEnvironment |
 | `siteEnvironment.width` | number | layout.siteEnvironment.width |
 | `siteEnvironment.depth` | number | layout.siteEnvironment.depth |
 | `siteEnvironment.sizeMode` | string | layout.siteEnvironment.sizeMode |
@@ -39,7 +41,8 @@ JSON 위치: `$`.
 | `floorPlansById` | object | Object.fromEntries(Object.entries(layout.floorPlansById ?? {}).map(([floorId, plan]) => { const floorPlan = { ...plan }; delete floorPlan.selectedSpatialEntity; return [floorId, floorPlan]; })) |
 | `verticalStructuresByBuildingId` | object | layout.verticalStructuresByBuildingId ?? {} |
 | `equipmentByFloorId` | object | layout.equipmentByFloorId ?? {} |
-| `observationConfig` | object | { equipmentAssetBindings, sensorBindings: observationConfig.sensorBindings ?? [], observationPoints: observationConfig.observationPoints ?? [], serverBindings: observationConfig.serverBindings ?? [], } |
+| `observationConfig` | object | { ...observationConfig, equipmentAssetBindings, sensorBindings: observationConfig.sensorBindings ?? [], observationPoints: observationConfig.observationPoints ?? [], serverBindings: observationConfig.serverBindings ?? [], } |
+| `observationConfig.*` | JSON (확장/병합) | observationConfig |
 | `observationConfig.equipmentAssetBindings` | array | equipmentAssetBindings |
 | `observationConfig.sensorBindings` | array | observationConfig.sensorBindings ?? [] |
 | `observationConfig.observationPoints` | array | observationConfig.observationPoints ?? [] |

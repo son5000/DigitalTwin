@@ -13,6 +13,7 @@ import { deleteProjectConfiguration } from "./projectDeleteApi";
 import ProjectThumbnail from "./ProjectThumbnail";
 import ProjectDeleteDialog from "./ProjectDeleteDialog";
 import ProjectViewerLinksDialog from "./ProjectViewerLinksDialog";
+import { persistImportedProject } from "./projectPersistence.js";
 
 const PROJECT_VIEW_STORAGE_KEY = "digital-twin-projects-view-v1";
 
@@ -35,6 +36,10 @@ export default function ProjectsPage() {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const editControllerRef = useRef(null);
+  const importControllerRef = useRef(null);
+  const importBusyRef = useRef(false);
+  const importAttemptRef = useRef(null);
+  useEffect(() => () => importControllerRef.current?.abort(), []);
   useEffect(() => () => editControllerRef.current?.abort(), []);
   useEffect(() => {
     const refresh = () => {
@@ -65,7 +70,7 @@ export default function ProjectsPage() {
   }
 
   async function enterProject(project = null) {
-    if (editingId) return;
+    if (editingId || importBusyRef.current) return;
     const id = project?.id ?? project?.projectId;
     setEditingId(id ?? "new");
     try {
@@ -89,7 +94,7 @@ export default function ProjectsPage() {
   }
 
   async function confirmDelete() {
-    if (!deleteTarget || deleteBusy) return;
+    if (!deleteTarget || deleteBusy || importBusyRef.current) return;
     const { id, serverId } = deleteTarget;
     let serverDeleted = deleteTarget.serverDeleted;
     setDeleteBusy(true);
@@ -122,15 +127,51 @@ export default function ProjectsPage() {
       setBundleState({ busy: false, message: "설정 JSON과 대표 이미지·스캔·텍스처를 ZIP으로 내보냈습니다. 실시간 센서 데이터는 설치 환경에서 연결하세요.", error: false });
     } catch (error) { setBundleState({ busy: false, message: error.message, error: true }); }
   }
+  async function saveImportedProject(localId) {
+    if (importBusyRef.current) return;
+    const controller = new AbortController();
+    importControllerRef.current = controller;
+    importBusyRef.current = true;
+    setBundleState({ busy: true, message: "서버 저장을 준비하는 중입니다.", error: false });
+    let saved;
+    try {
+      saved = await persistImportedProject(localId, undefined, { signal: controller.signal,
+        checkpoint: importAttemptRef.current?.localId === localId ? importAttemptRef.current : undefined,
+        onProgress: (message) => setBundleState({ busy: true, message, error: false }) });
+      importAttemptRef.current = null;
+      setResult({ projects: readProjects().projects, loading: false, error: "" });
+      setBundleState({ busy: false, message: `서버 초안 저장 완료 · 버전 ${saved.revision}. 게시되지 않았습니다.`, error: false });
+      try {
+        const page = await listProjectConfigurations({ signal: controller.signal });
+        setServerResult({ ...page, loading: false, error: "" });
+      } catch (error) { setServerResult((value) => ({ ...value, loading: false, error: `초안 저장은 완료됐지만 목록 갱신에 실패했습니다. ${error.message}` })); }
+    } catch (error) {
+      importAttemptRef.current = error.importCheckpoint ?? importAttemptRef.current;
+      const revision = saved?.revision ?? error.importCheckpoint?.saved?.revision;
+      setBundleState({ busy: false, error: true, retryId: localId,
+        message: `${revision ? `서버 버전 ${revision} 저장 완료 · 브라우저 상태 갱신 실패` : "로컬 가져오기 완료 · 서버 저장 실패 또는 결과 미확인"}: ${error.message}${error.code ? ` (${error.code})` : ""}${error.requestId ? ` · 요청 ${error.requestId}` : ""}${error.fields ? ` · ${JSON.stringify(error.fields)}` : ""}` });
+      try { setResult({ projects: readProjects().projects, loading: false, error: "" }); } catch { /* Retain the previous list. */ }
+    } finally {
+      importBusyRef.current = false;
+      importControllerRef.current = null;
+    }
+  }
+
   async function importBundle(event) {
     const file = event.target.files?.[0]; event.target.value = "";
-    if (!file) return;
+    if (!file || importBusyRef.current) return;
+    importBusyRef.current = true;
     setBundleState({ busy: true, message: "구성과 첨부 파일을 가져오고 있습니다.", error: false });
     try {
-      await importProjectBundle(file, window.localStorage, { onProgress: (message) => setBundleState({ busy: true, message, error: false }) });
+      const localId = await importProjectBundle(file, window.localStorage, { onProgress: (message) => setBundleState({ busy: true, message, error: false }) });
       setResult({ projects: readProjects().projects, loading: false, error: "" });
-      setBundleState({ busy: false, message: "구성을 새 프로젝트로 가져왔습니다. 기존 프로젝트는 유지됩니다.", error: false });
+      if (projectApiBase) {
+        importBusyRef.current = false;
+        await saveImportedProject(localId);
+      }
+      else setBundleState({ busy: false, message: "로컬 가져오기 완료 · 프로젝트 API 주소가 없어 서버에는 저장되지 않았습니다.", error: false });
     } catch (error) { setBundleState({ busy: false, message: error.message, error: true }); }
+    finally { importBusyRef.current = false; }
   }
 
   function changeViewMode(mode) {
@@ -151,7 +192,7 @@ export default function ProjectsPage() {
           <div className={styles.bundleCopy}>
             <h2 id="bundle-import-title">설치 구성 가져오기</h2>
             <p>설정 JSON과 대표 이미지·스캔·텍스처가 포함된 ZIP을 새 프로젝트로 가져옵니다.</p>
-            <small id="bundle-import-format">.digital-twin.zip · 최대 1GB · 기존 JSON 구성 파일도 지원</small>
+            <small id="bundle-import-format">로컬 가져오기 최대 1GiB · 서버 자산 ZIP 최대 512MiB · 서버 구성 요청 최대 1MiB</small>
           </div>
           <label className={styles.filePicker} data-disabled={bundleState.busy}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 16V3m-5 5 5-5 5 5M4 15v5a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5" /></svg>
@@ -160,6 +201,7 @@ export default function ProjectsPage() {
           </label>
         </div>
         {bundleState.message && <p className={styles.bundleMessage} data-error={bundleState.error} role={bundleState.error ? "alert" : "status"}>{bundleState.message}</p>}
+        {bundleState.retryId && <button type="button" className={styles.filePicker} disabled={bundleState.busy} onClick={() => saveImportedProject(bundleState.retryId)}>서버 저장 재시도</button>}
       </section>
       {result.loading ? <p role="status">저장된 프로젝트를 확인하는 중입니다.</p> : <>
         {result.error && <p className={styles.notice} role="alert">{result.error}</p>}
@@ -223,6 +265,8 @@ export default function ProjectsPage() {
                   <div id={toolsId} className={styles.secondaryActions} hidden={!expanded} onKeyDown={(event) => { if (event.key === "Escape") { setExpandedProjectKey(null); event.currentTarget.previousElementSibling?.querySelector('[aria-expanded]')?.focus(); } }}>
                     {canOpenViewer && <button type="button" disabled={Boolean(editingId)} onClick={() => setLinkTarget({ id: viewerProjectId, name: details.name, layout: localOnly ? project.layout : null, localOnly, draft: details.isDraft })}>뷰어 링크</button>}
                     {isLocal && <button type="button" disabled={bundleState.busy || Boolean(editingId)} onClick={() => exportBundle(project)}>ZIP 내보내기</button>}
+                    {isLocal && project.pendingSave && projectApiBase && <button type="button" disabled={bundleState.busy || Boolean(editingId)} onClick={() => saveImportedProject(project.id)}>서버 저장 재시도</button>}
+                    {isLocal && project.pendingSave && project.serverProjectId && <button type="button" disabled={bundleState.busy || Boolean(editingId)} onClick={() => enterProject({ projectId: project.serverProjectId })}>서버본 확인</button>}
                     <button type="button" className={styles.danger} aria-label={`${details.name} ${deleteServerId ? "프로젝트" : "로컬 저장본"} 삭제`} disabled={Boolean(editingId)} onClick={() => requestDelete(isLocal ? project.id : project.projectId, details.name, deleteServerId)}>{deleteServerId ? "프로젝트 삭제" : "로컬 삭제"}</button>
                   </div>
                 </div>

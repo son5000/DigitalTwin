@@ -98,6 +98,9 @@ function extra(chapter,name,paths,file,description,rows,projection,storage) {
   supplementalFields.push({chapter,name,paths:Array.isArray(paths)?paths:[paths],file,description,projection,storage,
     fields:rows.map(([path,type,expression])=>({path,type,expression}))});
 }
+extra('monitoring','ImportedRois','importedRois[]','src/features/portal/projects/projectRawRois.js','선택형 표면 ROI 원문 보존. BE 2026-11-20 전달서의 승인 대기 최소안을 FE에 구현했으며 공개 계약 수용은 별도 확인한다. 감시 등록 API를 호출하지 않는다.',[
+  ['id','string','로컬 ROI ID. 관측점과 중복 제외'],['equipmentId','string','원 설비 ID'],['revision','integer','원문 revision 보존. 복원 시 증가하지 않음'],['surface','object','좌표·outline·triangles 등 원문 보존'],['*','JSON','미지 필드·시각·null/false/0 포함 원문 보존'],
+], null, 'dt_project_revision.layout_json');
 extra('equipment','EquipmentIdentity',EP,E+'store/useFloorEquipmentState.js','생성·UI 갱신 시 추가하는 인스턴스 필드. 타입별 선택 항목은 없어도 된다.',[
   ['id','string','프론트 설비 ID; 리비전과 소유 경로로 범위 지정'],['name','string','사용자 설비명'],['shapeTemplateId','string','템플릿 카탈로그 ID'],['sourceTemplateId','string','원본 템플릿 ID(존재 시)'],['floorId','string|null','소유 층 ID'],['spaceId','string|null','소유 공간 ID'],
   ['metadata.assetTag','string','기본 빈 문자열; 자산 번호'],['metadata.manufacturer','string','기본 빈 문자열; 제조사'],['metadata.model','string','기본 빈 문자열; 모델명'],['metadata.serialNumber','string','기본 빈 문자열; 일련번호'],['metadata.description','string','설비 설명'],['metadata.representativeImage','string|null','data URL 또는 저장 이미지 식별 URL; 삭제 null'],

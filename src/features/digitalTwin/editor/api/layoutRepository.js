@@ -1,5 +1,7 @@
 import { serializeTerrain } from "@/features/digitalTwin/editor/terrain/TerrainPersistence";
 import { LAYOUT_STORAGE_KEY } from "@/features/digitalTwin/editor/model/layoutInitialization";
+import { readProjects, roiStorageKey } from "../../../portal/projects/projectRepository.js";
+import { retainedRois } from "../../../portal/projects/projectRawRois.js";
 
 const STORAGE_KEY = LAYOUT_STORAGE_KEY;
 
@@ -33,6 +35,7 @@ export function serializeLayout(layout) {
   delete gridSettings.siteSize;
   delete gridSettings.worldGridSize;
   const payload = {
+    ...layout,
     version: 18,
     savedAt: new Date().toISOString(),
     name: typeof layout.name === "string" ? layout.name.trim() : "",
@@ -42,6 +45,7 @@ export function serializeLayout(layout) {
     viewerPreset: layout.viewerPreset,
     representativeImage: typeof layout.representativeImage === "string" ? layout.representativeImage : null,
     siteEnvironment: {
+      ...layout.siteEnvironment,
       width: layout.siteEnvironment.width,
       depth: layout.siteEnvironment.depth,
       sizeMode: layout.siteEnvironment.sizeMode,
@@ -67,6 +71,7 @@ export function serializeLayout(layout) {
     verticalStructuresByBuildingId: layout.verticalStructuresByBuildingId ?? {},
     equipmentByFloorId: layout.equipmentByFloorId ?? {},
     observationConfig: {
+      ...observationConfig,
       equipmentAssetBindings,
       sensorBindings: observationConfig.sensorBindings ?? [],
       observationPoints: observationConfig.observationPoints ?? [],
@@ -78,11 +83,19 @@ export function serializeLayout(layout) {
     serverBindings: observationConfig.serverBindings ?? [],
   };
 
+  delete payload.objectUrl;
+  delete payload.selectedSpatialEntity;
+  delete payload.storageMode;
   return payload;
 }
 
 export function saveLayout(layout) {
   const payload = serializeLayout(layout);
+  const projectId = readProjects().activeId;
+  const rawRois = localStorage.getItem(roiStorageKey(projectId));
+  if (rawRois !== null || Array.isArray(payload.importedRois)) {
+    payload.importedRois = retainedRois(rawRois === null ? payload.importedRois : JSON.parse(rawRois), payload);
+  }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
   window.dispatchEvent(new Event("digital-twin-layout-saved"));
 

@@ -6,6 +6,8 @@
 
 ## 공통 규칙
 
+2026-11-20: BE v1.0 전달서에서 native 자산 API 운영 반영을 보고했다. FE ZIP 자동 초안 저장·재시도·미지 키와 ROI 원문 보존 및 실제 GET/OPTIONS 결과는 [ZIP 적용 결과](zip-import-persistence-integration.md)를 따른다. 아래 신규 제안 표기는 당시 요청 이력이며 운영 ZIP 왕복 완료를 뜻하지 않는다.
+
 | 항목 | 적용 규칙 |
 | --- | --- |
 | 기본 주소 | 프로젝트·운영 API: `VITE_PROJECT_API_BASE=https://checklab.co.kr/api/v1`; FE 센서 호환 API: `VITE_MONITORING_API_BASE=https://checklab.co.kr/api/fe/v1`. 전자가 비어 있고 후자가 `/api/fe/v1`로 끝나면 같은 호스트의 `/api/v1`을 사용한다. |

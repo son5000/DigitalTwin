@@ -720,6 +720,22 @@ JSON 위치: `$calibration.model.scanAssets[]`, `$imageProcessing.target.model.s
 | `sourceKey` | string | scan.sourceKey |
 | `assetType` | string | scan.assetType |
 
+## ImportedRois
+
+선택형 표면 ROI 원문 보존. BE 2026-11-20 전달서의 승인 대기 최소안을 FE에 구현했으며 공개 계약 수용은 별도 확인한다. 감시 등록 API를 호출하지 않는다.
+
+JSON 위치: `importedRois[]`.
+
+원본 저장: `dt_project_revision.layout_json`. 각 경로별 행 키와 컬럼 내부 경로는 [필드 색인](../data/viewer-json-field-index.json)의 `rowKey`, `dbJsonPointerTemplate`을 따른다. 근거: [src/features/portal/projects/projectRawRois.js](../../../src/features/portal/projects/projectRawRois.js).
+
+| 하위 필드 | 자료형 | 생성·정규화·허용값 근거 |
+|---|---|---|
+| `id` | string | 로컬 ROI ID. 관측점과 중복 제외 |
+| `equipmentId` | string | 원 설비 ID |
+| `revision` | integer | 원문 revision 보존. 복원 시 증가하지 않음 |
+| `surface` | object | 좌표·outline·triangles 등 원문 보존 |
+| `*` | JSON | 미지 필드·시각·null/false/0 포함 원문 보존 |
+
 ## SensorExtras
 
 UI 입력과 센서 조회 응답에서 병합되는 항목. 서버 센서 장치 데이터와 프론트 배치 데이터의 ID를 구별한다.

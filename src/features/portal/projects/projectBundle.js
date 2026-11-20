@@ -11,6 +11,7 @@ import { decodeProjectFile, encodeProjectZip, safeBundleName } from "./projectBu
 import { monitoringApiBase } from "../../digitalTwin/editor/api/monitoringClient.js";
 import { projectApiBase } from "./projectConfigurationApi.js";
 import { collectAssetReferences } from "./projectAssetRestore.js";
+import { retainedRois } from "./projectRawRois.js";
 
 function visit(value, callback) {
   if (!value || typeof value !== "object" || value instanceof Blob) return;
@@ -57,6 +58,7 @@ export async function exportProjectBundle(project, { onProgress = () => {}, stor
   const observationPoints = rois.filter(isObservationRoi).map(roiToObservationPoint);
   project.layout.observationPoints = observationPoints;
   project.layout.observationConfig = { ...project.layout.observationConfig, observationPoints };
+  project.layout.importedRois = retainedRois(localRois, project.layout);
   collect(project.layout);
   collect(rois);
   const assets = { equipment: [], textures: [], custom: [] };
@@ -194,7 +196,10 @@ export async function importProjectBundle(file, storage = window.localStorage, {
       if (layout.observationConfig) layout.observationConfig.observationPoints = layout.observationPoints;
     }
     const pointIds = new Set((layout.observationConfig?.observationPoints ?? layout.observationPoints ?? []).map((point) => point.id));
-    storage.setItem(roiStorageKey(projectId), JSON.stringify(bundle.rois.filter((roi) => !pointIds.has(roi.id))));
+    const originals = new Map((layout.importedRois ?? []).map((roi) => [roi.id, roi]));
+    bundle.rois.forEach((roi) => originals.set(roi.id, roi));
+    layout.importedRois = retainedRois([...originals.values()].filter((roi) => !pointIds.has(roi.id)), layout);
+    storage.setItem(roiStorageKey(projectId), JSON.stringify(layout.importedRois));
     // The existing active editor document is left intact. Publish last, only
     // after all dependencies have been imported successfully.
     storage.setItem(PROJECT_STORAGE_KEY, JSON.stringify({ ...registry, projects: [...registry.projects, { id: projectId, layout, storageMode: "LOCAL" }] }));

@@ -29,7 +29,7 @@ export async function loadProjectForViewer(projectId, signal, storage = window.l
     return project;
   } catch (error) {
     signal?.throwIfAborted();
-    if (local && ![401, 403, 404, 410].includes(error.status)) return { ...local, storageMode: "LOCAL", localFallback: true };
+    if (local && ![401, 403, 404, 409, 410].includes(error.status)) return { ...local, storageMode: "LOCAL", localFallback: true };
     throw error;
   }
 }

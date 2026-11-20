@@ -8,9 +8,9 @@ import { getRuntimeCustomAsset } from "@/features/customAssets/core/customAssetR
 import { CUSTOM_BUILDING_CREATE_ID, CUSTOM_EQUIPMENT_CREATE_ID } from "@/features/customAssets/core/customAssetTypes";
 import { loadLayout, saveLayout, serializeLayout } from "@/features/digitalTwin/editor/api/layoutRepository";
 import { monitoringApiBase } from "@/features/digitalTwin/editor/api/monitoringClient";
-import { linkProjectServerId, markProjectPublishedRevision, markProjectSavedRevision, readProjects } from "@/features/portal/projects/projectRepository";
-import { createBackendProject, projectApiBase, publishProjectConfiguration, saveProjectConfiguration } from "@/features/portal/projects/projectConfigurationApi";
-import { uploadProjectAssets } from "@/features/portal/projects/projectAssetApi";
+import { markProjectPublishedRevision, readProjects } from "@/features/portal/projects/projectRepository";
+import { projectApiBase, publishProjectConfiguration } from "@/features/portal/projects/projectConfigurationApi";
+import { persistImportedProject } from "@/features/portal/projects/projectPersistence.js";
 import BuildingDetailNavigator from "@/features/digitalTwin/editor/components/BuildingDetailNavigator";
 import EditorToolbar from "@/features/digitalTwin/editor/components/EditorToolbar";
 import EnvironmentSettingsPanel from "@/features/digitalTwin/editor/components/EnvironmentSettingsPanel";
@@ -930,21 +930,8 @@ export default function DigitalTwinEditorPage({ customAssetRevision = "" }) {
       try {
         const projects = readProjects();
         const projectId = projects.activeId;
-        const localProject = projects.projects.find((project) => project.id === projectId);
-        const baseRevision = localProject?.savedRevision ?? 0;
-        const assetManifest = await uploadProjectAssets(projectId, payload, signal);
-        signal.throwIfAborted();
-        let serverProjectId = localProject?.serverProjectId ?? (localProject?.storageMode === "SERVER" ? projectId : null);
-        if (!serverProjectId) {
-          setSaveStatus("서버 프로젝트를 생성하는 중입니다…");
-          serverProjectId = (await createBackendProject(projectId, payload, signal)).id;
-          signal.throwIfAborted();
-          linkProjectServerId(projectId, serverProjectId);
-        }
-        setSaveStatus("프로젝트 구성을 서버에 저장하는 중입니다…");
-        const result = await saveProjectConfiguration(serverProjectId, payload, signal, baseRevision, assetManifest);
-        signal.throwIfAborted();
-        markProjectSavedRevision(projectId, payload, result.revision, window.localStorage, serverProjectId);
+        const result = await persistImportedProject(projectId, undefined, { signal, layout: payload, onProgress: setSaveStatus });
+        const serverProjectId = result.projectId;
         if (finalStatus === "READY") {
           setSaveStatus("서버 게시 검증과 공개를 진행하는 중입니다…");
           await publishProjectConfiguration(serverProjectId, result.revision, signal);

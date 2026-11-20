@@ -151,7 +151,7 @@ const groups = fieldGroups.map(g => {
 });
 for (const g of supplementalFields) { source(g.file); groups.push(g); }
 const serializer = groups.find(g => g.name === 'Layout');
-const rootFields = serializer.fields.filter(f => !f.path.includes('.') && !f.path.includes('[')).map(f => f.path);
+const rootFields = serializer.fields.filter(f => f.path !== '*' && !f.path.includes('.') && !f.path.includes('[')).map(f => f.path);
 if (rootFields.length !== 21 || new Set(rootFields).size !== 21) throw new Error('Review layout root contract: expected 21 distinct fields');
 const pointer = value => value ? '/' + value.replaceAll('[]', '.{index}').split('.').join('/') : '';
 function storageRoute(jsonPath) {

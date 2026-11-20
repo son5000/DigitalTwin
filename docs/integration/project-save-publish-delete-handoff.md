@@ -6,6 +6,8 @@
 
 ## 1. 현재 구현 상태와 작업 범위
 
+2026-11-20 보완: ZIP 가져오기 직후 공용 upload/create/draft를 자동 호출하며 게시하지 않는다. 실패 checkpoint, 미지 키·별도 ROI 보존, 실제 운영 CORS 결과는 [ZIP 적용 결과](zip-import-persistence-integration.md)를 따른다. 아래 11월 19일 API 요청 상태와 BE가 이후 보고한 배포 상태를 구분한다.
+
 | 기능 | 프론트 현재 상태 | 백엔드 확인/구현 사항 |
 |---|---|---|
 | 프로젝트 생성 | 구현됨: `POST /projects` | 기존 전달 계약의 API. 실제 저장·응답 확인 필요 |

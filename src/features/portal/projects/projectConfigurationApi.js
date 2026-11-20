@@ -31,7 +31,9 @@ export function createProjectConfigurationPayload(layout, baseRevision = 0, asse
     || (asset.kind != null && !["NATIVE_BUNDLE", "DISPLAY_ASSET"].includes(asset.kind))
     || (asset.kind === "NATIVE_BUNDLE" && !/^[a-f0-9]{64}$/i.test(asset.archive_sha256 ?? "")))
     || new Set(assetManifest.map((asset) => asset.asset_id)).size !== assetManifest.length) throw new Error("저장할 자산 명세를 확인해 주세요.");
-  return { baseRevision, layout, assetManifest, clientRequestId: crypto.randomUUID() };
+  const payload = { baseRevision, layout, assetManifest, clientRequestId: crypto.randomUUID() };
+  if (new Blob([JSON.stringify(payload)]).size > 1024 * 1024) throw new Error("구성과 자산 명세를 포함한 저장 요청은 1MiB 이하여야 합니다.");
+  return payload;
 }
 
 export async function projectRequest(path, options = {}) {
@@ -54,6 +56,8 @@ export async function projectRequest(path, options = {}) {
     const error = new Error(message);
     error.status = response.status;
     error.code = body?.error?.code;
+    error.fields = body?.error?.fields;
+    error.requestId = body?.request_id;
     throw error;
   }
   if (response.status === 204) return null;
@@ -69,7 +73,7 @@ export async function createBackendProject(externalProjectId, layout, signal) {
       externalProjectId, clientRequestId: crypto.randomUUID() }),
   });
   if (typeof result?.project?.id !== "string" || !result.project.id
-    || result.project.externalProjectId != null && result.project.externalProjectId !== externalProjectId) {
+    || result.project.externalProjectId !== externalProjectId || result.project.revision !== 0) {
     throw new Error("서버의 프로젝트 생성 결과를 확인할 수 없습니다.");
   }
   return result.project;

@@ -23,7 +23,8 @@ export function createRoiRepository(projectId, storage = window.localStorage) {
   const isShared = () => remoteEnabled && storage.getItem(localModeKey) !== "1";
   function readLocal() {
     const raw = storage.getItem(roiStorageKey(localId));
-    const records = raw ? JSON.parse(raw) : [];
+    const storedLayout = readProjects(storage).projects.find((project) => project.id === localId)?.layout;
+    const records = raw ? JSON.parse(raw) : storedLayout?.importedRois ?? [];
     if (!Array.isArray(records)) throw new Error("저장된 ROI를 읽을 수 없습니다. 기존 데이터는 유지됩니다.");
     const layout = readProjects(storage).projects.find((project) => project.id === localId)?.layout;
     const spheres = (layout?.observationConfig?.observationPoints ?? layout?.observationPoints ?? []).map((point) => observationPointToRoi(normalizeObservationPoint(point)));

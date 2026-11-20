@@ -1,5 +1,6 @@
 import { LAYOUT_STORAGE_KEY, readLocalLayout } from "../../digitalTwin/editor/model/layoutInitialization.js";
 import { getProjectName } from "../../digitalTwin/editor/model/projectMetadata.js";
+import { retainedRois } from "./projectRawRois.js";
 
 export const PROJECT_STORAGE_KEY = "digital-twin-projects-v1";
 export const roiStorageKey = (projectId) => `digital-twin-rois-v1:${projectId}`;
@@ -36,16 +37,21 @@ function activateProject(id, layout, storage, projectEntry = null) {
   const registry = readProjects(storage);
   const previousRegistry = storage.getItem(PROJECT_STORAGE_KEY);
   const previousLayout = storage.getItem(LAYOUT_STORAGE_KEY);
+  const previousRois = storage.getItem(roiStorageKey(id));
+  const remoteRois = projectEntry ? retainedRois(layout.importedRois ?? [], layout) : null;
   // Archive first: a failed write must never discard the current world.
   const projects = projectEntry
     ? [...registry.projects.filter((project) => project.id !== id), projectEntry]
     : registry.projects;
   storage.setItem(PROJECT_STORAGE_KEY, JSON.stringify({ ...registry, projects }));
   try {
+    if (remoteRois) storage.setItem(roiStorageKey(id), JSON.stringify(remoteRois));
     if (layout) storage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(layout));
     else storage.removeItem(LAYOUT_STORAGE_KEY);
     storage.setItem(PROJECT_STORAGE_KEY, JSON.stringify({ ...registry, activeId: id, projects }));
   } catch (error) {
+    if (previousRois === null) storage.removeItem(roiStorageKey(id));
+    else storage.setItem(roiStorageKey(id), previousRois);
     if (previousLayout === null) storage.removeItem(LAYOUT_STORAGE_KEY);
     else storage.setItem(LAYOUT_STORAGE_KEY, previousLayout);
     if (previousRegistry === null) storage.removeItem(PROJECT_STORAGE_KEY);
@@ -69,7 +75,7 @@ export function openRemoteProject(id, layout, revision, storage = window.localSt
     throw new Error("서버의 편집 저장본을 확인할 수 없습니다.");
   }
   const previous = readProjects(storage).projects.find((item) => item.id === id);
-  activateProject(id, layout, storage, { ...previous, id, layout, serverProjectId, storageMode: "SERVER", savedRevision: revision, serverSavedAt: layout.savedAt });
+  activateProject(id, layout, storage, { ...previous, id, layout, pendingSave: null, serverProjectId, storageMode: "SERVER", savedRevision: revision, serverSavedAt: layout.savedAt });
 }
 
 export function linkProjectServerId(id, serverProjectId, storage = window.localStorage) {
@@ -80,16 +86,23 @@ export function linkProjectServerId(id, serverProjectId, storage = window.localS
 }
 
 export function markProjectSavedRevision(id, layout, revision, storage = window.localStorage, serverProjectId = id) {
-  if (!isLayout(layout) || !Number.isInteger(revision) || revision < 1) return;
+  if (!isLayout(layout) || !Number.isInteger(revision) || revision < 1) throw new Error("저장 버전이 올바르지 않습니다.");
   const registry = readProjects(storage);
   const project = registry.projects.find((item) => item.id === id);
-  if (!project) return;
+  if (!project) throw new Error("로컬 프로젝트를 찾을 수 없습니다.");
   storage.setItem(PROJECT_STORAGE_KEY, JSON.stringify({
     ...registry,
     projects: registry.projects.map((item) => item.id === id
       ? { ...item, serverProjectId, storageMode: "SERVER", savedRevision: revision, serverSavedAt: layout.savedAt }
       : item),
   }));
+}
+
+export function setProjectPendingSave(id, checkpoint, storage = window.localStorage) {
+  const registry = readProjects(storage);
+  if (!registry.projects.some((item) => item.id === id)) throw new Error("로컬 프로젝트를 찾을 수 없습니다.");
+  storage.setItem(PROJECT_STORAGE_KEY, JSON.stringify({ ...registry, projects: registry.projects.map((item) => item.id === id
+    ? { ...item, pendingSave: checkpoint } : item) }));
 }
 
 export function markProjectPublishedRevision(id, revision, storage = window.localStorage) {
