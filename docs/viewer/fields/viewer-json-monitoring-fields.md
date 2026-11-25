@@ -738,11 +738,11 @@ JSON 위치: `importedRois[]`.
 
 ## SensorExtras
 
-UI 입력과 센서 조회 응답에서 병합되는 항목. 서버 센서 장치 데이터와 프론트 배치 데이터의 ID를 구별한다.
+기존 저장 호환 필드. 에디터 시리얼 확인은 ID·시리얼·소속만 받고 기능·화각·배치를 변경하지 않는다. 영상·통신 상태·측정값은 뷰어 런타임에서 조회한다.
 
 JSON 위치: `sensorBindings[]`, `observationConfig.sensorBindings[]`.
 
-원본 저장: `dt_project_revision.layout_json`. 검색용 복제: `dt_sensor_visual.binding_json`. 각 경로별 행 키와 컬럼 내부 경로는 [필드 색인](../data/viewer-json-field-index.json)의 `rowKey`, `dbJsonPointerTemplate`을 따른다. 근거: [src/features/digitalTwin/editor/components/SensorConnectionFields.jsx](../../../src/features/digitalTwin/editor/components/SensorConnectionFields.jsx).
+원본 저장: `dt_project_revision.layout_json`. 검색용 복제: `dt_sensor_visual.binding_json`. 각 경로별 행 키와 컬럼 내부 경로는 [필드 색인](../data/viewer-json-field-index.json)의 `rowKey`, `dbJsonPointerTemplate`을 따른다. 근거: [src/features/digitalTwin/editor/model/sensorLookup.js](../../../src/features/digitalTwin/editor/model/sensorLookup.js).
 
 | 하위 필드 | 자료형 | 생성·정규화·허용값 근거 |
 |---|---|---|

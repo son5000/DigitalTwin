@@ -4,7 +4,7 @@ import { LAYOUT_STORAGE_KEY } from "../model/layoutInitialization.js";
 import { PROJECT_STORAGE_KEY } from "../../../portal/projects/projectRepository.js";
 
 const stores = new Map();
-function createStore(projectId) {
+function createStore(projectId, live) {
   const repository = createRoiRepository(projectId);
   let state = { rois: [], readings: [], loading: true, error: "", now: Date.now(), shared: repository.shared };
   let roisSignature = JSON.stringify(state.rois);
@@ -22,7 +22,7 @@ function createStore(projectId) {
     try {
       const [rois, readings] = await Promise.all([
         readingsOnly ? Promise.resolve(state.rois) : repository.list(controller.signal),
-        repository.readings(controller.signal),
+        live ? repository.readings(controller.signal) : Promise.resolve([]),
       ]);
       if (version === generation) {
         const nextSignature = readingsOnly ? roisSignature : JSON.stringify(rois);
@@ -49,7 +49,7 @@ function createStore(projectId) {
         window.addEventListener("digital-twin-layout-saved", sync);
         window.addEventListener("digital-twin-roi-change", sync);
         timer = setInterval(() => {
-          if (repository.shared && !refreshing) void (Date.now() - lastRoiRefresh >= 30000 ? refresh() : refreshReadings());
+          if (live && repository.shared && !refreshing) void (Date.now() - lastRoiRefresh >= 30000 ? refresh() : refreshReadings());
           else emit({ now: Date.now() });
         }, 3000);
       }
@@ -65,11 +65,12 @@ function createStore(projectId) {
   };
 }
 
-export default function useRoiMonitoring(projectId) {
+export default function useRoiMonitoring(projectId, { live = true } = {}) {
   const store = useMemo(() => {
-    if (!stores.has(projectId)) stores.set(projectId, createStore(projectId));
-    return stores.get(projectId);
-  }, [projectId]);
+    const key = JSON.stringify([projectId, live]);
+    if (!stores.has(key)) stores.set(key, createStore(projectId, live));
+    return stores.get(key);
+  }, [projectId, live]);
   const state = useSyncExternalStore(store.subscribe, store.snapshot);
   return { ...state, save: store.save, remove: store.remove, refresh: store.refresh, preview: store.preview };
 }

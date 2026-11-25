@@ -1,5 +1,6 @@
 import { DEFAULT_FREQUENCY_BANDS, LED_COLORS, OBSERVATION_STATES, STATE_PAIRS, stateLabel, statePair } from "../model/observationProfiles.js";
 import styles from "./ObservationProfileFields.module.css";
+import ObservationRuleFields, { ObservationRemoveButton } from "./ObservationRuleFields.jsx";
 
 const chooseNumber = (value) => value === "" ? "" : Number(value);
 const LEVELS = [["NORMAL", "정상"], ["WARNING", "주의"], ["DANGER", "이상"]];
@@ -19,31 +20,36 @@ export default function ObservationProfileFields({ point, item, onChange, onCapt
   const updateProfile = (changes) => onChange({ analysisConfig: { schemaVersion: 1, ...profile, ...changes } });
   if (item.metric === "GENERAL") {
     const bands = profile.bands ?? DEFAULT_FREQUENCY_BANDS;
+    const rules = item.rules ?? [];
+    const groups = [
+      { metric: "ultrasound.db", title: "초음파 판정", statistic: null },
+      { metric: "TEMPERATURE", title: "열화상 판정", statistic: "max" },
+      ...(rules.some((rule) => !["ultrasound.db", "TEMPERATURE"].includes(rule.metric)) ? [{ metric: null, title: "기타 판정" }] : []),
+    ];
+    const updateRule = (index, changes) => onChange({ rules: rules.map((rule, i) => i === index ? { ...rule, ...changes } : rule) });
     return <div className={styles.profile}>
-      <div className={styles.sectionTitle}><strong>초음파·온도 판정</strong><small>값이 기준에 해당하면 주의 또는 이상으로 표시합니다.</small></div>
-      {(item.rules ?? []).map((rule, index) => <div className={styles.rule} key={index}>
-        <select aria-label={`판정 기준 ${index + 1} 항목`} value={`${rule.metric}:${rule.statistic ?? ""}`} onChange={(event) => {
-          const [metric, statistic] = event.target.value.split(":");
-          onChange({ rules: item.rules.map((entry, i) => i === index ? { ...entry, metric, statistic: statistic || null } : entry) });
-        }}>{RULE_TARGETS.map(([metric, statistic, label]) => <option key={`${metric}:${statistic}`} value={`${metric}:${statistic ?? ""}`}>{label}</option>)}</select>
-        <select aria-label={`판정 기준 ${index + 1} 조건`} value={rule.operator} onChange={(event) => onChange({ rules: item.rules.map((entry, i) => i === index ? { ...entry, operator: event.target.value } : entry) })}>
-          <option value="gte">이상</option><option value="gt">초과</option><option value="lte">이하</option><option value="lt">미만</option>
-        </select>
-        <input aria-label={`판정 기준 ${index + 1} 값`} type="number" required step="any" placeholder="기준값" value={rule.threshold ?? ""} onChange={(event) => onChange({ rules: item.rules.map((entry, i) => i === index ? { ...entry, threshold: chooseNumber(event.target.value) } : entry) })} />
-        <select aria-label={`판정 기준 ${index + 1} 단계`} value={rule.severity} onChange={(event) => onChange({ rules: item.rules.map((entry, i) => i === index ? { ...entry, severity: event.target.value } : entry) })}>
-          {LEVELS.slice(1).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
-        </select>
-        <button type="button" aria-label={`판정 기준 ${index + 1} 삭제`} onClick={() => onChange({ rules: item.rules.filter((_, i) => i !== index) })}>삭제</button>
-      </div>)}
-      <button type="button" onClick={() => onChange({ rules: [...(item.rules ?? []), { metric: "ultrasound.db", statistic: null, operator: "gte", threshold: "", severity: "WARNING" }] })}>판정 기준 추가</button>
-      <div className={styles.sectionTitle}><strong>주파수별 듣기·그래프</strong><small>서버가 제공하는 주파수 범위를 나눠서 조회합니다.</small></div>
-      {bands.map((band, index) => <div className={styles.band} key={band.id}>
-        <input aria-label={`주파수 대역 ${index + 1} 이름`} value={band.name} onChange={(event) => updateProfile({ bands: bands.map((entry, i) => i === index ? { ...entry, name: event.target.value } : entry) })} />
-        <label>시작 Hz<input type="number" min="0" step="1" value={band.fromHz} onChange={(event) => updateProfile({ bands: bands.map((entry, i) => i === index ? { ...entry, fromHz: chooseNumber(event.target.value) } : entry) })} /></label>
-        <label>끝 Hz<input type="number" min="1" step="1" value={band.toHz} onChange={(event) => updateProfile({ bands: bands.map((entry, i) => i === index ? { ...entry, toHz: chooseNumber(event.target.value) } : entry) })} /></label>
-        <button type="button" aria-label={`${band.name} 삭제`} onClick={() => updateProfile({ bands: bands.filter((_, i) => i !== index) })}>삭제</button>
-      </div>)}
-      <button type="button" onClick={() => updateProfile({ bands: [...bands, { id: crypto.randomUUID(), name: `대역 ${bands.length + 1}`, fromHz: 0, toHz: 20000 }] })}>주파수 대역 추가</button>
+      {groups.map((group) => {
+        const entries = rules.map((rule, index) => ({ rule, index })).filter(({ rule }) => group.metric ? rule.metric === group.metric : !["ultrasound.db", "TEMPERATURE"].includes(rule.metric));
+        return <section className={styles.ruleGroup} key={group.title} aria-label={group.title}>
+          <div className={styles.groupHeading}><strong>{group.title}</strong>{group.metric && <button type="button" aria-label={`${group.title} 기준 추가`} onClick={() => onChange({ rules: [...rules, { metric: group.metric, statistic: group.statistic, operator: "gte", threshold: "", severity: "WARNING" }] })}>기준 추가</button>}</div>
+          {!entries.length && <p className={styles.note}>등록된 기준이 없습니다.</p>}
+          {entries.map(({ rule, index }) => <ObservationRuleFields key={index} rule={rule} index={index} unit={rule.metric === "TEMPERATURE" ? "℃" : rule.metric === "ultrasound.db" ? "dB" : ""} label="판정 기준" dangerLabel="이상"
+            onChange={(changes) => updateRule(index, changes)} onRemove={() => onChange({ rules: rules.filter((_, i) => i !== index) })}
+            target={<label><span>측정값</span><select aria-label={`판정 기준 ${index + 1} 항목`} value={`${rule.metric}:${rule.statistic ?? ""}`} onChange={(event) => {
+              const [metric, statistic] = event.target.value.split(":"); updateRule(index, { metric, statistic: statistic || null });
+            }}>{RULE_TARGETS.map(([metric, statistic, label]) => <option key={`${metric}:${statistic}`} value={`${metric}:${statistic ?? ""}`}>{label}</option>)}</select></label>} />)}
+        </section>;
+      })}
+      <details className={styles.frequencySettings}><summary>주파수 대역 · {bands.length}개</summary><div className={styles.frequencyBody}>
+        <p className={styles.note}>듣기·그래프에 사용할 주파수 범위를 설정합니다.</p>
+        {bands.map((band, index) => <div className={styles.band} key={band.id}>
+          <div className={styles.bandHeading}><label>대역 이름<input aria-label={`주파수 대역 ${index + 1} 이름`} value={band.name} onChange={(event) => updateProfile({ bands: bands.map((entry, i) => i === index ? { ...entry, name: event.target.value } : entry) })} /></label>
+            <ObservationRemoveButton label={`${band.name} 삭제`} onClick={() => updateProfile({ bands: bands.filter((_, i) => i !== index) })} /></div>
+          <div className={styles.gaugeGrid}><label>시작 Hz<input type="number" min="0" step="1" value={band.fromHz} onChange={(event) => updateProfile({ bands: bands.map((entry, i) => i === index ? { ...entry, fromHz: chooseNumber(event.target.value) } : entry) })} /></label>
+            <label>끝 Hz<input type="number" min="1" step="1" value={band.toHz} onChange={(event) => updateProfile({ bands: bands.map((entry, i) => i === index ? { ...entry, toHz: chooseNumber(event.target.value) } : entry) })} /></label></div>
+        </div>)}
+        <button type="button" onClick={() => updateProfile({ bands: [...bands, { id: crypto.randomUUID(), name: `대역 ${bands.length + 1}`, fromHz: 0, toHz: 20000 }] })}>주파수 대역 추가</button>
+      </div></details>
     </div>;
   }
   if (item.metric === "vision.gaugeValue") {
@@ -86,14 +92,14 @@ export default function ObservationProfileFields({ point, item, onChange, onCapt
     return <div className={styles.profile}>
       <div className={styles.sectionTitle}><strong>LED 색상별 상태</strong><small>사용할 색을 추가하고 감지했을 때의 상태와 판정을 지정하세요.</small></div>
       {colors.map((entry, index) => { const color = LED_COLORS.find((candidate) => candidate.id === entry.colorKey); return <div className={styles.colorRow} key={entry.colorKey}>
-        <span className={styles.swatch} style={{ backgroundColor: color?.hex }} aria-hidden="true" /><strong>{color?.label ?? entry.colorKey}</strong>
-        <select aria-label={`${color?.label} 상태`} value={entry.stateCode ?? ""} onChange={(event) => updateProfile({ colors: colors.map((value, i) => i === index ? { ...value, stateCode: event.target.value } : value) })}>
+        <div className={styles.colorHeading}><span className={styles.swatch} style={{ backgroundColor: color?.hex }} aria-hidden="true" /><strong>{color?.label ?? entry.colorKey}</strong>
+          <ObservationRemoveButton label={`${color?.label} 색상 삭제`} onClick={() => updateProfile({ colors: colors.filter((_, i) => i !== index) })} /></div>
+        <div className={styles.gaugeGrid}><label>상태<select aria-label={`${color?.label} 상태`} value={entry.stateCode ?? ""} onChange={(event) => updateProfile({ colors: colors.map((value, i) => i === index ? { ...value, stateCode: event.target.value } : value) })}>
           <option value="">상태 선택</option>{OBSERVATION_STATES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
-        </select>
-        <select aria-label={`${color?.label} 판정`} value={entry.level ?? "NORMAL"} onChange={(event) => updateProfile({ colors: colors.map((value, i) => i === index ? { ...value, level: event.target.value } : value) })}>
+        </select></label>
+        <label>판정<select aria-label={`${color?.label} 판정`} value={entry.level ?? "NORMAL"} onChange={(event) => updateProfile({ colors: colors.map((value, i) => i === index ? { ...value, level: event.target.value } : value) })}>
           {LEVELS.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
-        </select>
-        <button type="button" aria-label={`${color?.label} 색상 삭제`} onClick={() => updateProfile({ colors: colors.filter((_, i) => i !== index) })}>삭제</button>
+        </select></label></div>
       </div>; })}
       {available.length > 0 && <label>색상 추가<select value="" onChange={(event) => { const color = LED_COLORS.find((entry) => entry.id === event.target.value);
         if (color) updateProfile({ colors: [...colors, { colorKey: color.id, hex: color.hex, hue: color.hue ?? null,

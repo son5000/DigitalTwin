@@ -2,6 +2,30 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { EQUIPMENT_SETUP_STEPS, canSkipEquipmentSetupStep, getEquipmentSetup, getEquipmentSetupSteps, updateEquipmentSetup, invalidateEquipmentModelSetup, hasEquipmentModelPreview, getSetupStepValidation, getSensorReadingState, getSetupStepIssue, getEquipmentSetupSaveSummary } from "../src/features/digitalTwin/editor/model/equipmentSetup.js";
 import { createViewerPreset, resolveEquipmentRepresentation } from "../src/features/digitalTwin/editor/model/viewerPreset.js";
+import { createEquipmentAssetBinding } from "../src/features/digitalTwin/editor/model/equipmentDetailModel.js";
+import { createEquipmentCoordinateFrame } from "../src/features/digitalTwin/editor/model/equipmentCoordinateFrame.js";
+
+test("스캔은 기본 위치로 진행할 수 있고 기준좌표 적용만 필수다", () => {
+  for (const mode of ["SCAN", "BOTH"]) {
+    const equipment = { id: "A", shapeTemplateId: "CABINET_SINGLE", dimensions: { width: 1, height: 2, depth: 1 }, enclosure: { enabled: true, doorCount: 1 }, metadata: { modelComposition: mode } };
+    const scan = createEquipmentAssetBinding(equipment.id, { name: "scan.obj", sourceKey: "/scan.obj", assetType: "OBJ" }, mode === "BOTH" ? { scanSlot: { side: "FRONT", index: 0 } } : {});
+    const step = mode === "BOTH" ? "SCAN" : "ASSET";
+    const context = { equipment, assets: [scan] };
+    assert.deepEqual(scan.alignmentTransform.position, { x: 0, y: 0, z: 0 });
+    assert.equal(scan.alignmentTransform.completed, false);
+    assert.equal(getSetupStepValidation(step, context).target, "coordinate-frame");
+    equipment.metadata.coordinateFrame = createEquipmentCoordinateFrame(equipment, { x: 0, y: 0, z: 0 }, 0);
+    assert.equal(getSetupStepValidation(step, context), null);
+    assert.equal(getSetupStepValidation(step, { ...context, coordinateFramePending: true }).target, "coordinate-frame");
+    delete scan.alignmentTransform.completed;
+    assert.equal(getSetupStepValidation(step, context), null);
+    scan.alignmentTransform.position = { x: .5, y: .1, z: -.2 };
+    assert.equal(getSetupStepValidation(step, context), null);
+    assert.deepEqual(scan.alignmentTransform.position, { x: .5, y: .1, z: -.2 });
+    scan.status = "MISSING";
+    assert.equal(getSetupStepValidation(step, context).target, "model-files");
+  }
+});
 
 test("설비별 단계는 저장 후 복원하며 완료와 건너뜀을 구분한다", () => {
   assert.deepEqual(EQUIPMENT_SETUP_STEPS.map((step) => step.id), ["BASIC", "ASSET", "SENSOR", "VIRTUAL_CAMERA", "POINT", "REVIEW"]);

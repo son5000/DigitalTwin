@@ -76,7 +76,7 @@ function RoiFields({ draft, setDraft }) {
 
 export default function MonitoringRoiWorkspace({ projectId: providedId, activePanel, onPanelChange, sharedPanelLayout = false, editorMode = false, initialRoi = null, ...sceneProps }) {
   const [projectId] = useState(() => providedId || readProjects().activeId);
-  const monitoring = useRoiMonitoring(projectId);
+  const monitoring = useRoiMonitoring(projectId, { live: !editorMode });
   const { preview: queryPreview, shared } = monitoring;
   const equipmentId = sceneProps.focusEquipmentId ?? sceneProps.equipment?.id;
   const equipment = sceneProps.equipment ?? sceneProps.equipmentList?.find((item) => item.id === equipmentId);
@@ -87,9 +87,9 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
   const simulation = useViewerSimulation({ allowed: developerTools, equipment, equipmentId, modelVersion: model.version, rois: compatibleRois, sensors: projectionSensors });
   const storedProject = readProjects().projects.find((project) => project.id === projectId || project.serverProjectId === projectId);
   const backendProject = Boolean(projectApiBase) && (!storedProject || storedProject.storageMode === "SERVER");
-  const liveTelemetry = useEquipmentTelemetry(projectId, equipmentId, compatibleRois, simulation.active || backendProject);
+  const liveTelemetry = useEquipmentTelemetry(projectId, equipmentId, compatibleRois, editorMode || simulation.active || backendProject);
   const telemetry = simulation.telemetry ?? liveTelemetry;
-  const projectionFrames = useSensorProjectionFrames(projectionSensors, simulation.active);
+  const projectionFrames = useSensorProjectionFrames(projectionSensors, simulation.active, { live: !editorMode });
   const localCamera = useRef(null);
   const viewerCamera = editorMode && sceneProps.cameraController ? sceneProps.cameraController : localCamera;
   const [activeVirtualCameraId, setActiveVirtualCameraId] = useState(initialRoi?.observationPoint?.virtualCameraRegion?.cameraId ?? null);
@@ -369,7 +369,7 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
   }
 
   useEffect(() => {
-    if (!currentDraft || !dirty || !shared || telemetry.demo || geometryChanged) return;
+    if (editorMode || !currentDraft || !dirty || !shared || telemetry.demo || geometryChanged) return;
     const controller = new AbortController();
     let timer;
     const query = async () => {
@@ -379,7 +379,7 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
     };
     void query();
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [currentDraft, dirty, shared, queryPreview, telemetry.demo, geometryChanged, equipment]);
+  }, [currentDraft, dirty, shared, queryPreview, telemetry.demo, geometryChanged, equipment, editorMode]);
 
   // Apply external tree selection without remounting the Three.js scene.
   if (initialRoi !== previousInitialRoi) {
@@ -468,7 +468,7 @@ export default function MonitoringRoiWorkspace({ projectId: providedId, activePa
     try {
       const frame = sensorProjectionFrame(sensor, textures, telemetry.now, telemetry.demo);
       if (!frame?.url) throw new Error("현재 표시 중인 카메라 영상을 먼저 불러오세요.");
-      const image = await captureObservationImage(sensor, frame);
+      const image = await captureObservationImage(sensor, frame, { live: !editorMode });
       const referenceFrame = { ...image, sourceRect: point.imageBinding.sourceRect,
         sourceQuad: point.imageBinding.sourceQuad ?? null, coordinateOrigin: "TOP_LEFT" };
       setDraft((current) => {

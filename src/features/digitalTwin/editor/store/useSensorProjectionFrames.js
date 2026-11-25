@@ -3,13 +3,13 @@ import { getSensorFrame, monitoringApiBase } from "../api/monitoringClient";
 import { activeVisionSample } from "../model/sensorImageTransform";
 import { activeThermalSample, loadThermalSample } from "../model/thermalFrame";
 
-export default function useSensorProjectionFrames(sensors = [], suspended = false) {
+export default function useSensorProjectionFrames(sensors = [], suspended = false, { live = true } = {}) {
   // Moving a sensor must neither restart requests nor reload its scene.
   const key = JSON.stringify(sensors.filter((sensor) => sensor.textureProjection?.enabled).flatMap((sensor) => {
     const kind = sensor.textureProjection.kind === "THERMAL" ? "THERMAL" : "VISION";
     const sample = kind === "THERMAL" && activeThermalSample(sensor);
     if (sample) return [[sensor.id, sensor.serverSensorId, kind, sample.loadedAt]];
-    return monitoringApiBase && sensor.serverSensorId && sensor.dataSource !== "DEMO" && !(kind === "VISION" && activeVisionSample(sensor))
+    return live && monitoringApiBase && sensor.serverSensorId && sensor.dataSource !== "DEMO" && !(kind === "VISION" && activeVisionSample(sensor))
       ? [[sensor.id, sensor.serverSensorId, kind, null]] : [];
   }));
   const [state, setState] = useState({ key: "", frames: [] });

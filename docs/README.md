@@ -1,6 +1,6 @@
 ﻿# 문서 안내
 
-정리 기준일: **2026-11-20**. 문서 28개를 주제별로 분류했다. 이 파일은 각 문서의 용도와 읽는 순서를 안내하는 전체 목록이다.
+정리 기준일: **2026-11-23**. 문서 29개를 주제별로 분류했다. 이 파일은 각 문서의 용도와 읽는 순서를 안내하는 전체 목록이다.
 
 ## 먼저 볼 문서
 
@@ -11,6 +11,7 @@
 | 프론트와 백엔드의 연결 상태·부족한 API 확인하기 | [API 대응 현황](integration/backend-api-coverage.md) → [연동 설정](integration/backend-api-integration.md) → `api/`의 해당 기능 |
 | 프로젝트가 열리지 않거나 모델 파일이 복원되지 않는 이유 확인하기 | [뷰어·자산 전달 사항](integration/backend-viewer-asset-handoff.md) → [뷰어 조회 API](api/project-viewer-api.md) → [파일 API](api/project-asset-api.md) |
 | 센서·영상 보정·ROI·실시간 관제 구현하기 | [관제 공통 계약](monitoring/frontend-monitoring-contract.md) → 측정 항목·ROI·좌표계 문서 → [실시간 뷰어 API](api/project-viewer-live-api.md) |
+| 시리얼 번호로 센서 존재·소속 확인하기 | [센서 시리얼 확인·뷰어 연결 계약](api/sensor-serial-lookup-api.md) — 최소 응답, 배치 보존, 저장 시 소속 재검사, 뷰어 실시간 분리 |
 | 실제 JSON 경로와 DB 컬럼을 프로그램으로 조회하기 | [필드 색인 JSON](viewer/data/viewer-json-field-index.json), [템플릿 카탈로그](viewer/data/viewer-template-catalog.json), [직렬화 예제](viewer/examples/viewer-layout-example.json) |
 
 **일반 에디터 저장은 구성 JSON 저장이다.** 전체 프로젝트 ZIP 내보내기·가져오기와 원본 자산 파일의 내부 전송 방식은 별도 기능이다. 해당 구분은 전체 JSON·DB 계약과 프로젝트 번들 문서에서 설명한다.
@@ -20,7 +21,7 @@
 | 폴더 | 내용 | 문서 수 |
 |---|---|---:|
 | `integration/` | 현재 연동 상황, 차이점, 백엔드 전달 사항 | 5 |
-| `api/` | 프로젝트 기능별 요청·응답 계약 | 7 |
+| `api/` | 프로젝트·센서 기능별 요청·응답 계약 | 8 |
 | `monitoring/` | 센서·영상·ROI의 도메인 계약 | 4 |
 | `viewer/` | 구성 저장·복원과 프로젝트 번들의 전체 설계 | 2 |
 | `viewer/fields/` | 분야별 세부 JSON 필드 사전 | 5 |
@@ -55,6 +56,7 @@
 | [project-delete-api.md](api/project-delete-api.md) | 프로젝트 삭제 요청과 응답·오류 처리. 목록의 삭제 기능을 연결할 때 본다. | 수동 관리 |
 | [project-asset-api.md](api/project-asset-api.md) | 프로젝트 자산 업로드·다운로드와 표시 자산 형식. 모델·텍스처 파일을 서버와 주고받을 때 본다. | 수동 관리 |
 | [project-viewer-live-api.md](api/project-viewer-live-api.md) | W02 스냅샷, WSS 알림, REST 재조회로 관제 값을 갱신하는 흐름. 실시간 뷰어를 연결할 때 본다. | 수동 관리 |
+| [sensor-serial-lookup-api.md](api/sensor-serial-lookup-api.md) | 2026-11-23 신규. 센서 존재·소속 최소 확인, 사용자 배치 보존, 저장 경쟁 방지, 뷰어 실시간 연결과 CORS 인수 조건. | 수동 관리 |
 
 ### 관제 도메인 — `monitoring/`
 

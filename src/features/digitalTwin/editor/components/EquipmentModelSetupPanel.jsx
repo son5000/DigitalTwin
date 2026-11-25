@@ -12,7 +12,7 @@ import { UNIFIED_EQUIPMENT_TEMPLATE_MAP } from "../constants/unifiedEquipmentCat
 import { createTemplateInstanceDefaults } from "../utils/templateParameters.js";
 import styles from "./MonitoringSettingsPanel.module.css";
 
-export default function EquipmentModelSetupPanel({ phase = "ASSET", equipment, binding, bindings = [], onUpdateEquipment, onUpdateAsset, onRemoveAsset, onUploadAssetFiles, viewerPreset, onViewerPresetChange, onEquipmentRepresentationChange, cameraController }) {
+export default function EquipmentModelSetupPanel({ phase = "ASSET", equipment, binding, bindings = [], onUpdateEquipment, onUpdateAsset, onRemoveAsset, onUploadAssetFiles, viewerPreset, onViewerPresetChange, onEquipmentRepresentationChange, cameraController, onCoordinateFramePendingChange }) {
   const [notice, setNotice] = useState("");
   const [selectedBindingId, setSelectedBindingId] = useState(null);
   const [uploadingSlot, setUploadingSlot] = useState("");
@@ -28,6 +28,8 @@ export default function EquipmentModelSetupPanel({ phase = "ASSET", equipment, b
   const selectedExteriorId = equipment.metadata?.exteriorSelected === false ? null : cabinet.enabled && UNIFIED_EQUIPMENT_TEMPLATE_MAP[equipment.shapeTemplateId]?.floorCategory !== "CABINET"
     ? "CABINET_SINGLE" : !cabinet.enabled && equipment.shapeTemplateId === "CABINET_SINGLE" ? null : equipment.shapeTemplateId;
   const doors = cabinet.enabled && (mode === "BOTH" || scans.some((item) => item.scanSlot)) ? getEnclosureDoorEntries(equipment) : [];
+  const doorScansOnly = mode === "BOTH" && doors.length > 0;
+  const scanSlots = [...(!doorScansOnly || wholeScan ? [{ side: null, index: null, id: "WHOLE", label: "설비 전체" }] : []), ...doors];
   const activeDoorLabel = activeBinding?.scanSlot
     ? doors.find((door) => door.side === activeBinding.scanSlot.side && door.index === activeBinding.scanSlot.index)?.label
       ?? `${activeBinding.scanSlot.side === "REAR" ? "뒤" : "앞"} · ${activeBinding.scanSlot.index + 1}번 문`
@@ -75,8 +77,8 @@ export default function EquipmentModelSetupPanel({ phase = "ASSET", equipment, b
     {showScanSettings && <>
     <p className={styles.help}>파일 연결 → 방향·크기 → 설치 위치 → 기준좌표 순서로 확인하세요.</p>
     <fieldset className={styles.settingsGroup} data-setup-field="model-files"><legend>설비 스캔 파일</legend>
-      <p className={styles.help}>{doors.length ? "설비 전체 스캔을 사용하거나 각 문에 내부 스캔을 연결하세요. 문별 연결을 시작하면 모든 문에 파일이 필요합니다." : "설비 전체를 보여줄 OBJ 또는 PLY 스캔 파일을 등록하세요."}</p>
-      <div className={styles.scanSlotList}>{[{ side: null, index: null, id: "WHOLE", label: "설비 전체" }, ...doors].map((door) => {
+      <p className={styles.help}>{doorScansOnly ? "각 문의 내부 스캔을 등록하세요. 모든 문에 파일이 필요합니다." : doors.length ? "설비 전체 스캔을 사용하거나 각 문에 내부 스캔을 연결하세요. 문별 연결을 시작하면 모든 문에 파일이 필요합니다." : "설비 전체를 보여줄 OBJ 또는 PLY 스캔 파일을 등록하세요."}</p>
+      <div className={styles.scanSlotList}>{scanSlots.map((door) => {
         const slot = door.side ? getEnclosureScanSlot(equipment, door.index, door.side) : null;
         const item = door.side ? scanBindingForDoor(scans, equipment.id, door.side, door.index) : wholeScan;
         const key = door.side ? `${door.side}:${door.index}` : "WHOLE";
@@ -85,9 +87,9 @@ export default function EquipmentModelSetupPanel({ phase = "ASSET", equipment, b
           <div className={styles.scanSlotHeader}><strong>{door.label}</strong><span title={item?.name ?? "연결된 파일 없음"}>{item?.name ?? "파일 없음"}</span></div>
           {door.side && !slot && <p className={styles.help} role="alert">문에 비해 공간이 좁습니다. 외관 크기 또는 문 크기를 늘리세요.</p>}
           <div className={styles.scanSlotActions}>{item && <button type="button" aria-pressed={selected} onClick={() => setSelectedBindingId(item.id)}>{selected ? "편집 중" : "편집"}</button>}
-            <label className={styles.uploadButton}>{uploadingSlot === key ? "등록 중…" : item ? "교체" : "스캔 등록"}
+            {(!doorScansOnly || door.side) && <label className={styles.uploadButton}>{uploadingSlot === key ? "등록 중…" : item ? "교체" : "스캔 등록"}
               <input type="file" multiple accept=".obj,.ply,.mtl,.jpg,.jpeg,.png,.webp" disabled={Boolean(uploadingSlot) || Boolean(door.side && !slot)} onChange={(event) => void uploadScan(event, door.side ? { side: door.side, index: door.index } : null)} />
-            </label>
+            </label>}
             {item && <button type="button" onClick={() => { onRemoveAsset?.(item.id); if (selectedBindingId === item.id) setSelectedBindingId(null); }}>해제</button>}</div>
         </div>;
       })}</div>
@@ -123,14 +125,15 @@ export default function EquipmentModelSetupPanel({ phase = "ASSET", equipment, b
     </fieldset>
     {alignment && <fieldset className={styles.settingsGroup} data-setup-field="model-alignment"><legend>설치 위치·정합 확인 · {activeDoorLabel}</legend>
       <h4 className={styles.subsectionTitle}>위치</h4>
+      <p className={styles.help}>위치 조정이 필요하지 않으면 기본값 (0, 0, 0)으로 진행하세요.</p>
       {activeSlot && <p className={styles.help}>이 서랍의 왼쪽·바닥·정면 모서리가 (0, 0, 0)입니다. X는 오른쪽, Y는 위쪽, Z 음수는 서랍 안쪽입니다. 아래 위치는 이 기준점에서 스캔이 떨어진 거리입니다.</p>}
       <div className={styles.axisGrid}>{["x", "y", "z"].map((axis) => <NumericField displayPrecision={2} key={axis} label={`${axis.toUpperCase()}축`} unit="m" step={0.01} value={alignment.position[axis]} onChange={(value) => align({ position: { [axis]: value } })} />)}</div>
-      <div className={styles.checkGrid}>{[...(!activeSlot ? [["autoCentered", "원본 중심 정렬"], ["floorAligned", "원본 바닥 정렬"]] : []), ["completed", "모델 정합 완료"]].map(([key, label]) => <label className={styles.check} key={key}><input type="checkbox" checked={alignment[key]} onChange={(event) => align({ [key]: event.target.checked })} />{label}</label>)}</div>
+      {!activeSlot && <div className={styles.checkGrid}>{[["autoCentered", "원본 중심 정렬"], ["floorAligned", "원본 바닥 정렬"]].map(([key, label]) => <label className={styles.check} key={key}><input type="checkbox" checked={alignment[key]} onChange={(event) => align({ [key]: event.target.checked })} />{label}</label>)}</div>}
         {!activeBinding?.scanSlot && <button type="button" onClick={() => cameraAction("floor")}>현재 방향으로 바닥에 놓기</button>}
         {notice && <p role="status">{notice}</p>}
     </fieldset>}
     </>}
-    {!equipment.metadata?.initialModelPending && (showScanSettings || mode === "SHAPE") && <EquipmentCoordinateFrameFields key={`${equipment.id}:${equipment.metadata?.coordinateFrame?.version ?? 0}`} equipment={equipment} binding={binding} cameraController={cameraController} onUpdateEquipment={onUpdateEquipment} />}
+    {!equipment.metadata?.initialModelPending && (showScanSettings || mode === "SHAPE") && <EquipmentCoordinateFrameFields key={`${equipment.id}:${equipment.metadata?.coordinateFrame?.version ?? 0}`} equipment={equipment} binding={binding} cameraController={cameraController} onUpdateEquipment={onUpdateEquipment} onPendingChange={onCoordinateFramePendingChange} />}
     </section>
 
     {phase === "ASSET" && !equipment.metadata?.initialModelPending && <details className={`${styles.modelSetupGroup} ${styles.optionalModelSettings}`}>

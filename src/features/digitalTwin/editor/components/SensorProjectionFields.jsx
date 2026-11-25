@@ -22,7 +22,7 @@ export default function SensorProjectionFields({ sensor, equipment, assets = [],
   const vision = getSensorCapabilities(sensor).includes("VISION");
   const thermal = getSensorCapabilities(sensor).includes("THERMAL");
   const p = normalizeSensorProjection({ kind: thermal && !vision ? "THERMAL" : "VISION", ...sensor.textureProjection });
-  const frames = useSensorProjectionFrames([{ ...sensor, textureProjection: { ...p, enabled: true } }]);
+  const frames = useSensorProjectionFrames([{ ...sensor, textureProjection: { ...p, enabled: true } }], false, { live: false });
   const response = frames.find((item) => item.bindingId === sensor.id);
   const frame = sensorProjectionFrame({ ...sensor, textureProjection: p }, frames);
   const editingSensor = frame ? { ...sensor, frameUrl: frame.url, frameMeasuredAt: frame.measuredAt, resolution: frame.resolution ?? sensor.resolution, textureProjection: p } : { ...sensor, textureProjection: p };
@@ -82,19 +82,19 @@ export default function SensorProjectionFields({ sensor, equipment, assets = [],
     downloadMonitoringJson("sensor-image-transform.json", exportPayload);
   }
   return <div className={styles.content}>
-    <fieldset className={styles.settingsGroup}><legend>수신 이미지·테스트 소스</legend>
-      {p.kind === "VISION" && <label className={styles.field}><span>수신 이미지 URL</span><input type="url" placeholder="https://…/frame-123.jpg" value={sensor.frameUrl ?? ""} onChange={(event) => onChange(sensor.id, { frameUrl: event.target.value })} /></label>}
-      {!sample && !thermalSample && <p className={styles.help}>{editingSensor.frameMeasuredAt ? `최근 영상 · ${editingSensor.frameMeasuredAt}` : "서버 영상 수신 대기"} · 연결된 센서의 활성 영상은 5초 간격으로 조회합니다.</p>}
+    <fieldset className={styles.settingsGroup}><legend>배치 확인용 참고 이미지</legend>
+      {p.kind === "VISION" && <label className={styles.field}><span>참고 이미지 URL</span><input type="url" placeholder="https://…/reference.jpg" value={sensor.frameUrl ?? ""} onChange={(event) => onChange(sensor.id, { frameUrl: event.target.value })} /></label>}
+      {!sample && !thermalSample && <p className={styles.help}>참고 이미지나 샘플로 배치를 맞추세요. 실제 센서 영상·측정값은 뷰어에서 조회합니다.</p>}
     {vision && p.kind === "VISION" && <div className={styles.sampleSource}>
       <div className={styles.actionRow}>
         <button type="button" disabled={busy} onClick={loadSample}>{busy ? "샘플 불러오는 중…" : sample ? "샘플 다시 불러오기" : "샘플 불러오기"}</button>
-        {sample && <button type="button" onClick={() => { onChange(sensor.id, { projectionSample: null }); setMessage("서버 영상으로 전환했습니다. 수신된 최신 영상이 있을 때 표시됩니다."); }}>샘플 해제</button>}
+        {sample && <button type="button" onClick={() => { onChange(sensor.id, { projectionSample: null }); setMessage("샘플을 해제했습니다."); }}>샘플 해제</button>}
       </div>
       <p className={styles.help}>{sample ? `샘플 테스트 중 · ${sample.width} × ${sample.height}px · 실시간 수신 아님` : "첨부 사진을 서버 영상 대신 불러와 텍스처 맞춤을 시험합니다."}</p>
     </div>}
     {(thermal || p.kind === "THERMAL") && <div className={styles.sampleSource}>
       <div className={styles.actionRow}><button type="button" disabled={busy} onClick={loadTemperatureSample}>{busy ? "샘플 불러오는 중…" : thermalSample ? "열화상 CSV 다시 불러오기" : "열화상 CSV 샘플 불러오기"}</button>
-        {thermalSample && <button type="button" onClick={() => { onChange(sensor.id, { thermalSample: null }); setMessage("열화상 샘플을 해제했습니다. 서버의 최신 온도 데이터를 기다립니다."); }}>샘플 해제</button>}</div>
+        {thermalSample && <button type="button" onClick={() => { onChange(sensor.id, { thermalSample: null }); setMessage("열화상 샘플을 해제했습니다."); }}>샘플 해제</button>}</div>
       <p className={styles.help}>{thermalSample ? `샘플 테스트 중 · ${thermalSample.width} × ${thermalSample.height}px · 실시간 수신 아님` : "thermal_sample.csv를 온도 이미지로 변환합니다. 서버 연결 없이 배치·투영을 시험할 수 있습니다."}</p>
     </div>}
     {message && <p className={styles.help} role="status">{message}</p>}
@@ -103,7 +103,7 @@ export default function SensorProjectionFields({ sensor, equipment, assets = [],
     {p.kind === "THERMAL" && <>
       <fieldset className={styles.settingsGroup}><legend>열화상 원본·색상</legend>
         <ThermalFramePreview grid={frame?.temperatureGrid} source={thermalImage.source} summary={thermalImage.summary} settings={p} />
-        {!source && <p className={styles.help}>샘플을 불러오거나 서버의 온도 데이터를 연결하세요.</p>}
+        {!source && <p className={styles.help}>열화상 CSV 샘플로 배치와 표시 방식을 설정하세요.</p>}
         <label className={styles.field}><span>색상 팔레트</span><select value={p.palette} onChange={(event) => update({ palette: event.target.value })}>{Object.entries(THERMAL_PALETTES).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
         <p className={styles.help}>CSV의 유효한 최저·최고 온도를 프레임마다 자동으로 색상 범위에 적용합니다. 원본 온도는 바뀌지 않으며, 이미 색상이 입혀진 서버 이미지는 받은 색상을 사용합니다.</p>
       </fieldset>

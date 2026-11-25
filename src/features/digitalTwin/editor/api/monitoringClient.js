@@ -2,6 +2,7 @@ import { validateCalibration, validateTelemetry, mediaUrl } from "../model/monit
 import { validTemperatureGrid } from "../model/sensorProjection.js";
 import { MAX_THERMAL_CSV_BYTES, parseTemperatureCsv } from "../model/thermalFrame.js";
 import { textureAssetRepository } from "./textureAssetRepository.js";
+import { normalizeSensorLookup, sensorLookupPath } from "../model/sensorLookup.js";
 
 export const monitoringApiBase = (import.meta.env?.VITE_MONITORING_API_BASE || "").trim().replace(/\/+$/, "");
 const backendFeMode = monitoringApiBase.endsWith("/api/fe/v1");
@@ -17,17 +18,17 @@ export async function monitoringRequest(path, options = {}) {
   });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    throw new Error(body?.error?.message || (response.status === 409 || response.status === 412 ? "다른 사용자가 변경했습니다. 최신 구성을 조회한 뒤 다시 저장하세요."
+    const error = new Error(body?.error?.message || (response.status === 409 || response.status === 412 ? "다른 사용자가 변경했습니다. 최신 구성을 조회한 뒤 다시 저장하세요."
       : response.status === 401 || response.status === 403 ? "로그인 또는 접근 권한을 확인하세요."
         : response.status === 404 ? "해당 센서 또는 관측 데이터를 찾을 수 없습니다." : `서버 요청에 실패했습니다 (${response.status}).`));
+    Object.assign(error, { status: response.status, code: body?.error?.code, fields: body?.error?.fields, requestId: body?.request_id ?? response.headers.get("x-request-id") });
+    throw error;
   }
   return response.status === 204 ? null : response.json();
 }
 export async function lookupSensor(serialNumber, equipmentId, signal) {
-  const result = await monitoringRequest(`/sensors/by-serial?${new URLSearchParams({ serialNumber, equipmentId })}`, { signal });
-  if (!result?.sensor?.id || result.sensor.serialNumber !== serialNumber) throw new Error("센서 조회 결과를 확인하세요.");
-  if (result.sensor.equipmentId && result.sensor.equipmentId !== equipmentId) throw new Error("다른 설비에 연결된 센서입니다.");
-  return result.sensor;
+  const result = await monitoringRequest(sensorLookupPath(serialNumber, equipmentId), { signal, cache: "no-store" });
+  return normalizeSensorLookup(result, serialNumber, equipmentId);
 }
 export async function saveSensorCalibration(payload, revision = 0, signal) {
   requireLegacyMonitoring("센서 보정 저장");

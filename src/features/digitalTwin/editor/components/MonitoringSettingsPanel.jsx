@@ -4,7 +4,7 @@ import SensorMountFields from "./SensorMountFields";
 import SensorAppearanceFields from "./SensorAppearanceFields";
 import SensorHeatmapFields from "./SensorHeatmapFields";
 import { flipSensorRotation } from "../three/sensorCamera";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import {
   SENSOR_DEVICE_CAPABILITIES, getSensorCapabilities, sensorCapabilityLabel, sensorHasImaging, getSensorMarkerDiameter,
@@ -37,9 +37,15 @@ export default function MonitoringSettingsPanel({
   const [photoError, setPhotoError] = useState("");
   const [uploading, setUploading] = useState(false);
   const [stepError, setStepError] = useState(null);
+  const [coordinateFramePending, setCoordinateFramePending] = useState(false);
+  const handleCoordinateFramePendingChange = useCallback((pending) => {
+    setCoordinateFramePending(pending);
+    if (!pending) setStepError((current) => current?.target === "coordinate-frame" ? null : current);
+  }, []);
   const [sensorRemovalNotice, setSensorRemovalNotice] = useState("");
   const [cameraInfo, setCameraInfo] = useState(null);
   const [cameraNotice, setCameraNotice] = useState("");
+  const [observationCameraId, setObservationCameraId] = useState("");
   const sensorSelectRef = useRef(null);
   const panelRef = useRef(null);
   const errorId = useId();
@@ -108,6 +114,8 @@ export default function MonitoringSettingsPanel({
   const modelAsset = activeScans.find((item) => item.id === selectedAsset?.id) ?? activeScans.at(-1);
   const selectedSensor = scopedSensors.find((item) => item.id === sensorSelection?.id);
   const selectedPoint = scopedPoints.find((item) => item.id === pointSelection?.id);
+  const virtualCameras = viewerPreset?.virtualCameras?.[selectedEquipment.id] ?? [];
+  const activeObservationCameraId = virtualCameras.some((camera) => camera.id === observationCameraId) ? observationCameraId : virtualCameras[0]?.id ?? "";
   const activeSteps = getEquipmentSetupSteps(selectedEquipment, scopedAssets);
   const modelMode = getEquipmentModelMode(selectedEquipment, scopedAssets);
   const setup = getEquipmentSetup(selectedEquipment, scopedAssets);
@@ -116,7 +124,7 @@ export default function MonitoringSettingsPanel({
   const stepIndex = activeSteps.findIndex((step) => step.id === tab);
   const step = activeSteps[stepIndex];
   function setStep(id, status) {
-    const issue = status === "DONE" ? getSetupStepValidation(id, { equipment: selectedEquipment, assets: scopedAssets, sensors: scopedSensors, points: scopedPoints, viewerPreset }) : null;
+    const issue = status === "DONE" ? getSetupStepValidation(id, { equipment: selectedEquipment, assets: scopedAssets, sensors: scopedSensors, points: scopedPoints, viewerPreset, coordinateFramePending }) : null;
     setStepError(issue ? { ...issue, equipmentId: selectedEquipment.id } : null);
     if (issue) {
       if (issue.sensorId) onSelectSensor(issue.sensorId);
@@ -196,7 +204,7 @@ export default function MonitoringSettingsPanel({
 
     </div> : null}
 
-    {["ASSET", "SCAN"].includes(tab) ? <div className={styles.content}><EquipmentModelSetupPanel phase={tab} singleEquipment={singleEquipment} equipment={selectedEquipment} binding={modelAsset} bindings={scopedAssets} onUpdateEquipment={onUpdateEquipment} onUpdateAsset={onUpdateAsset} onRemoveAsset={onRemoveAsset} onUploadAssetFiles={onUploadAssetFiles} viewerPreset={viewerPreset} onViewerPresetChange={onViewerPresetChange} onEquipmentRepresentationChange={onEquipmentRepresentationChange} cameraController={cameraController} /></div> : null}
+    {["ASSET", "SCAN"].includes(tab) ? <div className={styles.content}><EquipmentModelSetupPanel phase={tab} singleEquipment={singleEquipment} equipment={selectedEquipment} binding={modelAsset} bindings={scopedAssets} onUpdateEquipment={onUpdateEquipment} onUpdateAsset={onUpdateAsset} onRemoveAsset={onRemoveAsset} onUploadAssetFiles={onUploadAssetFiles} viewerPreset={viewerPreset} onViewerPresetChange={onViewerPresetChange} onEquipmentRepresentationChange={onEquipmentRepresentationChange} cameraController={cameraController} onCoordinateFramePendingChange={handleCoordinateFramePendingChange} /></div> : null}
     {singleEquipment && modelAsset && (tab === "SCAN" || tab === "ASSET" && modelMode === "SCAN") &&
       <details className={styles.optionalModelSettings}><summary>등록된 모델·재질·텍스처 파일 관리</summary>
         <EquipmentAssetFilesPanel key={[modelAsset.id, modelAsset.assetId, modelAsset.relatedSourceKey, modelAsset.textureSourceKey].join(":")}
@@ -290,11 +298,16 @@ export default function MonitoringSettingsPanel({
       onOpen={(id) => workspaceViewControllerRef?.current?.openVirtualCamera(id)} /></div>}
 
     {tab === "POINT" && <section className={styles.settingsGroup} data-setup-field="roi-add" aria-label="관측 시점 선택">
-      <div className={styles.sectionHeading}><strong>가상 카메라</strong><span>{viewerPreset?.virtualCameras?.[selectedEquipment.id]?.length ?? 0}개</span></div>
-      <div className={styles.cameraChoices}>{(viewerPreset?.virtualCameras?.[selectedEquipment.id] ?? []).map((camera) => <button type="button" key={camera.id} onClick={() => workspaceViewControllerRef?.current?.openVirtualCamera(camera.id)}>
+      <div className={styles.sectionHeading}><strong>가상 카메라</strong><span>{virtualCameras.length}개</span></div>
+      {virtualCameras.length >= 3 ? <div className={styles.cameraSelectActions}>
+        <label className={styles.field}><span>관측 시점</span><select value={activeObservationCameraId} onChange={(event) => setObservationCameraId(event.target.value)}>
+          {virtualCameras.map((camera, index) => <option key={camera.id} value={camera.id}>{index + 1}. {camera.name} · 관측 영역 {scopedPoints.filter((point) => point.virtualCameraRegion?.cameraId === camera.id).length}개</option>)}
+        </select></label>
+        <button type="button" onClick={() => workspaceViewControllerRef?.current?.openVirtualCamera(activeObservationCameraId)}>시점 확인</button>
+      </div> : <div className={styles.cameraChoices}>{virtualCameras.map((camera) => <button type="button" key={camera.id} onClick={() => { setObservationCameraId(camera.id); workspaceViewControllerRef?.current?.openVirtualCamera(camera.id); }}>
         <span>{camera.name}</span><small>관측 영역 {scopedPoints.filter((point) => point.virtualCameraRegion?.cameraId === camera.id).length}개</small>
-      </button>)}</div>
-      {!viewerPreset?.virtualCameras?.[selectedEquipment.id]?.length && <p className={styles.help}>4단계에서 가상 카메라를 추가하세요.</p>}
+      </button>)}</div>}
+      {!virtualCameras.length && <p className={styles.help}>가상 카메라 단계에서 시점을 추가하세요.</p>}
     </section>}
     {tab === "POINT" && <ObservationRoiFields virtualCameraOnly equipment={selectedEquipment} points={scopedPoints} selectedPoint={selectedPoint} sensors={scopedSensors} onSelect={onSelectPoint} onChange={onUpdatePoint} onRemove={onRemovePoint} />}
 

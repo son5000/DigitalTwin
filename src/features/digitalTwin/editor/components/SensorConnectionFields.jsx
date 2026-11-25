@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { getSensorCapabilities } from "../model/equipmentDetailModel";
 import { readProjects } from "@/features/portal/projects/projectRepository";
 import { projectApiBase } from "@/features/portal/projects/projectConfigurationApi";
 import { lookupSensor, monitoringApiBase, saveSensorCalibration } from "../api/monitoringClient";
@@ -7,35 +6,37 @@ import { calibrationPayload, downloadMonitoringJson, validateCalibration } from 
 import { demoSensor } from "../model/monitoringDemo";
 import styles from "./MonitoringSettingsPanel.module.css";
 import { referenceFrameKey } from "../model/equipmentCoordinateFrame.js";
+import { sensorLookupChanges, sensorLookupErrorMessage, sensorSerialChanges } from "../model/sensorLookup.js";
 
 export default function SensorConnectionFields({ sensor, equipment, sensors, assets, onChange, section = "all" }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const controller = useRef(null);
-  useEffect(() => () => controller.current?.abort(), []);
+  useEffect(() => () => controller.current?.abort(), [sensor.id, equipment.id]);
+  const connected = Boolean(sensor.serverSensorId);
+  const demoConnection = sensor.dataSource === "DEMO";
   const projectId = readProjects().activeId;
   const payload = calibrationPayload(projectId, equipment, sensor, assets);
   const configured = sensor.calibration?.signature === JSON.stringify(payload);
   const frameKey = referenceFrameKey(payload.coordinateFrame);
   const confirmed = sensor.calibrationConfirmed === true && (!payload.coordinateFrame || sensor.calibrationConfirmationFrame === frameKey) && (!(sensor.surfaceMount || sensor.scanSlotMount) || sensor.calibrationConfirmationModel === payload.model.version);
   async function connect(demo = false) {
+    if (busy || connected) return;
     const serialNumber = sensor.serialNumber?.trim();
     if (!serialNumber) { setMessage("시리얼 번호를 입력하세요."); return; }
-    if (sensors.some((item) => item.id !== sensor.id && item.serialNumber === serialNumber)) { setMessage("이미 등록된 시리얼 번호입니다. 센서는 하나의 설비에만 연결할 수 있습니다."); return; }
+    const testCase = serialNumber === "testcase";
+    const useDemo = demo || testCase;
+    if (!testCase && sensors.some((item) => item.id !== sensor.id && item.serialNumber?.trim() === serialNumber)) { setMessage("이미 등록된 시리얼 번호입니다. 센서는 하나의 설비에만 연결할 수 있습니다."); return; }
     controller.current?.abort(); const request = new AbortController(); controller.current = request;
     setBusy(true); setMessage("");
     try {
-      const result = demo ? demoSensor(serialNumber, equipment.id, sensor.deviceKind ?? "VISION") : await lookupSensor(serialNumber, equipment.id, request.signal);
+      const result = testCase ? { id: `demo:testcase:${sensor.id}`, serialNumber, equipmentId: equipment.id }
+        : demo ? demoSensor(serialNumber, equipment.id, sensor.deviceKind ?? "VISION") : await lookupSensor(serialNumber, equipment.id, request.signal);
       if (request.signal.aborted) return;
-      onChange(sensor.id, { serverSensorId: result.id, serverKey: result.serverKey ?? result.id, serialNumber,
-        capabilities: sensor.capabilities?.length ? sensor.capabilities : getSensorCapabilities(result), equipmentIds: [equipment.id], deviceKind: result.deviceKind ?? sensor.deviceKind, sensorType: result.sensorType ?? sensor.sensorType,
-        frameUrl: result.frameUrl ?? "", frameMeasuredAt: result.frameMeasuredAt ?? null, dataSource: demo ? "DEMO" : "SERVER",
-        connectionStatus: result.connectionStatus ?? "CONNECTED", reportedCapabilities: result.capabilities ?? [],
-        fieldOfView: result.fieldOfView ?? sensor.fieldOfView, aspectRatio: result.aspectRatio ?? sensor.aspectRatio,
-        resolution: result.resolution ?? null, intrinsics: result.intrinsics ?? null, intrinsicCalibrationId: result.intrinsicCalibrationId ?? null,
-        calibration: null, calibrationConfirmed: false });
-      setMessage(demo ? "예시 센서입니다. 영상과 신호는 실측이 아닙니다." : "센서를 조회했습니다. 설치 위치를 설정하고 이미지·텍스처에서 수신 영상을 편집하세요.");
-    } catch (error) { if (!request.signal.aborted) setMessage(error.message); }
+      if (sensors.some((item) => item.id !== sensor.id && item.serverSensorId != null && String(item.serverSensorId) === result.id))
+        throw new Error("이미 등록된 센서입니다. 기존 센서 연결을 확인하세요.");
+      onChange(sensor.id, sensorLookupChanges(result, sensor, equipment.id, useDemo));
+    } catch (error) { if (!request.signal.aborted) setMessage(sensorLookupErrorMessage(error)); }
     finally { if (!request.signal.aborted) setBusy(false); }
   }
   async function save() {
@@ -61,11 +62,21 @@ export default function SensorConnectionFields({ sensor, equipment, sensors, ass
   return <div className={styles.content}>
     {section !== "calibration" && <>
     <label className={styles.field} data-setup-field="sensor-serial"><span>센서 시리얼 번호 · 필수</span><input required value={sensor.serialNumber ?? ""} disabled={busy} onChange={(event) => {
-      setMessage(""); onChange(sensor.id, { serialNumber: event.target.value.trim(), serverSensorId: null, serverKey: "", frameUrl: "", frameMeasuredAt: null, dataSource: null, calibration: null, calibrationConfirmed: false });
-    }} /></label>
-    <button type="button" data-setup-field="sensor-lookup" disabled={busy || !sensor.serialNumber} onClick={() => connect()}>{busy ? "처리 중…" : "시리얼 번호로 센서 조회"}</button>
-    {!monitoringApiBase && <button type="button" disabled={busy || !sensor.serialNumber} onClick={() => connect(true)}>입력한 번호로 예시 센서 연결</button>}
-    <p className={styles.help}>{sensor.serverSensorId ? `${sensor.dataSource === "DEMO" ? "예시 연결" : "조회된 센서"} · ${sensor.serverSensorId}` : "센서 조회 대기"}</p>
+      const value = event.target.value.trim();
+      if (value !== sensor.serialNumber) { setMessage(""); onChange(sensor.id, sensorSerialChanges(value)); }
+    }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void connect(); } }} /></label>
+    {connected ? <div className={styles.sensorConnectionStatus} data-setup-field="sensor-lookup" role="status" aria-atomic="true">
+      <div><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="m8 12 3 3 5-6" /></svg><strong>{demoConnection ? "테스트 연결 완료" : "연결 확인 완료"}</strong></div>
+      <span>{demoConnection ? "화면 검토용 가상 센서입니다." : "설치 위치에서 센서를 배치하세요."}</span>
+    </div> : <>
+      <button type="button" data-setup-field="sensor-lookup" disabled={busy || !sensor.serialNumber?.trim()} onClick={() => connect()}>{busy ? "확인 중…" : "센서 확인"}</button>
+      {!monitoringApiBase && <button type="button" disabled={busy || !sensor.serialNumber} onClick={() => connect(true)}>입력한 번호로 예시 센서 연결</button>}
+    </>}
+    {connected ? <dl className={styles.summary} aria-label="확인된 센서 연결">
+      <div><dt>{demoConnection ? "예시 센서" : "센서 ID"}</dt><dd>{sensor.serverSensorId}</dd></div>
+      <div><dt>사용 설비</dt><dd>{equipment.name || equipment.id}</dd></div>
+    </dl> : <p className={styles.help}>센서 존재 여부와 다른 설비의 연결 여부를 확인합니다.</p>}
+    <p className={styles.help}>{connected ? "다른 센서를 사용하려면 시리얼 번호를 변경하세요." : "에디터에서는 연결과 배치를 설정합니다. 실시간 값과 통신 상태는 뷰어에서 확인하세요."}</p>
     </>}
     {section !== "connection" && <>
     <label className={styles.check} data-setup-field="sensor-calibration"><input type="checkbox" required checked={confirmed} onChange={(event) => onChange(sensor.id, { calibrationConfirmed: event.target.checked, calibrationConfirmationModel: payload.model.version, calibrationConfirmationFrame: frameKey })} />위치·화각 수동 보정 확인 · 필수</label>

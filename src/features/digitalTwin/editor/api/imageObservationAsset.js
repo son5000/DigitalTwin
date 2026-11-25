@@ -3,10 +3,10 @@ import { sensorImageTransform } from "../model/sensorImageTransform.js";
 import { getSensorFrame, monitoringApiBase } from "./monitoringClient.js";
 
 // Keep the unprocessed reference frame as a binary asset, not base64 in layout JSON.
-export async function captureObservationImage(sensor, displayedFrame = null) {
+export async function captureObservationImage(sensor, displayedFrame = null, { live = true } = {}) {
   let source = sensorImageTransform(sensor).source;
   if (displayedFrame?.url) source = { ...source, url: displayedFrame.url, measuredAt: displayedFrame.measuredAt };
-  else if (source.type === "SERVER" && monitoringApiBase && sensor.serverSensorId) {
+  else if (live && source.type === "SERVER" && monitoringApiBase && sensor.serverSensorId) {
     const frame = await getSensorFrame(sensor.serverSensorId,AbortSignal.timeout(15000),"VISION");
     source = { ...source, url:frame.url, measuredAt:frame.measuredAt };
   }

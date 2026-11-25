@@ -3,7 +3,7 @@ import { createEquipmentCoordinateFrame, equipmentBounds, frontLowerLeft, getEqu
 import NumericField from "./NumericField";
 import styles from "./MonitoringSettingsPanel.module.css";
 
-export default function EquipmentCoordinateFrameFields({ equipment, binding, cameraController, onUpdateEquipment }) {
+export default function EquipmentCoordinateFrameFields({ equipment, binding, cameraController, onUpdateEquipment, onPendingChange }) {
   const saved = getEquipmentCoordinateFrame(equipment);
   const [yaw, setYaw] = useState(saved?.rotation[1] ?? 0);
   const [origin, setOrigin] = useState(() => saved ? Object.fromEntries(["x", "y", "z"].map((axis, i) => [axis, saved.origin[i]])) : frontLowerLeft(equipmentBounds(equipment)));
@@ -11,6 +11,13 @@ export default function EquipmentCoordinateFrameFields({ equipment, binding, cam
   const [notice, setNotice] = useState("");
   const [picking, setPicking] = useState(false);
   const initialized = useRef(Boolean(saved));
+  const applied = Boolean(saved && Math.abs(saved.rotation[1] - yaw) < 1e-9
+    && ["x", "y", "z"].every((axis, index) => Math.abs(saved.origin[index] - origin[axis]) < 1e-9)
+    && (saved.originMode ?? "FRONT_LOWER_LEFT") === originMode);
+  useEffect(() => {
+    onPendingChange?.(!applied);
+    return () => onPendingChange?.(false);
+  }, [applied, onPendingChange]);
   useEffect(() => {
     let timer, controller;
     function preview() {
@@ -53,25 +60,29 @@ export default function EquipmentCoordinateFrameFields({ equipment, binding, cam
     });
   }
   function apply() {
+    if (applied || picking) return;
     try {
       const nextOrigin = originMode === "FRONT_LOWER_LEFT" ? frontLowerLeft(currentBounds(), yaw) : origin;
       const coordinateFrame = createEquipmentCoordinateFrame(equipment, nextOrigin, yaw, originMode);
       onUpdateEquipment({ metadata: { coordinateFrame } }); setOrigin(nextOrigin);
-      setNotice("기준좌표를 적용했습니다. 센서·ROI의 실제 위치는 유지됩니다. 프로젝트를 저장하세요.");
+      setNotice("");
     } catch (error) { setNotice(error.message); }
   }
   const degrees = Math.round(yaw * 180 / Math.PI * 1000) / 1000;
   const preset = [0, 90, 180, -90].includes(degrees) ? String(degrees) : "CUSTOM";
   return <fieldset className={styles.settingsGroup} data-setup-field="coordinate-frame"><legend>설비 기준좌표 · 필수</legend>
-    <p className={styles.help}>위쪽은 +Y입니다. 정면과 원점을 지정한 뒤 적용하세요.</p>
+    <div className={styles.coordinateFrameStatus} data-state={applied ? "applied" : "pending"} role="status" aria-live="polite">
+      <strong>{applied ? "적용 완료" : saved ? "변경사항 미적용" : "확인 필요"}</strong>
+      <span>{applied ? "현재 기준좌표로 다음 단계를 진행할 수 있습니다." : saved ? "정면 또는 원점이 변경되었습니다. 변경사항을 적용하세요." : "정면과 원점을 확인한 뒤 기준좌표를 적용하세요."}</span>
+    </div>
+    <p className={styles.help}>위쪽은 +Y입니다.</p>
     <label className={styles.field}><span>설비 정면 방향</span><select value={preset} onChange={(event) => { if (event.target.value !== "CUSTOM") changeFront(Number(event.target.value) * Math.PI / 180); }}><option value="0">+Z 방향을 정면으로</option><option value="90">+X 방향을 정면으로</option><option value="180">−Z 방향을 정면으로</option><option value="-90">−X 방향을 정면으로</option><option value="CUSTOM">사용자 지정 각도</option></select></label>
     <NumericField displayPrecision={2} label="Y축 회전각" unit="°" step={1} value={degrees} onChange={(value) => changeFront(value * Math.PI / 180)} />
     <div className={styles.actionRow}><button type="button" onClick={() => cameraController?.current?.coordinateFront?.(yaw)}>설정한 정면에서 보기</button><button type="button" onClick={resetOrigin}>정면 좌측 하단으로 원점 맞춤</button></div>
     <p className={styles.help}>X 오른쪽 · Y 위쪽 · Z 정면 바깥쪽. 설비 내부는 −Z입니다.</p>
     <h4 className={styles.subsectionTitle}>원점 위치 · 모델 기준</h4>
-    <div className={styles.axisGrid}>{["x", "y", "z"].map((axis) => <NumericField displayPrecision={2} key={axis} label={`${axis.toUpperCase()}축`} unit="m" step={.01} value={origin[axis]} onChange={(value) => { setOriginMode("CUSTOM"); setOrigin((current) => ({ ...current, [axis]: value })); }} />)}</div>
-    <div className={styles.actionRow}><button type="button" aria-pressed={picking} onClick={pickOrigin}>{picking ? "원점 선택 취소" : "모델에서 원점 선택"}</button><button type="button" className={styles.primaryAction} onClick={apply}>기준좌표 적용</button></div>
-    <p className={styles.help}>{saved ? `적용된 기준 v${saved.version} · ${saved.originMode === "FRONT_LOWER_LEFT" ? "정면 좌측 하단" : "사용자 지정"}` : "미설정 · 기본 원점은 정면 좌측 하단입니다."}</p>
+    <div className={styles.axisGrid}>{["x", "y", "z"].map((axis) => <NumericField displayPrecision={2} key={axis} label={`${axis.toUpperCase()}축`} unit="m" step={.01} value={origin[axis]} onChange={(value) => { setNotice(""); setOriginMode("CUSTOM"); setOrigin((current) => ({ ...current, [axis]: value })); }} />)}</div>
+    <div className={styles.actionRow}><button type="button" aria-pressed={picking} onClick={pickOrigin}>{picking ? "원점 선택 취소" : "모델에서 원점 선택"}</button><button type="button" className={applied ? styles.coordinateFrameApplied : styles.primaryAction} disabled={applied || picking} onClick={apply}>{applied ? "적용 완료" : saved ? "변경사항 적용" : "기준좌표 적용"}</button></div>
     {notice && <p className={styles.help} role="status">{notice}</p>}
   </fieldset>;
 }

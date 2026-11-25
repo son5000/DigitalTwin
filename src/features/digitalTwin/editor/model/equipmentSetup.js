@@ -116,7 +116,7 @@ export function getSensorReadingState(point, value) {
 
 export const SETUP_REQUIREMENTS = Object.freeze({
   BASIC: "필수: 설비명. 모델 파일·사진·제조사 정보는 선택 사항입니다.",
-  ASSET: "필수: 표시할 모델, 유효한 크기, 기준좌표 적용. 스캔 사용 시 모델 정합 완료도 확인하세요.",
+  ASSET: "필수: 표시할 모델, 유효한 크기, 기준좌표 적용.",
   SCAN: "전체 또는 문별 스캔 파일을 연결하고 크기·방향·위치·기준좌표를 확인하세요.",
   SENSOR: "필수: 센서 이름·시리얼, 센서 조회, 유효한 설치 위치, 위치·화각 보정 확인. 텍스처는 사용할 때 설정하세요.",
   VIRTUAL_CAMERA: "관측에 사용할 시점을 저장하세요. 가상 카메라 없이 진행하려면 건너뛰기를 선택하세요.",
@@ -126,7 +126,7 @@ export const SETUP_REQUIREMENTS = Object.freeze({
 
 const finite = (value) => value !== null && value !== undefined && String(value).trim() !== "" && Number.isFinite(Number(value));
 export function getSetupStepValidation(step, context) {
-  const { equipment, assets = [], sensors = [], points = [], viewerPreset } = context;
+  const { equipment, assets = [], sensors = [], points = [], viewerPreset, coordinateFramePending = false } = context;
   const issue = (target, message, extra = {}) => ({ step, target, message, ...extra });
   if (step === "REVIEW") {
     const setup = getEquipmentSetup(equipment, assets);
@@ -156,7 +156,7 @@ export function getSetupStepValidation(step, context) {
     const wholeScan = scans.some((asset) => !asset.scanSlot);
     const doors = modelMode === "BOTH" && getEnclosure(equipment).enabled ? getEnclosureDoorEntries(equipment) : [];
     if (modelMode === "BOTH" && doors.length && !assigned.length && !wholeScan)
-      return issue("model-files", "설비 전체 또는 각 문의 내부 스캔을 연결하세요.");
+      return issue("model-files", "각 문의 내부 스캔을 등록하세요.");
     if (modelMode !== "SHAPE" && assigned.length) {
       if (getEnclosure(equipment).bodyLayout !== "BACK_TO_BACK" && assigned.some((asset) => asset.scanSlot.side === "FRONT")
         && assigned.some((asset) => asset.scanSlot.side === "REAR")) return issue("model-files", "앞뒤 문에 각각 스캔을 연결했다면 캐비넷 구조를 ‘앞뒤 두 공간’으로 설정하세요.");
@@ -172,9 +172,8 @@ export function getSetupStepValidation(step, context) {
     if (modelMode !== "SHAPE" && !model) return issue("model-files", "스캔 파일을 등록하세요.");
     if (models.some((scan) => !scan.sourceKey || ["ERROR", "MISSING", "LOADING", "PENDING"].includes(scan.status))) return issue("model-files", "등록한 모델의 파일 연결과 불러오기 상태를 확인하세요.");
     if (equipment?.dimensions && Object.values(equipment.dimensions).some((value) => !finite(value) || Number(value) <= 0)) return issue("model-size", "설비의 가로·높이·깊이를 0보다 크게 입력하세요.");
-    if (models.some((scan) => !scan.alignmentTransform?.completed)) return issue("model-alignment", "각 스캔의 크기·방향·위치를 확인한 뒤 ‘모델 정합 완료’를 선택하세요.");
   }
-  if (equipment && [modelMode === "BOTH" ? "SCAN" : "ASSET", "SENSOR", "VIRTUAL_CAMERA", "POINT"].includes(step) && !getEquipmentCoordinateFrame(equipment)) return issue("coordinate-frame", "설비 정면과 원점을 확인한 뒤 ‘기준좌표 적용’을 눌러주세요.", { step: modelMode === "BOTH" ? "SCAN" : "ASSET" });
+  if (equipment && [modelMode === "BOTH" ? "SCAN" : "ASSET", "SENSOR", "VIRTUAL_CAMERA", "POINT"].includes(step) && (!getEquipmentCoordinateFrame(equipment) || coordinateFramePending)) return issue("coordinate-frame", getEquipmentCoordinateFrame(equipment) ? "정면 또는 원점이 변경되었습니다. ‘변경사항 적용’을 눌러주세요." : "설비 정면과 원점을 확인한 뒤 ‘기준좌표 적용’을 눌러주세요.", { step: modelMode === "BOTH" ? "SCAN" : "ASSET" });
   if (step === "SENSOR") {
     if (!sensors.length) return issue("sensor-add", "센서를 등록하거나 이 단계를 건너뛰세요.");
     for (const sensor of sensors) {

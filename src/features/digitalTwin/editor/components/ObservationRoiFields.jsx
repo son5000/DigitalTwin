@@ -13,8 +13,7 @@ import ImageObservationFields from "./ImageObservationFields.jsx";
 import { hasImageObservation } from "../model/imageObservation.js";
 import { bindObservationMeasurements, observationTextureKind, thermalObservationIssue } from "../model/observationSource.js";
 import { gaugeAngleForValue, gaugeValueForAngle, withGaugeRuleAngles } from "../model/observationProfiles.js";
-
-const OPERATORS = { gte: "이상", gt: "초과", lte: "이하", lt: "미만" };
+import ObservationRuleFields, { ObservationRemoveButton } from "./ObservationRuleFields.jsx";
 
 export default function ObservationRoiFields({ equipment, points = [], selectedPoint, sensors = [], onSelect, onChange, onRemove, onPlace, onCaptureReference, captureBusy = false, compact = false, allowPositionEdit = false, virtualCameraOnly = false }) {
   const frame = getEquipmentCoordinateFrame(equipment);
@@ -97,44 +96,38 @@ export default function ObservationRoiFields({ equipment, points = [], selectedP
         {selectedPoint.measurements.map((item, index) => <details key={item.id} className={`${styles.settingsGroup} ${styles.measurementCard}`} open={index === 0 ? true : undefined}>
           <summary><span>{index + 1}. {item.name || "이름 없는 항목"}</span><small>{["GENERAL", "ultrasound.db"].includes(item.metric) ? "설비에서 감지" : sensors.find((sensor) => sensor.id === item.sensorId)?.name || "카메라 영상에서 위치를 지정하세요"}{item.metric !== "GENERAL" ? ` · 경보 ${item.rules.length}개` : ""}{item.visible ? " · 표시" : " · 숨김"}</small></summary>
           <div className={styles.roiEditor}>
-            <label className={styles.field} data-setup-field={`measurement-${item.id}-name`}><span>표시 이름 · 필수</span><input required value={item.name} onChange={(event) => updateMeasurement(index, { name: event.target.value })} /></label>
+            <div className={styles.measurementHeading}><span>{METRICS[item.metric]?.[0] ?? item.metric}</span><ObservationRemoveButton label={`${item.name || "관측 항목"} 관측 항목 삭제`} onClick={() => selectMeasurements(selectedPoint.measurements.filter((_, i) => i !== index).map((m)=>m.metric))} /></div>
             {!["GENERAL", "ultrasound.db"].includes(item.metric) && <p className={styles.help}>연결된 카메라 · {sensors.find((sensor) => sensor.id === item.sensorId)?.name || (virtualCameraOnly ? "가상 카메라 사진에서 영역을 그리세요." : "3D 화면의 카메라 영상에서 영역을 그리세요.")}</p>}
             {item.metric === "GENERAL" && <p className={styles.help}>이 영역으로 수신된 초음파·온도 값을 각각 표시합니다. 특정 센서 연결은 필요하지 않습니다.</p>}
-            <div className={styles.rangeGrid}>
-              <label className={styles.field}><span>확인할 항목</span><input readOnly value={METRICS[item.metric]?.[0] ?? item.metric} /></label>
-              {item.metric !== "GENERAL" && <label className={styles.field}><span>단위</span><input aria-label="단위" value={item.unit} onChange={(event) => updateMeasurement(index, { unit: event.target.value })} /></label>}
-            </div>
             {item.metric?.startsWith("vision.") && selectedPoint.geometryType !== "PLANE" && <p className={styles.help}>{virtualCameraOnly ? "가상 카메라 사진에서 영역을 다시 그려주세요." : "카메라 영상에서 사각형으로 지정해야 합니다."}</p>}
             {item.metric === "vision.switchState" && <p className={styles.help}>지금 보이는 스위치 상태를 기준으로 저장하면 이후 화면의 변화를 판독합니다.</p>}
             {item.metric === "vision.gaugeValue" && <p className={styles.help}>카메라 사진에서 게이지의 숫자를 읽습니다. 표시 단위와 경보 기준을 입력하세요.</p>}
             {item.metric === "vision.ledState" && <p className={styles.help}>LED 색상마다 표시할 상태와 판정을 지정하세요.</p>}
             {item.metric === "vision.valveState" && <p className={styles.help}>지금 보이는 밸브 상태를 기준으로 저장하면 이후 화면의 변화를 판독합니다.</p>}
             <ObservationProfileFields point={selectedPoint} item={item} onChange={(changes) => updateMeasurement(index, changes)} onCaptureReference={onCaptureReference} captureBusy={captureBusy} />
-            <label className={styles.check}><input type="checkbox" checked={item.visible} onChange={(event) => updateMeasurement(index, { visible: event.target.checked })} />관제 화면에 표시</label>
             {!["GENERAL", "vision.switchState", "vision.valveState", "vision.ledState"].includes(item.metric) && <div className={styles.ruleSection}>
-              <div className={styles.sectionHeading}><strong>경보 조건</strong><span>선택 사항</span></div>
+              <div className={styles.sectionHeading}><strong>경보 조건</strong><button className={styles.ruleAddAction} type="button" aria-label="경보 조건 추가" onClick={() => updateMeasurement(index, { rules: [...item.rules, { threshold: "", operator: "gte", severity: "WARNING" }] })}>조건 추가</button></div>
               {!item.rules.length && <p className={styles.help}>현재는 측정값만 표시합니다. 경보가 필요하면 조건을 추가하세요.</p>}
-              {item.rules.map((rule, ruleIndex) => <div key={ruleIndex} className={styles.ruleRow} role="group" aria-label={`경보 조건 ${ruleIndex + 1}`}>
-                <div className={styles.ruleHeading}><span>{rule.severity === "DANGER" ? "위험" : "주의"} · {rule.threshold === "" ? "기준값 필요" : `${rule.threshold} ${item.unit} ${OPERATORS[rule.operator] ?? rule.operator}`}</span><button type="button" aria-label={`경보 조건 ${ruleIndex + 1} 삭제`} onClick={() => updateMeasurement(index, { rules: item.rules.filter((_, i) => i !== ruleIndex) })}>삭제</button></div>
-                <label className={styles.field} data-setup-field={`measurement-${item.id}-rule-${ruleIndex}`}><span>기준값 · 필수{item.unit ? ` (${item.unit})` : ""}</span><input type="number" required step="any" value={rule.threshold ?? ""} onChange={(event) => updateMeasurement(index, { rules: item.rules.map((entry, i) => i === ruleIndex ? { ...entry, threshold: event.target.value === "" ? "" : Number(event.target.value) } : entry) })} /></label>
+              {item.rules.map((rule, ruleIndex) => <ObservationRuleFields key={ruleIndex} rule={rule} index={ruleIndex} unit={item.unit} validationTarget={`measurement-${item.id}-rule-${ruleIndex}`}
+                onChange={(changes) => updateMeasurement(index, { rules: item.rules.map((entry, i) => i === ruleIndex ? { ...entry, ...changes } : entry) })}
+                onRemove={() => updateMeasurement(index, { rules: item.rules.filter((_, i) => i !== ruleIndex) })}>
                 {item.metric === "vision.gaugeValue" && <label className={styles.field}><span>바늘 각도 (°)</span><input type="number" step="any" disabled={!item.analysisConfig?.scale} value={gaugeAngleForValue(item.analysisConfig?.scale, rule.threshold)?.toFixed(1) ?? ""} onChange={(event) => {
                   const value = event.target.value === "" ? "" : gaugeValueForAngle(item.analysisConfig?.scale, Number(event.target.value));
                   if (value !== null) updateMeasurement(index, { rules: item.rules.map((entry, i) => i === ruleIndex ? { ...entry, threshold: value } : entry) });
                 }} /></label>}
-                <div className={styles.rangeGrid}>
-                  <label className={styles.field}><span>조건</span><select value={rule.operator} onChange={(event) => updateMeasurement(index, { rules: item.rules.map((entry, i) => i === ruleIndex ? { ...entry, operator: event.target.value } : entry) })}>{Object.entries(OPERATORS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-                  <label className={styles.field}><span>경보 단계</span><select value={rule.severity} onChange={(event) => updateMeasurement(index, { rules: item.rules.map((entry, i) => i === ruleIndex ? { ...entry, severity: event.target.value } : entry) })}><option value="WARNING">주의</option><option value="DANGER">위험</option></select></label>
-                </div>
-              </div>)}
-              <button type="button" onClick={() => updateMeasurement(index, { rules: [...item.rules, { threshold: "", operator: "gte", severity: "WARNING" }] })}>경보 조건 추가</button>
+              </ObservationRuleFields>)}
             </div>}
-            {item.metric !== "GENERAL" && <details className={styles.transformDetails}><summary>화면에 표시되는 모습 미리보기</summary><NumericField displayPrecision={1} label="예시 값" value={item.previewValue ?? 0} onChange={(previewValue) => updateMeasurement(index, { previewValue })} /></details>}
-            <button type="button" className={styles.removeAction} onClick={() => selectMeasurements(selectedPoint.measurements.filter((_, i) => i !== index).map((m)=>m.metric))}>관측 항목 삭제</button>
+            <details className={styles.transformDetails}><summary>이름·단위·표시 설정</summary>
+              <label className={styles.field} data-setup-field={`measurement-${item.id}-name`}><span>표시 이름 · 필수</span><input required value={item.name} onChange={(event) => updateMeasurement(index, { name: event.target.value })} /></label>
+              {item.metric !== "GENERAL" && <label className={styles.field}><span>단위</span><input aria-label="단위" value={item.unit} onChange={(event) => updateMeasurement(index, { unit: event.target.value })} /></label>}
+              <label className={styles.check}><input type="checkbox" checked={item.visible} onChange={(event) => updateMeasurement(index, { visible: event.target.checked })} />관제 화면에 표시</label>
+              {item.metric !== "GENERAL" && <NumericField displayPrecision={1} label="예시 값" value={item.previewValue ?? 0} onChange={(previewValue) => updateMeasurement(index, { previewValue })} />}
+            </details>
           </div>
         </details>)}
       </section>
       <details className={styles.settingsGroup}><summary>관측 화면 미리보기</summary><ObservationReadout point={selectedPoint} sensors={sensors} preview /></details>
-      {onRemove && <details className={styles.transformDetails}><summary>관측 영역 관리</summary><button className={styles.removeAction} type="button" onClick={() => onRemove(selectedPoint.id)}>관측 영역 삭제</button></details>}
+      {onRemove && <button className={`${styles.removeAction} ${styles.removeObservationAction}`} type="button" onClick={() => onRemove(selectedPoint.id)}>관측 영역 삭제</button>}
     </div>}
   </div>;
 }

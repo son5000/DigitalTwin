@@ -17,9 +17,9 @@
 
 ## 사용 흐름
 
-1. 설비 상세 → 센서 위치에서 센서를 추가하고 시리얼 번호를 입력한다.
+1. 설비 상세 → 센서 위치에서 센서를 추가하고 시리얼 번호로 센서 존재·설비 소속을 확인한다. 에디터에서는 실제 측정값·영상·통신 상태를 조회하지 않는다.
 2. 실제 서버가 없으면 `입력한 번호로 예시 센서 연결`로 화면만 확인한다. 예시 센서 ID는 `demo:` 접두사를 쓰며 실제 서버 보정 저장에 사용할 수 없다.
-3. 관측 이미지 패널의 `센서 시점으로 비교`를 누른다. 위치·회전·화각을 바꾸며 실제 영상과 비교한다. 센서 시점에서는 자유 궤도 조작과 ROI/지점 선택을 제한한다.
+3. 참고 이미지 패널의 `센서 정면 시점 확인`을 누른다. 위치·회전·화각을 바꾸며 사용자가 지정한 참고 이미지 또는 샘플과 비교한다. 센서 시점에서는 자유 궤도 조작과 ROI/지점 선택을 제한한다. 실제 센서 영상은 뷰어에서 조회한다.
 4. `위치·화각 수동 보정 확인` 후 `보정값 저장`을 누른다. 배치값 변경은 확인을 해제한다. 모델/정합/설비 위치 변경은 저장한 서명과 달라져 재저장 필요 상태가 된다.
 5. `보정 좌표 내보내기`는 현재 좌표 계약을 JSON으로 내려받는다. 로컬 저장은 프로젝트 센서 구성에 보관되며 패키지 내보내기에 포함된다. 로컬 결과를 서버 성공으로 표시하지 않는다.
 6. 고객 뷰어의 `관측 데이터` 퀵 메뉴에서 모델/비전/열화상을 전환한다. 에디터에서 영상 투사를 설정한 센서의 신선한 비전 프레임 또는 유효한 비전 UV 텍스처가 있으면 기본값은 비전, 없으면 모델이다. 사용자가 명시적으로 고른 모드는 유지한다. 모델 모드에서는 센서 영상을 투사하지 않는다. 센서 위치·방향·화각·적용면은 에디터에서 설정하며, 프레임은 해당 카메라 시점에서 보이는 표면에 투사한다.
@@ -33,7 +33,8 @@
 
 | 메서드·경로 (API base 하위) | 요청/응답 |
 | --- | --- |
-| GET `/sensors/by-serial?serialNumber=...&equipmentId=...` | `{sensor:{id,serialNumber,equipmentId,deviceKind,sensorType,frameUrl,frameMeasuredAt,fieldOfView,aspectRatio,resolution,intrinsics,intrinsicCalibrationId,capabilities,connectionStatus}}` |
+| GET `/sensors/by-serial?serialNumber=...&equipmentId=...` | `{sensor:{id,serialNumber,equipmentId}}`. equipmentId는 미소속이면 null. 에디터는 존재·소속만 확인하며 장치 사양·측정값을 가져오지 않는다. |
+| 2026-11-23 역할 분리 | [최소 확인·뷰어 연결 계약](../api/sensor-serial-lookup-api.md)이 이 문서의 이전 실시간 편집 설명보다 우선한다. 에디터 실측/영상 폴링을 중단하고 샘플·참고 이미지로 구성한다. 실제 수신과 상태 표시는 뷰어에서만 수행한다. |
 | GET `/sensors/:sensorId/frame` | `{sensorId,url,measuredAt}`. url은 HTTP(S) 또는 같은 출처의 `/...` 경로 |
 | PUT `/projects/:projectId/sensors/:sensorId/calibration` | 아래 보정 본문, `If-Match` 숫자 revision. 응답 `{revision}`은 요청 버전보다 커야 함. 신규 0 |
 | GET `/projects/:projectId/equipment/:equipmentId/monitoring` | 아래 관측 스냅샷 |

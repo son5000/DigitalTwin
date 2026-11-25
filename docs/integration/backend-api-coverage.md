@@ -31,7 +31,7 @@
 | `GET /api/v1/equipment-mappings?projectId=...&equipmentId=...` (H51) | 뷰어 → `loadEquipmentMapping` | 연결. 미등록 404는 매핑 필요로 표시. 매핑 생성/변경 UI는 없음. |
 | `GET /api/v1/enclosures/{uid}/snapshot?view_type=...` (W02) | 뷰어 → `loadEnclosureSnapshot` | 연결. 함체·슬롯·최근 관찰·활성 경고로 요약 상태를 표시. ROI별 KPI와 모델 바인딩은 아직 연결 안 됨. |
 | `WSS /api/v1/events` (W03) | 뷰어 → `useViewerLiveStatus` | 연결. 함체별 SUBSCRIBE, seq 중복 배제, 알림 후 W02 재조회, 폴링 복구. 브라우저 handshake/Origin 실검증 필요. |
-| `GET /api/fe/v1/sensors/by-serial` (FE01) | 센서 연결 → `lookupSensor` | 연결. 매핑 없거나 여러 프로젝트에 걸리면 서버 오류를 표시. |
+| `GET /api/fe/v1/sensors/by-serial` (FE01) | 센서 연결 → `lookupSensor` | 2026-11-23 최소 확인: id/serialNumber/equipmentId만 검증. 에디터는 배치 구성, 실시간 조회는 뷰어. 미소속 정상 응답·저장 시 소속 재검사·운영 CORS 보완 필요. [단일 전달 계약](../api/sensor-serial-lookup-api.md) 참고. |
 | `GET /api/fe/v1/sensors/{id}/frame?kind=...` (FE02) | 영상·텍스처 → `getSensorFrame` | 연결. 서버가 주는 `/api/v1/media` 상대 경로를 백엔드 호스트로 해석. |
 | `GET /api/v1/media` (W14) | FE02가 반환한 URL을 브라우저가 사용 | 간접 연결. 프레임·CSV 본문 접근과 CORS 실검증 필요. |
 
